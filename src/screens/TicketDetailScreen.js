@@ -1,228 +1,111 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, FlatList, TextInput, TouchableOpacity, Alert, Image, ScrollView, Modal } from 'react-native';
-import { getTicket, getAllReplies, postReply } from '../services/ticketService';
-import * as ImagePicker from 'expo-image-picker';
-import { COLORS } from '../styles/global';
-import { OFFLINE_MODE } from '../services/config';
-import { getById as getMockById, addReply as addMockReply, closeTicket, assignTicket, updateTicket } from '../services/mockTicketStore';
-import { getAllUsers } from '../services/mockUserStore';
-import { useAuth } from '../context/AuthContext';
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-export default function TicketDetailScreen({ route }) {
-  const { id } = route.params || {};
-  const [ticket, setTicket] = useState(null);
-  const [replies, setReplies] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [replyText, setReplyText] = useState('');
-  const [replyImages, setReplyImages] = useState([]);
-  const [sending, setSending] = useState(false);
-  const [assignModal, setAssignModal] = useState(false);
-  const [operators, setOperators] = useState([]);
-  const { user } = useAuth();
+export default function TicketDetailScreen({ route, navigation }) {
+  const { ticket } = route.params || {};
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        if (OFFLINE_MODE) {
-          const t = await getMockById(id);
-          setTicket(t);
-          setReplies(t?.replies || []);
-        } else {
-          const t = await getTicket(id);
-          setTicket(t);
-          const r = await getAllReplies(id);
-          setReplies(r);
-        }
-      } catch (e) {
-        Alert.alert('Errore', 'Impossibile caricare il ticket');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [id]);
-
-  const pickReplyImage = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') { Alert.alert('Permesso negato', 'Serve il permesso per accedere alle immagini'); return; }
-      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsMultipleSelection: false, quality: 0.6 });
-      if (!res.canceled && res.assets && res.assets.length) setReplyImages(prev => [...prev, res.assets[0].uri]);
-    } catch (e) { console.warn('pickReplyImage', e); }
-  };
-
-  const handleSend = async () => {
-    if (!replyText.trim() && (!replyImages || replyImages.length === 0)) return;
-    setSending(true);
-    if (OFFLINE_MODE) {
-      const ok = await addMockReply(id, { text: replyText, author: user?.name || 'Utente', images: replyImages });
-      setSending(false);
-      if (ok) {
-        Alert.alert('Inviato', 'Risposta inviata (locale)');
-        setReplyText('');
-        setReplyImages([]);
-        const t = await getMockById(id);
-        setReplies(t?.replies || []);
-      } else {
-        Alert.alert('Errore', 'Impossibile inviare la risposta locale');
-      }
-      return;
-    }
-
-    const ok = await postReply(id, { text: replyText });
-    setSending(false);
-    if (ok) {
-      Alert.alert('Inviato', 'Risposta inviata');
-      setReplyText('');
-      const r = await getAllReplies(id);
-      setReplies(r);
-    } else {
-      Alert.alert('Errore', 'Impossibile inviare la risposta');
-    }
-  };
-
-  if (loading) return <View style={{flex:1,justifyContent:'center',alignItems:'center'}}><ActivityIndicator size="large"/></View>;
+  if (!ticket) return null;
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{ticket?.title}</Text>
-      <Text style={styles.sub}>Da: {ticket?.user || 'Utente'} • Stato: {ticket?.status || 'open'}</Text>
-
-      {ticket?.images && ticket.images.length > 0 && (
-        <ScrollView horizontal style={{marginVertical:8}} showsHorizontalScrollIndicator={false}>
-          {ticket.images.map((u,i)=> (
-            <Image key={i} source={{ uri: u }} style={{ width: 180, height: 120, borderRadius: 8, marginRight: 8 }} />
-          ))}
-        </ScrollView>
-      )}
-
-      <Text style={styles.section}>Descrizione</Text>
-      <Text style={styles.sub}>{ticket?.info || ticket?.description}</Text>
-
-      <Text style={styles.section}>Conversazione</Text>
-      <FlatList data={replies} keyExtractor={(i)=>String(i.id)} renderItem={({item})=> (
-        <View style={styles.replyCard}>
-          <Text style={{fontWeight:'700'}}>{item.user_name || item.author || 'Utente'}</Text>
-          <Text style={{marginTop:6}}>{item.text}</Text>
-          {item.images && item.images.length > 0 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginTop:8}}>
-              {item.images.map((u,i)=>(<Image key={i} source={{uri:u}} style={{width:120,height:80,borderRadius:6,marginRight:8}} />))}
-            </ScrollView>
-          )}
+      
+      {/* Immagine Header (Placeholder) */}
+      <View style={styles.imgHeader}>
+        <View style={styles.placeholderImg}>
+           <Ionicons name="image" size={50} color="white" />
         </View>
-      )} ListEmptyComponent={<Text>Nessuna risposta</Text>} />
-
-      <View style={styles.replyBox}>
-        <TextInput style={styles.input} placeholder="Scrivi una risposta..." value={replyText} onChangeText={setReplyText} multiline />
-      </View>
-
-      <View style={{flexDirection:'row',alignItems:'center',marginTop:8}}>
-        <TouchableOpacity style={styles.photoBtn} onPress={pickReplyImage}><Text style={{color:'#fff'}}>Aggiungi foto</Text></TouchableOpacity>
-        <ScrollView horizontal style={{marginLeft:10}} showsHorizontalScrollIndicator={false}>
-          {replyImages.map((u,i)=> (
-            <TouchableOpacity key={i} onPress={()=>{setReplyImages(prev=>prev.filter(x=>x!==u))}}>
-              <Image source={{uri:u}} style={{width:64,height:64,borderRadius:8,marginRight:8}} />
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <View style={{flex:1,alignItems:'flex-end'}}>
-          <TouchableOpacity style={styles.sendBtn} onPress={handleSend} disabled={sending}><Text style={{color:'#fff'}}>{sending? '...' : 'Invia'}</Text></TouchableOpacity>
-        </View>
-      </View>
-
-      {ticket?.status !== 'closed' && (
-        <TouchableOpacity style={{marginTop:12,backgroundColor:'#777',padding:10,borderRadius:8,alignItems:'center'}} onPress={async ()=>{
-          if (OFFLINE_MODE) {
-            const ok = await closeTicket(ticket.id);
-            if (ok) {
-              const t = await getMockById(ticket.id);
-              setTicket(t);
-              Alert.alert('Chiuso','Segnalazione chiusa');
-            } else {
-              Alert.alert('Errore','Impossibile chiudere (locale)');
-            }
-          } else {
-            Alert.alert('Funzionalità server','Chiudi ticket richiede API attive');
-          }
-        }}>
-          <Text style={{color:'#fff'}}>Chiudi segnalazione</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back-circle" size={42} color="white" />
         </TouchableOpacity>
-      )}
+      </View>
 
-      {/* Role-specific actions */}
-      { (user?.role||'').toLowerCase() === 'operatore' && ticket?.status !== 'closed' && (
-        <View style={{marginTop:12}}>
-          <TouchableOpacity style={{backgroundColor:COLORS.primary,padding:10,borderRadius:8,alignItems:'center',marginBottom:8}} onPress={async ()=>{
-            // assign to self
-            if (OFFLINE_MODE) {
-              const ok = await assignTicket(ticket.id, user.name || 'Operatore');
-              if (ok) {
-                const t = await getMockById(ticket.id);
-                setTicket(t);
-                Alert.alert('Assegnato','Ticket assegnato a te');
-              }
-            } else Alert.alert('Funzionalità server','Assegnazione richiede API');
-          }}>
-            <Text style={{color:'#fff'}}>Prendi in carico</Text>
-          </TouchableOpacity>
+      {/* Contenuto Arrotondato che sale */}
+      <View style={styles.sheet}>
+        <ScrollView contentContainerStyle={{paddingBottom: 40}}>
+            
+            {/* Header: Stato e Data */}
+            <View style={styles.metaRow}>
+                <View style={[styles.badge, ticket.status === 'Aperto' ? styles.bgRed : styles.bgOrange]}>
+                    <Text style={styles.badgeText}>{ticket.status.toUpperCase()}</Text>
+                </View>
+                <Text style={styles.date}>29 Gen 2026</Text>
+            </View>
 
-          <TouchableOpacity style={{backgroundColor:'#4CAF50',padding:10,borderRadius:8,alignItems:'center'}} onPress={async ()=>{
-            if (OFFLINE_MODE) {
-              const ok = await updateTicket(ticket.id, { status: 'closed' });
-              if (ok) { const t = await getMockById(ticket.id); setTicket(t); Alert.alert('Risolto','Ticket segnato come risolto'); }
-            } else Alert.alert('Funzionalità server','Risoluzione richiede API');
-          }}>
-            <Text style={{color:'#fff'}}>Segna risolto</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+            <Text style={styles.title}>{ticket.title}</Text>
+            
+            <View style={styles.authorRow}>
+                <Ionicons name="person-circle" size={28} color="#6C757D" />
+                <Text style={styles.authorText}>Segnalato da <Text style={{fontWeight:'bold'}}>{ticket.author}</Text></Text>
+            </View>
 
-      { (user?.role||'').toLowerCase() === 'responsabile' && ticket?.status !== 'closed' && (
-        <View style={{marginTop:12}}>
-          <TouchableOpacity style={{backgroundColor:COLORS.primary,padding:10,borderRadius:8,alignItems:'center'}} onPress={async ()=>{
-            // open list of operators
-            const allUsers = await getAllUsers();
-            setOperators(allUsers.filter(u=> (u.role||'').toLowerCase()==='operatore'));
-            setAssignModal(true);
-          }}>
-            <Text style={{color:'#fff'}}>Assegna operatore</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+            <View style={styles.divider} />
 
-      <Modal visible={assignModal} animationType="slide" transparent>
-        <TouchableOpacity style={{flex:1}} onPress={()=>setAssignModal(false)} />
-        <View style={{position:'absolute',bottom:0,left:0,right:0,maxHeight:360,backgroundColor:'#fff',padding:12,borderTopLeftRadius:12,borderTopRightRadius:12}}>
-          <Text style={{fontWeight:'800',marginBottom:12}}>Seleziona operatore</Text>
-          <ScrollView>
-            {operators.map(o => (
-              <TouchableOpacity key={o.id} style={{padding:12,borderBottomWidth:1,borderBottomColor:'#eee'}} onPress={async ()=>{
-                if (OFFLINE_MODE) {
-                  const ok = await assignTicket(ticket.id, o.name);
-                  if (ok) { const t = await getMockById(ticket.id); setTicket(t); setAssignModal(false); Alert.alert('Assegnato',`Assegnato a ${o.name}`); }
-                } else Alert.alert('Funzionalità server','Assegnazione richiede API');
-              }}>
-                <Text>{o.name}</Text>
-                <Text style={{color:'#666'}}>{o.email}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      </Modal>
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
+                <Text style={styles.bodyText}>{ticket.desc || "Nessuna descrizione fornita."}</Text>
+            </View>
+
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>POSIZIONE</Text>
+                <View style={styles.locBox}>
+                    <Ionicons name="location" size={20} color="#1D2D44" />
+                    <Text style={styles.locText}>Lat: {ticket.lat.toFixed(4)}, Lon: {ticket.lon.toFixed(4)}</Text>
+                </View>
+            </View>
+
+            {/* Timeline Aggiornamenti (Statici) */}
+            <View style={styles.timeline}>
+                <Text style={styles.sectionTitle}>STORICO AGGIORNAMENTI</Text>
+                <View style={styles.timelineItem}>
+                    <View style={styles.timelineDot} />
+                    <View style={styles.timelineContent}>
+                        <Text style={styles.tlUser}>Sistema</Text>
+                        <Text style={styles.tlText}>Ticket creato e in attesa di approvazione.</Text>
+                        <Text style={styles.tlDate}>Oggi, 10:30</Text>
+                    </View>
+                </View>
+            </View>
+
+        </ScrollView>
+      </View>
     </View>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
-  container: { flex:1, padding:16, backgroundColor: COLORS.bg },
-  title: { fontSize:20, fontWeight:'800', color: COLORS.primary },
-  sub: { color: '#444', marginVertical:8 },
-  section: { marginTop:12, fontWeight:'700' },
-  replyCard: { padding:10, backgroundColor:'#fff', borderRadius:8, marginVertical:6 },
-  replyBox: { marginTop:12, flexDirection:'row', gap:8, alignItems:'center' },
-  input: { flex:1, backgroundColor:COLORS.light, padding:10, borderRadius:8 },
-  photoBtn: { backgroundColor:COLORS.primary, padding:10, borderRadius:8 },
-  sendBtn: { marginLeft:8, backgroundColor:COLORS.primary, padding:10, borderRadius:8 }
+  container: { flex: 1, backgroundColor: '#1D2D44' },
+  imgHeader: { height: 250, width: '100%' },
+  placeholderImg: { width: '100%', height: '100%', backgroundColor: '#4A769E', justifyContent: 'center', alignItems: 'center' },
+  backBtn: { position: 'absolute', top: 40, left: 15 },
+  sheet: { flex: 1, backgroundColor: 'white', marginTop: -40, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 25, paddingTop: 30, overflow: 'hidden' },
+  
+  metaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  badge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  bgRed: { backgroundColor: '#D32F2F' },
+  bgOrange: { backgroundColor: 'orange' },
+  badgeText: { color: 'white', fontWeight: 'bold', fontSize: 12 },
+  date: { color: '#adb5bd', fontSize: 13, fontWeight: '500' },
+
+  title: { fontSize: 26, fontWeight: '800', color: '#1D2D44', marginBottom: 10, lineHeight: 32 },
+  authorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  authorText: { marginLeft: 10, color: '#495057', fontSize: 15 },
+  
+  divider: { height: 1, backgroundColor: '#E9ECEF', marginBottom: 20 },
+  
+  section: { marginBottom: 25 },
+  sectionTitle: { fontSize: 12, fontWeight: 'bold', color: '#ADB5BD', marginBottom: 10, letterSpacing: 1 },
+  bodyText: { fontSize: 16, color: '#212529', lineHeight: 24 },
+  
+  locBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F9FA', padding: 15, borderRadius: 10 },
+  locText: { marginLeft: 10, fontWeight: '500', color: '#1D2D44' },
+
+  timeline: { marginTop: 10 },
+  timelineItem: { flexDirection: 'row', paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: '#E9ECEF', marginLeft: 5, paddingBottom: 20 },
+  timelineDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#4A769E', position: 'absolute', left: -7, top: 0 },
+  timelineContent: { marginLeft: 20, marginTop: -4 },
+  tlUser: { fontWeight: 'bold', color: '#1D2D44' },
+  tlText: { marginTop: 4, color: '#495057' },
+  tlDate: { marginTop: 4, fontSize: 12, color: '#ADB5BD' }
 });
