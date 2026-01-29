@@ -3,16 +3,33 @@ import React, { createContext, useState, useContext } from 'react';
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null); // null, 'cittadino', 'operatore', 'responsabile'
+  const [user, setUser] = useState(null); 
 
   const login = (email) => {
-    // SIMULAZIONE RUOLI BASATA SULLA EMAIL
-    if (email.includes('admin')) {
-      setUser({ name: 'Mario Responsabile', role: 'responsabile', email });
+    // SIMULAZIONE LOGICA RUOLI (Come da Requisiti UC-01)
+    if (email.includes('admin') || email.includes('resp')) {
+      // Responsabile: Gestisce ticket e operatori
+      setUser({ 
+        name: 'Mario Rossi (Resp)', 
+        role: 'responsabile', 
+        email,
+        municipality: 'Salerno' 
+      });
     } else if (email.includes('operatore')) {
-      setUser({ name: 'Luigi Tecnico', role: 'operatore', email });
+      // Operatore: Prende in carico ticket
+      setUser({ 
+        name: 'Luigi Verdi (Op)', 
+        role: 'operatore', 
+        email,
+        municipality: 'Salerno' 
+      });
     } else {
-      setUser({ name: 'Giuseppe Cittadino', role: 'cittadino', email });
+      // Cittadino: Segnala e monitora
+      setUser({ 
+        name: 'Giuseppe Bianchi', 
+        role: 'cittadino', 
+        email 
+      });
     }
   };
 

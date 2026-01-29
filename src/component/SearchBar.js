@@ -1,15 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, TextInput, Text, TouchableOpacity, StyleSheet, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-// Dati statici per testare la ricerca (simulazione API)
 const DUMMY_LOCATIONS = [
-  { id: '1', name: 'Roma, Colosseo' },
-  { id: '2', name: 'Milano, Piazza Duomo' },
-  { id: '3', name: 'Napoli, Spaccanapoli' },
-  { id: '4', name: 'Firenze, Ponte Vecchio' },
-  { id: '5', name: 'Torino, Mole Antonelliana' },
-  { id: '6', name: 'Venezia, Piazza San Marco' },
+  { id: '1', name: 'Roma, Centro' },
+  { id: '2', name: 'Milano, Duomo' },
+  { id: '3', name: 'Napoli, Centro' },
 ];
 
 export default function SearchBar({ onLocationSelect }) {
@@ -35,10 +31,7 @@ export default function SearchBar({ onLocationSelect }) {
     setQuery(item.name);
     setShowResults(false);
     Keyboard.dismiss();
-    // Passa il risultato al componente padre (HomeScreen) se necessario
-    if (onLocationSelect) {
-      onLocationSelect(item);
-    }
+    if (onLocationSelect) onLocationSelect(item);
   };
 
   const clearSearch = () => {
@@ -50,24 +43,22 @@ export default function SearchBar({ onLocationSelect }) {
 
   return (
     <View style={styles.container}>
-      {/* Input Box */}
       <View style={styles.inputBox}>
-        <Ionicons name="search" size={20} color="#666" style={{ marginRight: 8 }} />
+        <Ionicons name="search" size={18} color="#6B7280" style={{ marginRight: 8 }} />
         <TextInput
-          placeholder="Cerca zona o via..."
+          placeholder="Cerca zona..."
           value={query}
           onChangeText={handleSearch}
           style={styles.input}
-          placeholderTextColor="#999"
+          placeholderTextColor="#9CA3AF"
         />
         {query.length > 0 && (
           <TouchableOpacity onPress={clearSearch}>
-            <Ionicons name="close-circle" size={18} color="#999" />
+            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Dropdown Risultati (Galleggiante) */}
       {showResults && results.length > 0 && (
         <View style={styles.resultsList}>
           {results.map((item) => (
@@ -87,56 +78,22 @@ export default function SearchBar({ onLocationSelect }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    // Importante: zIndex alto per stare sopra tutto
-    zIndex: 100, 
-    position: 'relative',
-  },
+  container: { zIndex: 100, position: 'relative' },
   inputBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 8, // Squadrato ma morbido come il sito
-    paddingHorizontal: 15,
-    height: 45,
-    // Ombreggiatura stile Material/Sito
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    borderWidth: 1,
-    borderColor: '#eee',
+    flexDirection: 'row', alignItems: 'center', 
+    backgroundColor: '#F9FAFB', // Bianco sporco/grigio chiarissimo
+    borderRadius: 6, // Angoli meno stondati come input web
+    paddingHorizontal: 10, height: 40,
   },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
-  },
+  input: { flex: 1, fontSize: 14, color: '#1F2937' },
   resultsList: {
-    position: 'absolute', // FONDAMENTALE: Fa galleggiare la lista
-    top: 50, // Appare sotto l'input
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    borderRadius: 8,
-    paddingVertical: 5,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    borderWidth: 1,
-    borderColor: '#eee',
+    position: 'absolute', top: 45, left: 0, right: 0,
+    backgroundColor: 'white', borderRadius: 6, paddingVertical: 5,
+    elevation: 8, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5,
   },
   resultItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
+    flexDirection: 'row', alignItems: 'center', padding: 10,
+    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
   },
-  resultText: {
-    fontSize: 14,
-    color: '#333',
-  },
+  resultText: { fontSize: 13, color: '#374151' },
 });
