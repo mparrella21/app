@@ -1,40 +1,43 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 
+// Importazione schermate
 import HomeScreen from './src/screens/HomeScreen';
-import LoginScreen from './src/screens/LoginScreen';
-import RegisterScreen from './src/screens/RegisterScreen';
-import CitizenHomeScreen from './src/screens/CitizenHomeScreen';
-import MapScreen from './src/screens/MapScreen';
-import TicketDetailScreen from './src/screens/TicketDetailScreen';
-import AreaPersonaleMain from './src/screens/AreaPersonaleMain';
-import ProfileScreen from './src/screens/ProfileScreen';
-import CitizenTicketsScreen from './src/screens/CitizenTicketsScreen';
-import OperatorTicketsScreen from './src/screens/OperatorTicketsScreen';
-import ResponsibleTicketsScreen from './src/screens/ResponsibleTicketsScreen';
-import { AuthProvider } from './src/context/AuthContext';
+import AuthModal from './src/screens/AuthModal';
 
-const Stack = createNativeStackNavigator();
+const Stack = createStackNavigator();
 
 export default function App() {
   return (
-    <AuthProvider>
+    <SafeAreaProvider>
       <NavigationContainer>
-        <Stack.Navigator initialRouteName="Home">
-          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Benvenuto' }} />
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Register" component={RegisterScreen} />
-          <Stack.Screen name="CitizenHome" component={CitizenHomeScreen} options={{ title: 'Home Cittadino' }} />
-          <Stack.Screen name="Map" component={MapScreen} options={{ title: 'Nuova Segnalazione' }} />
-          <Stack.Screen name="TicketDetail" component={TicketDetailScreen} options={{ title: 'Dettaglio Ticket' }} />
-          <Stack.Screen name="AreaPersonale" component={AreaPersonaleMain} options={{ title: 'Area Personale' }} />
-          <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profilo' }} />
-          <Stack.Screen name="CitizenTickets" component={CitizenTicketsScreen} options={{ title: 'Le mie segnalazioni' }} />
-          <Stack.Screen name="OperatorTickets" component={OperatorTicketsScreen} options={{ title: 'Gestione Ticket' }} />
-          <Stack.Screen name="ResponsibleTickets" component={ResponsibleTicketsScreen} options={{ title: 'Gestione Responsabili' }} />
+        <StatusBar style="dark" />
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            // Queste opzioni servono per le trasparenze su Android/iOS
+            cardStyle: { backgroundColor: 'transparent' },
+            cardOverlayEnabled: true,
+            cardStyleInterpolator: CardStyleInterpolators.forFadeFromBottomAndroid,
+          }}
+        >
+          {/* La Home (Mappa) è la base */}
+          <Stack.Screen name="Home" component={HomeScreen} />
+
+          {/* Il Login è un POPUP sopra la mappa (Transparent Modal) */}
+          <Stack.Screen 
+            name="AuthModal" 
+            component={AuthModal} 
+            options={{
+              presentation: 'transparentModal',
+              animationEnabled: true,
+            }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
-    </AuthProvider>
+    </SafeAreaProvider>
   );
 }
