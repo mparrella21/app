@@ -24,12 +24,12 @@ export default function AuthModal({ navigation }) {
             <View style={styles.backdrop} />
           </TouchableWithoutFeedback>
 
-          {/* BOX STILE SITO */}
           <View style={styles.card}>
             <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()}>
               <Ionicons name="close" size={24} color="white" />
             </TouchableOpacity>
 
+            {/* Toggle Header */}
             <View style={styles.toggleContainer}>
               <TouchableOpacity style={[styles.toggleItem, activeTab === 'login' && styles.activeTab]} onPress={() => setActiveTab('login')}>
                 <Text style={[styles.toggleText, activeTab === 'login' && styles.activeText]}>Login</Text>
@@ -39,9 +39,7 @@ export default function AuthModal({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <View style={{alignItems: 'center', marginBottom: 20}}>
-                <Text style={styles.title}>{activeTab === 'login' ? 'Bentornato!' : 'Unisciti a noi'}</Text>
-            </View>
+            <Text style={styles.title}>{activeTab === 'login' ? 'Bentornato!' : 'Unisciti a noi'}</Text>
 
             <View style={styles.form}>
               <View style={styles.inputContainer}>
@@ -56,21 +54,14 @@ export default function AuthModal({ navigation }) {
               <TouchableOpacity style={styles.mainBtn} onPress={handleSubmit}>
                 <Text style={styles.mainBtnText}>{activeTab === 'login' ? 'ACCEDI' : 'REGISTRATI'}</Text>
               </TouchableOpacity>
-              
-              {/* BOTTONI DEBUG PER MOSTRARE AL PROFESSORE I RUOLI */}
-              <View style={{marginTop: 20, alignItems: 'center'}}>
-                 <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, marginBottom: 5}}>-- SIMULAZIONE RUOLI --</Text>
-                 <View style={{flexDirection: 'row'}}>
-                    <TouchableOpacity onPress={() => {login('resp@comune.it'); navigation.goBack()}} style={styles.debugBtn}>
-                        <Text style={styles.debugText}>Responsabile</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => {login('operatore@comune.it'); navigation.goBack()}} style={styles.debugBtn}>
-                        <Text style={styles.debugText}>Operatore</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => {login('cittadino@test.it'); navigation.goBack()}} style={styles.debugBtn}>
-                        <Text style={styles.debugText}>Cittadino</Text>
-                    </TouchableOpacity>
-                 </View>
+
+              {/* Bottoni Debug Rapidi */}
+              <View style={{marginTop: 15, flexDirection: 'row', justifyContent: 'center'}}>
+                 <TouchableOpacity onPress={() => login('resp@comune.it')}><Text style={styles.debugLink}>Responsabile</Text></TouchableOpacity>
+                 <Text style={{color: 'white', marginHorizontal: 5}}>|</Text>
+                 <TouchableOpacity onPress={() => login('operatore@comune.it')}><Text style={styles.debugLink}>Operatore</Text></TouchableOpacity>
+                 <Text style={{color: 'white', marginHorizontal: 5}}>|</Text>
+                 <TouchableOpacity onPress={() => login('cittadino@test.it')}><Text style={styles.debugLink}>Cittadino</Text></TouchableOpacity>
               </View>
             </View>
           </View>
@@ -90,12 +81,11 @@ const styles = StyleSheet.create({
   activeTab: { backgroundColor: 'white' },
   toggleText: { color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
   activeText: { color: '#467599', fontWeight: 'bold' },
-  title: { fontSize: 24, fontWeight: 'bold', color: 'white' },
+  title: { fontSize: 24, fontWeight: 'bold', color: 'white', textAlign: 'center', marginBottom: 20 },
   form: { width: '100%' },
   inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 8, marginBottom: 15, paddingHorizontal: 15, height: 50 },
   input: { flex: 1, fontSize: 16 },
   mainBtn: { backgroundColor: '#1F2937', borderRadius: 8, height: 50, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
   mainBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-  debugBtn: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 5, marginHorizontal: 5 },
-  debugText: { color: 'white', fontSize: 10, fontWeight: 'bold' }
+  debugLink: { color: '#E0E0E0', fontSize: 12, textDecorationLine: 'underline' }
 });

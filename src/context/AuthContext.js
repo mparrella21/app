@@ -6,25 +6,25 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null); 
 
   const login = (email) => {
-    // SIMULAZIONE LOGICA RUOLI (Come da Requisiti UC-01)
+    // LOGICA RUOLI BASATA SUI REQUISITI DI PROGETTO
     if (email.includes('admin') || email.includes('resp')) {
-      // Responsabile: Gestisce ticket e operatori
+      // Responsabile della Manutenzione [cite: 42]
       setUser({ 
-        name: 'Mario Rossi (Resp)', 
+        name: 'Mario Rossi', 
         role: 'responsabile', 
         email,
         municipality: 'Salerno' 
       });
     } else if (email.includes('operatore')) {
-      // Operatore: Prende in carico ticket
+      // Operatore [cite: 46]
       setUser({ 
-        name: 'Luigi Verdi (Op)', 
+        name: 'Luigi Verdi', 
         role: 'operatore', 
         email,
         municipality: 'Salerno' 
       });
     } else {
-      // Cittadino: Segnala e monitora
+      // Cittadino [cite: 18]
       setUser({ 
         name: 'Giuseppe Bianchi', 
         role: 'cittadino', 
