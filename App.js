@@ -9,7 +9,8 @@ import HomeScreen from './src/screens/HomeScreen';
 import AuthModal from './src/screens/AuthModal';
 import CreateTicketScreen from './src/screens/CreateTicketScreen';
 import TicketDetailScreen from './src/screens/TicketDetailScreen';
-import ProfileScreen from './src/screens/ProfileScreen'; // <--- IMPORTA QUESTO
+import ProfileScreen from './src/screens/ProfileScreen';
+import UserTicketsScreen from './src/screens/UserTicketsScreen'; // <--- NUOVO IMPORT
 
 const Stack = createStackNavigator();
 
@@ -28,6 +29,7 @@ export default function App() {
           >
             <Stack.Screen name="Home" component={HomeScreen} />
             
+            {/* AUTH */}
             <Stack.Screen 
               name="AuthModal" 
               component={AuthModal} 
@@ -38,11 +40,11 @@ export default function App() {
               }}
             />
 
+            {/* FLOW CITTADINO */}
             <Stack.Screen name="CreateTicket" component={CreateTicketScreen} options={{ presentation: 'modal' }} />
             <Stack.Screen name="TicketDetail" component={TicketDetailScreen} options={{ presentation: 'card' }} />
-            
-            {/* AGGIUNGI QUESTA RIGA */}
             <Stack.Screen name="Profile" component={ProfileScreen} options={{ presentation: 'card' }} />
+            <Stack.Screen name="UserTickets" component={UserTicketsScreen} options={{ presentation: 'card' }} /> 
 
           </Stack.Navigator>
         </NavigationContainer>
