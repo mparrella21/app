@@ -6,29 +6,29 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null); 
 
   const login = (email) => {
-    // LOGICA RUOLI BASATA SUI REQUISITI DI PROGETTO
-    if (email.includes('admin') || email.includes('resp')) {
-      // Responsabile della Manutenzione: Vede Dashboard, gestisce ticket
+    console.log("Tentativo Login con:", email); // Debug
+    
+    // LOGICA ESATTA DEI REQUISITI
+    if (email.toLowerCase().includes('admin') || email.toLowerCase().includes('resp')) {
       setUser({ 
         name: 'Mario Rossi', 
         role: 'responsabile', 
-        email,
+        email: email,
         municipality: 'Salerno' 
       });
-    } else if (email.includes('operatore')) {
-      // Operatore: Vede lista incarichi, cambia stato
+    } else if (email.toLowerCase().includes('operatore')) {
       setUser({ 
         name: 'Luigi Verdi', 
         role: 'operatore', 
-        email,
+        email: email,
         municipality: 'Salerno' 
       });
     } else {
-      // Cittadino: Segnala (Tasto +), vede mappa
+      // Default: Cittadino
       setUser({ 
         name: 'Giuseppe Bianchi', 
         role: 'cittadino', 
-        email 
+        email: email 
       });
     }
   };
