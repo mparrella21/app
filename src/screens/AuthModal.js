@@ -4,7 +4,6 @@ import {
   Dimensions, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur'; // Opzionale per effetto sfocato, qui usiamo View scura
 
 const { width } = Dimensions.get('window');
 

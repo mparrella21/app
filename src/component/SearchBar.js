@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, TextInput, TouchableOpacity, StyleSheet, Keyboard, Text } from 'react-native';
+import { View, TextInput, TouchableOpacity, StyleSheet, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function SearchBar() {
@@ -30,7 +30,7 @@ const styles = StyleSheet.create({
   container: { width: '100%' },
   inputBox: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#F9FAFB', // Input chiaro su header scuro
+    backgroundColor: '#F9FAFB', // Input chiaro per contrastare l'header scuro
     borderRadius: 6,
     paddingHorizontal: 10, height: 40,
   },

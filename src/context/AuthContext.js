@@ -8,7 +8,7 @@ export const AuthProvider = ({ children }) => {
   const login = (email) => {
     // LOGICA RUOLI BASATA SUI REQUISITI DI PROGETTO
     if (email.includes('admin') || email.includes('resp')) {
-      // Responsabile della Manutenzione [cite: 42]
+      // Responsabile della Manutenzione: Vede Dashboard, gestisce ticket
       setUser({ 
         name: 'Mario Rossi', 
         role: 'responsabile', 
@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
         municipality: 'Salerno' 
       });
     } else if (email.includes('operatore')) {
-      // Operatore [cite: 46]
+      // Operatore: Vede lista incarichi, cambia stato
       setUser({ 
         name: 'Luigi Verdi', 
         role: 'operatore', 
@@ -24,7 +24,7 @@ export const AuthProvider = ({ children }) => {
         municipality: 'Salerno' 
       });
     } else {
-      // Cittadino [cite: 18]
+      // Cittadino: Segnala (Tasto +), vede mappa
       setUser({ 
         name: 'Giuseppe Bianchi', 
         role: 'cittadino', 

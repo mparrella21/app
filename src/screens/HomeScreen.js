@@ -9,12 +9,13 @@ import SearchBar from '../component/SearchBar';
 // IMPORTA IL TUO FILE GEOJSON DEI CONFINI
 import ItalyBoundary from '../assets/data/limits_IT_simplified.json'; 
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
-// DATI MOCK PER DIMOSTRAZIONE
+// DATI MOCK PER DIMOSTRAZIONE (Simulazione DB)
 const MOCK_TICKETS = [
-  { id: 1, title: 'Buca pericolosa', category: 'Strade', lat: 40.682, lon: 14.768, status: 'Aperto' },
-  { id: 2, title: 'Lampione rotto', category: 'Illuminazione', lat: 40.679, lon: 14.765, status: 'In Corso' },
+  { id: 1, title: 'Buca pericolosa', category: 'Strade', description: 'Via Roma dissestata', lat: 40.682, lon: 14.768, status: 'Aperto', author: 'Giuseppe B.', date: '29/01/2026' },
+  { id: 2, title: 'Lampione rotto', category: 'Illuminazione', description: 'Buio totale', lat: 40.679, lon: 14.765, status: 'In Corso', author: 'Anna N.', date: '28/01/2026' },
+  { id: 3, title: 'Rifiuti abbandonati', category: 'Ambiente', description: 'Sacchetti in strada', lat: 40.685, lon: 14.770, status: 'Risolto', author: 'Mario R.', date: '25/01/2026' },
 ];
 
 export default function HomeScreen({ navigation }) {
@@ -29,53 +30,56 @@ export default function HomeScreen({ navigation }) {
     });
   };
 
-  // --- VISTE PER RUOLO ---
+  // --- PANNELLI PER RUOLI TECNICI ---
 
-  // Dashboard Responsabile 
+  // Dashboard Responsabile (Statistiche e gestione)
   const renderManagerPanel = () => (
     <View style={styles.rolePanel}>
         <Text style={styles.panelTitle}>Dashboard Gestione</Text>
         <View style={styles.statGrid}>
-            <View style={styles.statCard}>
-                <Text style={styles.statNum}>12</Text>
-                <Text style={styles.statLabel}>Aperti</Text>
+            <View style={[styles.statCard, {borderLeftColor: '#D32F2F'}]}>
+                <Text style={styles.statNum}>{MOCK_TICKETS.filter(t => t.status === 'Aperto').length}</Text>
+                <Text style={styles.statLabel}>Da Assegnare</Text>
             </View>
-            <View style={styles.statCard}>
-                <Text style={styles.statNum}>5</Text>
+            <View style={[styles.statCard, {borderLeftColor: 'orange'}]}>
+                <Text style={styles.statNum}>{MOCK_TICKETS.filter(t => t.status === 'In Corso').length}</Text>
                 <Text style={styles.statLabel}>In Corso</Text>
             </View>
-            <View style={styles.statCard}>
-                <Text style={styles.statNum}>8</Text>
+            <View style={[styles.statCard, {borderLeftColor: 'green'}]}>
+                <Text style={styles.statNum}>{MOCK_TICKETS.filter(t => t.status === 'Risolto').length}</Text>
                 <Text style={styles.statLabel}>Risolti</Text>
             </View>
         </View>
-        <Text style={styles.subHeader}>Ultimi Ticket</Text>
+        <Text style={styles.subHeader}>Ultimi Arrivi</Text>
         <ScrollView style={{height: 120}}>
             {MOCK_TICKETS.map(t => (
-                <View key={t.id} style={styles.listItem}>
-                    <Text style={{fontWeight:'bold'}}>{t.title}</Text>
-                    <Text style={{fontSize:10, color:'orange'}}>{t.status}</Text>
-                </View>
+                <TouchableOpacity key={t.id} style={styles.listItem} onPress={() => navigation.navigate('TicketDetail', {ticket: t})}>
+                    <Text style={{fontWeight:'bold', color:'#333'}}>{t.title}</Text>
+                    <Text style={{fontSize:10, color:'#666'}}>{t.status.toUpperCase()}</Text>
+                </TouchableOpacity>
             ))}
         </ScrollView>
     </View>
   );
 
-  // Lista Task Operatore 
+  // Lista Task Operatore
   const renderOperatorPanel = () => (
     <View style={styles.rolePanel}>
         <Text style={styles.panelTitle}>I Miei Incarichi</Text>
         <ScrollView>
-            {MOCK_TICKETS.map(t => (
+            {MOCK_TICKETS.filter(t => t.status === 'In Corso').map(t => (
                 <TouchableOpacity key={t.id} style={styles.taskItem} onPress={() => navigation.navigate('TicketDetail', {ticket: t})}>
-                    <Ionicons name="construct" size={20} color="#467599" />
+                    <Ionicons name="construct" size={24} color="orange" />
                     <View style={{marginLeft: 10, flex: 1}}>
-                        <Text style={{fontWeight:'bold'}}>{t.title}</Text>
-                        <Text style={{fontSize:12, color:'#666'}}>Assegnato: Oggi</Text>
+                        <Text style={{fontWeight:'bold', color: '#1F2937'}}>{t.title}</Text>
+                        <Text style={{fontSize:12, color:'#666'}}>Assegnato: {t.date}</Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={20} color="#ccc" />
+                    <View style={styles.badge}><Text style={styles.badgeText}>IN CARICO</Text></View>
                 </TouchableOpacity>
             ))}
+             {MOCK_TICKETS.filter(t => t.status === 'In Corso').length === 0 && (
+                <Text style={{color:'#999', textAlign:'center', marginTop:20}}>Nessun incarico attivo.</Text>
+            )}
         </ScrollView>
     </View>
   );
@@ -115,12 +119,12 @@ export default function HomeScreen({ navigation }) {
                     <Text style={styles.userRole}>{user.role.toUpperCase()}</Text>
                 </View>
                 <View style={styles.divider}/>
-                <TouchableOpacity style={styles.menuItem} onPress={() => { navigation.navigate('UserDashboard'); setMenuVisible(false); }}>
-                    <Ionicons name="person-circle-outline" size={18} color="#333" />
+                <TouchableOpacity style={styles.menuItem} onPress={() => alert("Area Personale")}>
+                    <Ionicons name="person-circle-outline" size={20} color="#333" />
                     <Text style={styles.menuText}>Area Personale</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.menuItem} onPress={() => { logout(); setMenuVisible(false); }}>
-                    <Ionicons name="log-out-outline" size={18} color="#d32f2f" />
+                    <Ionicons name="log-out-outline" size={20} color="#d32f2f" />
                     <Text style={[styles.menuText, {color: '#d32f2f'}]}>Logout</Text>
                 </TouchableOpacity>
             </View>
@@ -150,8 +154,8 @@ export default function HomeScreen({ navigation }) {
                 coordinate={{ latitude: t.lat, longitude: t.lon }}
                 onCalloutPress={() => navigation.navigate('TicketDetail', { ticket: t })}
               >
-                <View style={styles.markerCircle}>
-                  <Ionicons name="alert" size={16} color="white" />
+                <View style={[styles.markerCircle, {backgroundColor: t.status === 'Risolto' ? '#4CAF50' : (t.status === 'In Corso' ? 'orange' : '#D32F2F')}]}>
+                  <Ionicons name={t.status === 'Risolto' ? "checkmark" : (t.status === 'In Corso' ? "construct" : "alert")} size={16} color="white" />
                 </View>
               </Marker>
             ))}
@@ -159,21 +163,21 @@ export default function HomeScreen({ navigation }) {
 
           {/* 3. INTERFACCIA FLOTTANTE */}
           
-          {/* Zoom Controls */}
+          {/* Zoom Controls (Visibili sempre o solo cittadino, a scelta. Qui per tutti) */}
           <View style={styles.zoomControls}>
               <TouchableOpacity style={styles.zoomBtn} onPress={() => handleZoom(1)}><Ionicons name="add" size={24} color="#333" /></TouchableOpacity>
               <View style={styles.zoomDivider} />
               <TouchableOpacity style={styles.zoomBtn} onPress={() => handleZoom(-1)}><Ionicons name="remove" size={24} color="#333" /></TouchableOpacity>
           </View>
 
-          {/* LOGICA FAB (+): Solo per Cittadino  */}
+          {/* LOGICA FAB (+): Solo per Cittadino o Non Loggato */}
           {(!user || user.role === 'cittadino') && (
               <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate(user ? 'CreateTicket' : 'AuthModal')}>
                   <Ionicons name="add" size={32} color="white" />
               </TouchableOpacity>
           )}
 
-          {/* Pannelli per Ruoli Tecnici */}
+          {/* Pannelli Specifici per Ruoli Tecnici */}
           {user?.role === 'responsabile' && renderManagerPanel()}
           {user?.role === 'operatore' && renderOperatorPanel()}
 
@@ -197,8 +201,8 @@ const styles = StyleSheet.create({
   loginLinkText: { color: 'white', fontWeight: 'bold', fontSize: 12 },
 
   // Dropdown
-  dropdownMenu: { position: 'absolute', top: 60, right: 10, backgroundColor: 'white', borderRadius: 8, elevation: 10, minWidth: 160, zIndex: 20 },
-  dropdownHeader: { padding: 12, backgroundColor: '#F3F4F6', borderTopLeftRadius: 8, borderTopRightRadius: 8 },
+  dropdownMenu: { position: 'absolute', top: 60, right: 10, backgroundColor: 'white', borderRadius: 8, elevation: 10, minWidth: 180, zIndex: 20 },
+  dropdownHeader: { padding: 15, backgroundColor: '#F3F4F6', borderTopLeftRadius: 8, borderTopRightRadius: 8 },
   userName: { fontWeight: 'bold', color: '#1F2937' },
   userRole: { fontSize: 10, color: '#666' },
   divider: { height: 1, backgroundColor: '#eee' },
@@ -208,36 +212,28 @@ const styles = StyleSheet.create({
   // Mappa
   mapContainer: { flex: 1 },
   map: { width: '100%', height: '100%' },
-  markerCircle: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#D32F2F', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' },
+  markerCircle: { width: 30, height: 30, borderRadius: 15, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white', elevation: 3 },
 
   // Controlli UI
   zoomControls: { position: 'absolute', right: 15, top: 20, backgroundColor: 'white', borderRadius: 8, elevation: 5 },
   zoomBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   zoomDivider: { height: 1, backgroundColor: '#eee', width: '80%', alignSelf: 'center' },
-  fab: {
-    position: 'absolute',
-    bottom: 30, // In basso a destra
-    right: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#1D2D44', // Blu scuro del brand
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    zIndex: 15, // Sopra la mappa
-  },
-  // Pannelli Ruoli
-  rolePanel: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '35%', backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, elevation: 15 },
-  panelTitle: { fontSize: 18, fontWeight: 'bold', color: '#1F2937', marginBottom: 10 },
-  statGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
-  statCard: { flex: 1, backgroundColor: '#F9FAFB', padding: 10, borderRadius: 8, alignItems: 'center', marginHorizontal: 5 },
-  statNum: { fontSize: 18, fontWeight: 'bold', color: '#467599' },
-  statLabel: { fontSize: 10, color: '#666' },
-  listItem: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  taskItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee' }
+  fab: { position: 'absolute', bottom: 30, right: 20, width: 60, height: 60, borderRadius: 30, backgroundColor: '#D32F2F', justifyContent: 'center', alignItems: 'center', elevation: 8 },
+
+  // Pannelli Ruoli (Dashboard / Task List)
+  rolePanel: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '40%', backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, elevation: 15, shadowColor: '#000', shadowOpacity: 0.2 },
+  panelTitle: { fontSize: 18, fontWeight: 'bold', color: '#1F2937', marginBottom: 15 },
+  
+  // Stats Responsabile
+  statGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  statCard: { flex: 1, backgroundColor: '#F9FAFB', padding: 10, borderRadius: 8, alignItems: 'center', marginHorizontal: 5, borderLeftWidth: 4, elevation: 2 },
+  statNum: { fontSize: 20, fontWeight: 'bold', color: '#1F2937' },
+  statLabel: { fontSize: 10, color: '#666', textTransform: 'uppercase' },
+  subHeader: { fontSize: 14, fontWeight: 'bold', color: '#666', marginBottom: 10 },
+  listItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee', flexDirection: 'row', justifyContent: 'space-between' },
+
+  // Task Operatore
+  taskItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  badge: { backgroundColor: '#E0F2F1', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  badgeText: { fontSize: 10, color: '#00695C', fontWeight: 'bold' }
 });

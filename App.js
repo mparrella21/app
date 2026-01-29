@@ -1,14 +1,15 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AuthProvider } from './src/context/AuthContext';
+import { StatusBar } from 'expo-status-bar';
+import { AuthProvider } from './src/context/AuthContext'; 
 
-// Import Schermate
+// IMPORTAZIONE SCHERMATE (Corrispondenti ai file creati)
 import HomeScreen from './src/screens/HomeScreen';
-import LoginScreen from './src/screens/LoginScreen';
-import UserDashboardScreen from './src/screens/UserDashboardScreen'; // La dashboard che abbiamo creato
-import CreateTicketScreen from './src/screens/CreateTicketScreen'; // Il file che avevi già
+import AuthModal from './src/screens/AuthModal';
+import CreateTicketScreen from './src/screens/CreateTicketScreen';
+import TicketDetailScreen from './src/screens/TicketDetailScreen';
 
 const Stack = createStackNavigator();
 
@@ -17,26 +18,50 @@ export default function App() {
     <SafeAreaProvider>
       <AuthProvider>
         <NavigationContainer>
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {/* Status Bar scura per matchare l'header dell'app */}
+          <StatusBar style="light" backgroundColor="#1F2937" />
+          
+          <Stack.Navigator
+            initialRouteName="Home"
+            screenOptions={{
+              headerShown: false,
+              // Fondamentale per la trasparenza della modale di login
+              cardStyle: { backgroundColor: 'transparent' }, 
+            }}
+          >
             
-            {/* Home Page Base */}
+            {/* 1. HOME (Mappa + Dashboards + Logic) */}
             <Stack.Screen name="Home" component={HomeScreen} />
             
-            {/* Schermate Interne */}
-            <Stack.Screen name="UserDashboard" component={UserDashboardScreen} />
-            <Stack.Screen name="CreateTicket" component={CreateTicketScreen} />
-
-            {/* MODALE DI LOGIN (Rinominata 'AuthModal' per farla funzionare con il tuo codice) */}
+            {/* 2. AUTH MODAL (Popup Trasparente) */}
             <Stack.Screen 
-              name="AuthModal"  // <--- IMPORTANTE: Si chiama AuthModal ora!
-              component={LoginScreen} 
+              name="AuthModal" 
+              component={AuthModal} 
               options={{
-                presentation: 'transparentModal', // Sfondo trasparente
-                cardStyle: { backgroundColor: 'transparent' }, // Rimuove il bianco
+                presentation: 'transparentModal',
                 animationEnabled: true,
+                cardStyleInterpolator: CardStyleInterpolators.forFadeFromBottomAndroid,
               }}
             />
-            
+
+            {/* 3. CREA TICKET (Slide dal basso) */}
+            <Stack.Screen 
+              name="CreateTicket" 
+              component={CreateTicketScreen} 
+              options={{
+                presentation: 'modal', 
+              }}
+            />
+
+            {/* 4. DETTAGLIO TICKET (Slide laterale classico) */}
+            <Stack.Screen 
+              name="TicketDetail" 
+              component={TicketDetailScreen} 
+              options={{
+                presentation: 'card',
+              }}
+            />
+
           </Stack.Navigator>
         </NavigationContainer>
       </AuthProvider>
