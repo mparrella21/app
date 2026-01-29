@@ -1,0 +1,28 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Italia" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-10.0, 35.0], [20.0, 35.0], [20.0, 47.0], [-10.0, 47.0], [-10.0, 35.0]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Salerno" },
+      "geometry": { "type": "Polygon", "coordinates": [[[14.73,40.67],[14.73,40.70],[14.80,40.70],[14.80,40.67],[14.73,40.67]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Napoli" },
+      "geometry": { "type": "Polygon", "coordinates": [[[14.24,40.82],[14.24,40.85],[14.32,40.85],[14.32,40.82],[14.24,40.82]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Salento" },
+      "geometry": { "type": "Polygon", "coordinates": [[[16.00,40.00],[16.00,40.10],[16.10,40.10],[16.10,40.00],[16.00,40.00]]] }
+    }
+  ]
+}
