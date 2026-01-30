@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-// Se hai un file di colori globali, lo usiamo, altrimenti usiamo i colori hardcoded
 import { COLORS } from '../styles/global'; 
 
 export default function ProfileScreen({ navigation }) {
@@ -19,24 +18,27 @@ export default function ProfileScreen({ navigation }) {
                 text: "Esci", 
                 style: "destructive", 
                 onPress: () => {
+                    // 1. Esegui il logout logico
                     logout();
-                    // Resetta la navigazione per impedire di tornare indietro col tasto fisico
-                    navigation.reset({
-                        index: 0,
-                        routes: [{ name: 'Auth' }], // O 'Home' a seconda di come hai chiamato lo stack iniziale
-                    });
+                    
+                    // 2. Resetta la navigazione verso la HOME (dove c'è il login)
+                    // Non usare 'Auth' perché quella rotta non esiste nello stack principale
+                    setTimeout(() => {
+                        navigation.reset({
+                            index: 0,
+                            routes: [{ name: 'Home' }], 
+                        });
+                    }, 100);
                 }
             }
         ]
     );
   };
 
-  // Se l'utente non è caricato, non mostrare nulla per evitare errori
   if (!user) return null;
 
   return (
     <View style={styles.container}>
-      {/* Header colorato */}
       <SafeAreaView style={styles.header} edges={['top']}>
         <View style={styles.headerContent}>
             <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -62,12 +64,11 @@ export default function ProfileScreen({ navigation }) {
             </Text>
         </View>
 
-        {/* --- SEZIONE MENU IN BASE AL RUOLO --- */}
-        
-        {/* 1. CITTADINO */}
+        {/* --- MENU CITTADINO --- */}
         {user.role === 'cittadino' && (
             <View style={styles.menuGroup}>
                 <Text style={styles.menuTitle}>Le tue attività</Text>
+                {/* FIX: Naviga verso UserTickets, non di nuovo verso Profile */}
                 <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('UserTickets')}>
                     <View style={[styles.iconBox, { backgroundColor: '#467599' }]}>
                         <Ionicons name="list" size={24} color="white" />
@@ -78,7 +79,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
         )}
 
-        {/* 2. OPERATORE */}
+        {/* --- MENU OPERATORE --- */}
         {user.role === 'operatore' && (
             <View style={styles.menuGroup}>
                 <Text style={styles.menuTitle}>Gestione Operativa</Text>
@@ -92,11 +93,10 @@ export default function ProfileScreen({ navigation }) {
             </View>
         )}
 
-        {/* 3. RESPONSABILE / ADMIN */}
+        {/* --- MENU RESPONSABILE --- */}
         {(user.role === 'responsabile' || user.role === 'admin') && (
             <View style={styles.menuGroup}>
                 <Text style={styles.menuTitle}>Amministrazione</Text>
-                
                 <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('ResponsibleTickets')}>
                     <View style={[styles.iconBox, { backgroundColor: '#10B981' }]}>
                         <Ionicons name="folder-open" size={24} color="white" />
@@ -117,7 +117,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
         )}
 
-        {/* DETTAGLI ACCOUNT (VISIBILE A TUTTI) */}
+        {/* DETTAGLI ACCOUNT */}
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dettagli Account</Text>
             <View style={styles.infoRow}>

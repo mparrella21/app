@@ -1,21 +1,34 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, Platform } from 'react-native';
+import MapView, { Marker, Geojson } from 'react-native-maps';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
+
 import { postTicket } from '../services/ticketService';
 import { OFFLINE_MODE } from '../services/config';
 import { addTicket as addMockTicket } from '../services/mockTicketStore';
-import * as ImagePicker from 'expo-image-picker';
-import { Image, ScrollView } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { getAddressFromCoordinates, searchCity } from '../services/nominatim';
+import SearchBar from '../component/SearchBar';
+
+// IMPORTA I CONFINI ITALIANI (File semplificato)
+// Assicurati che il file limits_IT_simplified.json sia presente in src/assets/data/
+import italianBoundaries from '../assets/data/limits_IT_simplified.json';
 
 export default function MapScreen({ navigation }) {
+  const mapRef = useRef(null);
   const [region, setRegion] = useState(null);
   const [marker, setMarker] = useState(null);
+  const [address, setAddress] = useState('');
+  
+  // Form State
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [loading, setLoading] = useState(false);
   const [images, setImages] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const { user } = useAuth();
 
   useEffect(() => {
     (async () => {
@@ -29,98 +42,183 @@ export default function MapScreen({ navigation }) {
       setRegion({
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05
       });
     })();
   }, []);
 
-  const handleLongPress = (e) => {
+  const handleLongPress = async (e) => {
     const { latitude, longitude } = e.nativeEvent.coordinate;
     setMarker({ latitude, longitude });
+    
+    // Reverse Geocoding
+    const addr = await getAddressFromCoordinates(latitude, longitude);
+    setAddress(addr);
+  };
+
+  const handleSearchLocation = async (query) => {
+    const coords = await searchCity(query);
+    if (coords) {
+        const newRegion = {
+            latitude: coords.lat,
+            longitude: coords.lon,
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+        };
+        setRegion(newRegion);
+        mapRef.current?.animateToRegion(newRegion, 1000);
+    } else {
+        Alert.alert("Non trovato", "Luogo non trovato.");
+    }
   };
 
   const pickImage = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsMultipleSelection: false, quality: 0.6 });
+    // FIX WARNING: Usa ImagePicker.MediaType.Images invece di MediaTypeOptions
+    const res = await ImagePicker.launchImageLibraryAsync({ 
+      mediaTypes: ImagePicker.MediaType.Images, 
+      allowsMultipleSelection: false, 
+      quality: 0.5 
+    });
     if (!res.canceled && res.assets && res.assets.length) {
       setImages(prev => [...prev, res.assets[0].uri]);
     }
   };
 
   const takePhoto = async () => {
-    const res = await ImagePicker.launchCameraAsync({ quality: 0.6 });
+    const res = await ImagePicker.launchCameraAsync({ 
+      mediaTypes: ImagePicker.MediaType.Images,
+      quality: 0.5 
+    });
     if (!res.canceled && res.assets && res.assets.length) {
       setImages(prev => [...prev, res.assets[0].uri]);
     }
   };
 
   const removeImage = (uri) => {
-    Alert.alert('Rimuovi immagine', 'Vuoi rimuovere questa immagine?', [
-      { text: 'Annulla', style: 'cancel' },
-      { text: 'Rimuovi', style: 'destructive', onPress: () => setImages(prev => prev.filter(u => u !== uri)) }
-    ]);
+    setImages(prev => prev.filter(u => u !== uri));
   };
-
-  const { user } = useAuth();
 
   const handleSubmit = async () => {
     if (!marker || !title) {
-      Alert.alert('Dati mancanti', 'Seleziona un punto e inserisci un titolo');
+      Alert.alert('Attenzione', 'Seleziona un punto sulla mappa (tieni premuto) e inserisci un titolo.');
       return;
     }
 
     setLoading(true);
     const ticketUser = user?.name || 'Ospite';
+    const payload = { 
+        title, 
+        description, 
+        lat: marker.latitude, 
+        lon: marker.longitude, 
+        status: 'Aperto', 
+        user: ticketUser, 
+        address,
+        images 
+    };
 
-    if (OFFLINE_MODE) {
-      const newT = await addMockTicket({ title, description, lat: marker.latitude, lon: marker.longitude, status: 'open', user: ticketUser, images });
-      setLoading(false);
-      if (newT) {
-        Alert.alert('Creato', 'Segnalazione creata (locale)');
-        navigation.navigate('Home');
-      } else {
-        Alert.alert('Errore', 'Impossibile creare la segnalazione locale');
-      }
-      return;
-    }
-
-    const success = await postTicket({ title, description, lat: marker.latitude, lon: marker.longitude });
-    setLoading(false);
-
-    if (success) {
-      Alert.alert('Inviato', 'Segnalazione inviata con successo');
-      navigation.goBack();
-    } else {
-      Alert.alert('Errore', 'Impossibile inviare la segnalazione');
+    try {
+        if (OFFLINE_MODE) {
+            const newT = await addMockTicket(payload);
+            if (newT) {
+                Alert.alert('Successo', 'Segnalazione creata (Locale)');
+                setTitle(''); setDescription(''); setImages([]); setMarker(null);
+            } else {
+                Alert.alert('Errore', 'Errore salvataggio locale');
+            }
+        } else {
+            const success = await postTicket(payload);
+            if (success) {
+                Alert.alert('Inviato', 'Segnalazione inviata al server');
+                setTitle(''); setDescription(''); setImages([]); setMarker(null);
+            } else {
+                Alert.alert('Errore', 'Impossibile contattare il server');
+            }
+        }
+    } catch (e) {
+        Alert.alert('Errore', e.message);
+    } finally {
+        setLoading(false);
     }
   };
 
-  if (!region) return <View style={{flex:1,justifyContent:'center',alignItems:'center'}}><ActivityIndicator size="large" /></View>;
+  if (!region) return <View style={styles.loader}><ActivityIndicator size="large" color="#467599" /></View>;
 
   return (
     <View style={styles.container}>
-      <MapView style={styles.map} initialRegion={region} onLongPress={handleLongPress}>
-        {marker && <Marker coordinate={marker} />}
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+         <SearchBar onSearch={handleSearchLocation} />
+      </View>
+
+      <MapView 
+        ref={mapRef}
+        style={styles.map} 
+        initialRegion={region} 
+        onLongPress={handleLongPress}
+        showsUserLocation={true}
+        provider={Platform.OS === 'android' ? 'google' : undefined}
+      >
+        {/* Confini Italia */}
+        {italianBoundaries && (
+            <Geojson 
+                geojson={italianBoundaries} 
+                strokeColor="#467599" 
+                fillColor="rgba(70, 117, 153, 0.1)" 
+                strokeWidth={2}
+            />
+        )}
+
+        {marker && <Marker coordinate={marker} pinColor="#D32F2F" />}
       </MapView>
 
-      <View style={styles.form}>
-        <TextInput style={styles.input} placeholder="Titolo" value={title} onChangeText={setTitle} />
-        <TextInput style={[styles.input, { height: 80 }]} placeholder="Descrizione" value={description} onChangeText={setDescription} multiline />
+      {/* Form Bottom Sheet */}
+      <View style={styles.formCard}>
+        <Text style={styles.formTitle}>Nuova Segnalazione</Text>
+        
+        {address ? <Text style={styles.addressText}>{address}</Text> : null}
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-          <TouchableOpacity style={styles.photoBtn} onPress={pickImage}><Text style={{color:'#fff'}}>Scegli</Text></TouchableOpacity>
-          <TouchableOpacity style={[styles.photoBtn, { marginLeft: 8 }]} onPress={takePhoto}><Text style={{color:'#fff'}}>Scatta</Text></TouchableOpacity>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginLeft:10}}>
-            {images.map((uri, i) => (
-              <TouchableOpacity key={i} onPress={() => removeImage(uri)}>
-                <Image source={{ uri }} style={{ width: 64, height: 64, borderRadius: 8, marginRight: 8 }} />
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+        <TextInput 
+            style={styles.input} 
+            placeholder="Titolo (es. Buca profonda)" 
+            value={title} 
+            onChangeText={setTitle} 
+        />
+        <TextInput 
+            style={[styles.input, { height: 60 }]} 
+            placeholder="Descrizione dettagliata..." 
+            value={description} 
+            onChangeText={setDescription} 
+            multiline 
+        />
+
+        <View style={styles.mediaRow}>
+          <TouchableOpacity style={styles.mediaBtn} onPress={pickImage}>
+            <Ionicons name="images" size={20} color="white" />
+            <Text style={styles.mediaBtnText}>Galleria</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.mediaBtn, { backgroundColor: '#467599' }]} onPress={takePhoto}>
+            <Ionicons name="camera" size={20} color="white" />
+            <Text style={styles.mediaBtnText}>Foto</Text>
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.button} onPress={handleSubmit} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Invia segnalazione</Text>}
+        {images.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imgScroll}>
+            {images.map((uri, i) => (
+              <View key={i} style={styles.thumbContainer}>
+                  <Image source={{ uri }} style={styles.thumbnail} />
+                  <TouchableOpacity style={styles.removeIcon} onPress={() => removeImage(uri)}>
+                    <Ionicons name="close-circle" size={20} color="red" />
+                  </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
+        <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>INVIA SEGNALAZIONE</Text>}
         </TouchableOpacity>
       </View>
     </View>
@@ -129,9 +227,34 @@ export default function MapScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   map: { flex: 1 },
-  form: { padding: 12, backgroundColor: 'white' },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, marginBottom: 10 },
-  button: { backgroundColor: '#D32F2F', padding: 12, borderRadius: 8, alignItems: 'center' },
-  buttonText: { color: 'white', fontWeight: 'bold' }
+  searchContainer: {
+    position: 'absolute', top: 50, left: 10, right: 10, zIndex: 10,
+  },
+  formCard: { 
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 20, elevation: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5
+  },
+  formTitle: { fontSize: 16, fontWeight: 'bold', color: '#1F2937', marginBottom: 10 },
+  addressText: { fontSize: 12, color: '#666', marginBottom: 10, fontStyle: 'italic' },
+  input: { 
+    backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', 
+    borderRadius: 8, padding: 10, marginBottom: 10, fontSize: 14 
+  },
+  mediaRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  mediaBtn: { 
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', 
+    backgroundColor: '#1F2937', padding: 10, borderRadius: 8, marginHorizontal: 5 
+  },
+  mediaBtnText: { color: 'white', marginLeft: 5, fontWeight: '600', fontSize: 12 },
+  imgScroll: { marginBottom: 10 },
+  thumbContainer: { marginRight: 10, position: 'relative' },
+  thumbnail: { width: 60, height: 60, borderRadius: 8 },
+  removeIcon: { position: 'absolute', top: -5, right: -5, backgroundColor: 'white', borderRadius: 10 },
+  submitBtn: { 
+    backgroundColor: '#D32F2F', padding: 15, borderRadius: 10, alignItems: 'center' 
+  },
+  submitText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
 });

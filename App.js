@@ -10,7 +10,7 @@ import AuthModal from './src/screens/AuthModal';
 import CreateTicketScreen from './src/screens/CreateTicketScreen';
 import TicketDetailScreen from './src/screens/TicketDetailScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
-import UserTicketsScreen from './src/screens/UserTicketsScreen'; // <--- NUOVO IMPORT
+import UserTicketsScreen from './src/screens/UserTicketsScreen'; // IMPORT FONDAMENTALE
 
 const Stack = createStackNavigator();
 
@@ -29,7 +29,7 @@ export default function App() {
           >
             <Stack.Screen name="Home" component={HomeScreen} />
             
-            {/* AUTH */}
+            {/* AUTH MODALE */}
             <Stack.Screen 
               name="AuthModal" 
               component={AuthModal} 
@@ -40,10 +40,14 @@ export default function App() {
               }}
             />
 
-            {/* FLOW CITTADINO */}
+            {/* FLUSSO SEGNALAZIONI */}
             <Stack.Screen name="CreateTicket" component={CreateTicketScreen} options={{ presentation: 'modal' }} />
             <Stack.Screen name="TicketDetail" component={TicketDetailScreen} options={{ presentation: 'card' }} />
+            
+            {/* AREA PERSONALE */}
             <Stack.Screen name="Profile" component={ProfileScreen} options={{ presentation: 'card' }} />
+            
+            {/* SCHERMATA LE MIE SEGNALAZIONI (FONDAMENTALE PER IL LINK DAL PROFILO) */}
             <Stack.Screen name="UserTickets" component={UserTicketsScreen} options={{ presentation: 'card' }} /> 
 
           </Stack.Navigator>
