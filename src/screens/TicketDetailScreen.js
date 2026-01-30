@@ -8,33 +8,39 @@ export default function TicketDetailScreen({ route, navigation }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   
-  // Stato locale per simulare l'aggiornamento immediato nella UI
+  // Stato per lo status (inizializzato con quello del ticket)
   const [currentStatus, setCurrentStatus] = useState(ticket?.status || 'Aperto');
+  
+  // Stato per la valutazione
+  const [rating, setRating] = useState(ticket?.rating || 0);
 
   if (!ticket) return null;
 
   const isOperator = user?.role === 'operatore';
+  const isCitizen = !user || user?.role === 'cittadino'; // Assumiamo cittadino se non loggato o esplicito
+  const isResolved = currentStatus === 'Risolto';
 
+  // Gestione cambio stato (Operatore)
   const handleStatusChange = (newStatus) => {
-    Alert.alert(
-        "Conferma",
-        `Vuoi impostare lo stato a: ${newStatus}?`,
-        [
-            { text: "Annulla", style: "cancel" },
-            { 
-                text: "Conferma", 
-                onPress: () => {
-                    setLoading(true);
-                    // SIMULAZIONE CHIAMATA API
-                    setTimeout(() => {
-                        setCurrentStatus(newStatus);
-                        setLoading(false);
-                        Alert.alert("Successo", "Stato ticket aggiornato.");
-                    }, 1000);
-                }
-            }
-        ]
-    );
+    Alert.alert("Conferma", `Vuoi impostare lo stato a: ${newStatus}?`, [
+        { text: "Annulla", style: "cancel" },
+        { text: "Conferma", onPress: () => {
+            setLoading(true);
+            // SIMULAZIONE CHIAMATA API
+            setTimeout(() => {
+                setCurrentStatus(newStatus);
+                setLoading(false);
+                Alert.alert("Successo", "Stato ticket aggiornato.");
+            }, 1000);
+        }}
+    ]);
+  };
+
+  // Gestione invio feedback (Cittadino)
+  const submitRating = (val) => {
+      setRating(val);
+      Alert.alert("Grazie!", `Hai valutato l'intervento con ${val} stelle.`);
+      // Qui chiameresti l'API per salvare il rating
   };
 
   return (
@@ -53,6 +59,7 @@ export default function TicketDetailScreen({ route, navigation }) {
       <View style={styles.sheet}>
         <ScrollView contentContainerStyle={{paddingBottom: 40}}>
             
+            {/* Riga Meta: Stato e Data */}
             <View style={styles.metaRow}>
                 <View style={[styles.badge, getBadgeStyle(currentStatus)]}>
                     <Text style={styles.badgeText}>{currentStatus.toUpperCase()}</Text>
@@ -60,20 +67,44 @@ export default function TicketDetailScreen({ route, navigation }) {
                 <Text style={styles.date}>Data: {ticket.date || 'Recente'}</Text>
             </View>
 
+            {/* Titolo */}
             <Text style={styles.title}>{ticket.title}</Text>
             
+            {/* Riga Autore (RIPRISTINATA) */}
             <View style={styles.authorRow}>
                 <Ionicons name="person-circle" size={24} color="#6C757D" />
                 <Text style={styles.authorText}>Segnalato da: <Text style={{fontWeight:'bold'}}>{ticket.author || ticket.user || 'Anonimo'}</Text></Text>
             </View>
 
+            {/* SEZIONE VALUTAZIONE (SOLO SE RISOLTO) - NUOVA */}
+            {isResolved && (
+                <View style={styles.ratingContainer}>
+                    <Text style={styles.ratingTitle}>Valuta l'intervento</Text>
+                    <View style={styles.starsRow}>
+                        {[1, 2, 3, 4, 5].map((star) => (
+                            <TouchableOpacity key={star} onPress={() => isCitizen ? submitRating(star) : null} disabled={!isCitizen}>
+                                <Ionicons 
+                                    name={star <= rating ? "star" : "star-outline"} 
+                                    size={32} 
+                                    color="#F59E0B" 
+                                    style={{marginHorizontal: 4}}
+                                />
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                    <Text style={styles.ratingSub}>{rating > 0 ? "Valutazione inviata" : "Tocca le stelle per valutare"}</Text>
+                </View>
+            )}
+
             <View style={styles.divider} />
 
+            {/* Descrizione */}
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
-                <Text style={styles.bodyText}>{ticket.description || ticket.desc || "Nessuna descrizione."}</Text>
+                <Text style={styles.bodyText}>{ticket.description || ticket.desc || "Nessuna descrizione fornita."}</Text>
             </View>
 
+            {/* Indirizzo (RIPRISTINATO) */}
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>INDIRIZZO</Text>
                 <View style={styles.locBox}>
@@ -137,15 +168,24 @@ const styles = StyleSheet.create({
   date: { color: '#adb5bd', fontSize: 13 },
 
   title: { fontSize: 24, fontWeight: '800', color: '#1D2D44', marginBottom: 5 },
+  
+  // Stili Ripristinati per Autore
   authorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   authorText: { marginLeft: 8, color: '#495057', fontSize: 14 },
   
+  // Stili per Rating
+  ratingContainer: { alignItems: 'center', marginVertical: 15, padding: 10, backgroundColor: '#F3F4F6', borderRadius: 12 },
+  ratingTitle: { fontWeight: 'bold', color: '#374151', marginBottom: 5 },
+  starsRow: { flexDirection: 'row', marginBottom: 5 },
+  ratingSub: { fontSize: 12, color: '#6B7280' },
+
   divider: { height: 1, backgroundColor: '#E9ECEF', marginBottom: 20 },
   
   section: { marginBottom: 25 },
   sectionTitle: { fontSize: 12, fontWeight: 'bold', color: '#ADB5BD', marginBottom: 10, letterSpacing: 1 },
   bodyText: { fontSize: 16, color: '#212529', lineHeight: 24 },
   
+  // Stili Ripristinati per Indirizzo
   locBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F9FA', padding: 15, borderRadius: 10 },
   locText: { marginLeft: 10, fontWeight: '500', color: '#1D2D44' },
 
