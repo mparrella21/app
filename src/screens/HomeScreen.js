@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Dimensions, Text, ScrollView, StatusBar, Alert, ActivityIndicator } from 'react-native';
 import MapView, { PROVIDER_DEFAULT, Marker, Geojson } from 'react-native-maps';
-import * as Location from 'expo-location'; // Aggiunto per geolocalizzazione
+import * as Location from 'expo-location'; 
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
@@ -13,11 +13,11 @@ import ItalyBoundary from '../assets/data/limits_IT_simplified.json';
 
 const { width, height } = Dimensions.get('window');
 
-// DATI MOCK (Esempi sparsi un po' per vedere che la mappa è grande)
+// DATI MOCK 
 const MOCK_TICKETS = [
-  { id: 1, title: 'Buca pericolosa', category: 'Strade', description: 'Via Roma dissestata', lat: 40.682, lon: 14.768, status: 'Aperto', author: 'Giuseppe B.', date: '29/01/2026' }, // Salerno
-  { id: 2, title: 'Lampione rotto', category: 'Illuminazione', description: 'Buio totale', lat: 41.9028, lon: 12.4964, status: 'In Corso', author: 'Anna N.', date: '28/01/2026' }, // Roma
-  { id: 3, title: 'Rifiuti abbandonati', category: 'Ambiente', description: 'Sacchetti in strada', lat: 45.4642, lon: 9.1900, status: 'Risolto', author: 'Luca S.', date: '27/01/2026' }, // Milano
+  { id: 1, title: 'Buca pericolosa', category: 'Strade', description: 'Via Roma dissestata', lat: 40.682, lon: 14.768, status: 'Aperto', author: 'Giuseppe B.', date: '29/01/2026' }, 
+  { id: 2, title: 'Lampione rotto', category: 'Illuminazione', description: 'Buio totale', lat: 41.9028, lon: 12.4964, status: 'In Corso', author: 'Anna N.', date: '28/01/2026' }, 
+  { id: 3, title: 'Rifiuti abbandonati', category: 'Ambiente', description: 'Sacchetti in strada', lat: 45.4642, lon: 9.1900, status: 'Risolto', author: 'Luca S.', date: '27/01/2026' }, 
 ];
 
 export default function HomeScreen({ navigation }) {
@@ -25,11 +25,11 @@ export default function HomeScreen({ navigation }) {
   const [menuVisible, setMenuVisible] = useState(false);
   const mapRef = useRef(null);
   
-  // Stato iniziale centrato sull'Italia (Roma)
+  // Stato iniziale centrato sull'Italia
   const [region, setRegion] = useState({
       latitude: 41.8719,
       longitude: 12.5674,
-      latitudeDelta: 6, // Zoom ampio per vedere l'Italia
+      latitudeDelta: 6, 
       longitudeDelta: 6,
   });
 
@@ -140,6 +140,17 @@ export default function HomeScreen({ navigation }) {
                <SearchBar onSearch={handleSearch} />
             </View>
 
+            {/* --- CAMPANELLA NOTIFICHE (Visibile solo se loggato) --- */}
+            {user && (
+                <TouchableOpacity 
+                    style={styles.notifBtn} 
+                    onPress={() => navigation.navigate('Notifications')}
+                >
+                    <Ionicons name="notifications-outline" size={24} color="white" />
+                    <View style={styles.badgeDot} />
+                </TouchableOpacity>
+            )}
+
             <View style={styles.userContainer}>
                 {user ? (
                     <TouchableOpacity style={styles.avatarBtn} onPress={() => setMenuVisible(!menuVisible)}>
@@ -166,7 +177,7 @@ export default function HomeScreen({ navigation }) {
                     style={styles.menuItem} 
                     onPress={() => { 
                         setMenuVisible(false);
-                        navigation.navigate('Profile');
+                        navigation.navigate('Profile'); // O 'AreaPersonale' se preferisci
                     }}
                 >
                     <Ionicons name="person-circle-outline" size={20} color="#333" />
@@ -243,6 +254,11 @@ const styles = StyleSheet.create({
   navBarContent: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12 },
   searchContainer: { flex: 1, marginRight: 15 },
   userContainer: { justifyContent: 'center' }, 
+  
+  // STILI PER LA NUOVA NOTIFICA
+  notifBtn: { marginRight: 15, padding: 5, position: 'relative' },
+  badgeDot: { position: 'absolute', top: 5, right: 5, width: 8, height: 8, borderRadius: 4, backgroundColor: '#C06E52', borderWidth: 1, borderColor: '#1F2937' },
+
   avatarBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#374151', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#4B5563' },
   avatarText: { color: 'white', fontWeight: 'bold' },
   loginLinkBtn: { backgroundColor: '#374151', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6 },
