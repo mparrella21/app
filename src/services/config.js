@@ -1,5 +1,4 @@
-// Config for API base URL - change if your server uses a different host/port
-export const API_BASE = 'http://192.168.72.107:32413/api';
-
-// Toggle offline/mock mode for development (no backend calls)
-export const OFFLINE_MODE = true;
+// Assicurati che l'indirizzo punti al backend corretto (probabilmente Code Node)
+// Se il backend PHP è su una di quelle VM, metti l'IP corretto.
+export const API_BASE = "http://192.168.72.107/api"; 
+export const OFFLINE_MODE = false; // Metti false per provare le chiamate vere

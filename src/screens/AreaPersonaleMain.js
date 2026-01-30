@@ -6,6 +6,7 @@ import ProfileScreen from './ProfileScreen';
 import CitizenTicketsScreen from './CitizenTicketsScreen';
 import OperatorTicketsScreen from './OperatorTicketsScreen';
 import ResponsibleTicketsScreen from './ResponsibleTicketsScreen';
+import ManageOperatorsScreen from './ManageOperatorsScreen'; // <--- NUOVO IMPORT
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -14,16 +15,37 @@ export default function AreaPersonaleMain({ navigation }) {
   const { user, logout } = useAuth();
   const { width } = useWindowDimensions();
   const isMobile = width < 700;
+  const userRole = (user?.role || '').toLowerCase();
 
   const renderContent = () => {
     switch(active) {
       case 'profile': return <ProfileScreen />;
       case 'mytickets': return <CitizenTicketsScreen navigation={navigation} />;
       case 'operator': return <OperatorTicketsScreen navigation={navigation} />;
-      case 'responsible': return <ResponsibleTicketsScreen navigation={navigation} />;
+      case 'responsible_tickets': return <ResponsibleTicketsScreen navigation={navigation} />;
+      case 'responsible_users': return <ManageOperatorsScreen navigation={navigation} />; // <--- NUOVO CASE
       default: return <ProfileScreen />;
     }
   }
+
+  // Helper per renderizzare i bottoni del menu
+  const MenuButton = ({ id, label, icon, mobile }) => {
+    const isActive = active === id;
+    if (mobile) {
+      return (
+        <TouchableOpacity style={[styles.tabPill, isActive && styles.tabActive]} onPress={() => setActive(id)}>
+          <Ionicons name={icon} size={16} color={isActive? '#fff' : '#234'} />
+          <Text style={[styles.tabText, isActive && styles.tabTextActive]}>{label}</Text>
+        </TouchableOpacity>
+      );
+    }
+    return (
+      <TouchableOpacity style={[styles.navLink, isActive && styles.active]} onPress={() => setActive(id)}>
+        <Ionicons name={icon} size={18} color={isActive ? '#fff' : '#ccc'} />
+        <Text style={[styles.navText, isActive && styles.activeText]}>{label}</Text>
+      </TouchableOpacity>
+    );
+  };
 
   if (isMobile) {
     // Mobile: top horizontal nav
@@ -31,28 +53,21 @@ export default function AreaPersonaleMain({ navigation }) {
       <View style={{flex:1, backgroundColor:COLORS.bg}}>
         <View style={styles.topbarMobile}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:12}}>
-            <TouchableOpacity style={[styles.tabPill, active==='profile' && styles.tabActive]} onPress={() => setActive('profile')}>
-              <Ionicons name="person" size={16} color={active==='profile'? '#fff' : '#234'} />
-              <Text style={[styles.tabText, active==='profile' && styles.tabTextActive]}>Profilo</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.tabPill, active==='mytickets' && styles.tabActive]} onPress={() => setActive('mytickets')}>
-              <Ionicons name="list" size={16} color={active==='mytickets'? '#fff' : '#234'} />
-              <Text style={[styles.tabText, active==='mytickets' && styles.tabTextActive]}>Le mie segnalazioni</Text>
-            </TouchableOpacity>
-
-            { (user?.role || '').toLowerCase() === 'operatore' && (
-              <TouchableOpacity style={[styles.tabPill, active==='operator' && styles.tabActive]} onPress={() => setActive('operator')}>
-                <Ionicons name="hammer" size={16} color={active==='operator'? '#fff' : '#234'} />
-                <Text style={[styles.tabText, active==='operator' && styles.tabTextActive]}>Operatori</Text>
-              </TouchableOpacity>
+            <MenuButton id="profile" label="Profilo" icon="person" mobile={true} />
+            
+            {userRole === 'cittadino' && (
+               <MenuButton id="mytickets" label="Le mie segnalazioni" icon="list" mobile={true} />
             )}
 
-            { (user?.role || '').toLowerCase() === 'responsabile' && (
-              <TouchableOpacity style={[styles.tabPill, active==='responsible' && styles.tabActive]} onPress={() => setActive('responsible')}>
-                <Ionicons name="people" size={16} color={active==='responsible'? '#fff' : '#234'} />
-                <Text style={[styles.tabText, active==='responsible' && styles.tabTextActive]}>Responsabili</Text>
-              </TouchableOpacity>
+            {userRole === 'operatore' && (
+               <MenuButton id="operator" label="Lavori" icon="hammer" mobile={true} />
+            )}
+
+            {userRole === 'responsabile' && (
+              <>
+                <MenuButton id="responsible_tickets" label="Ticket" icon="folder-open" mobile={true} />
+                <MenuButton id="responsible_users" label="Operatori" icon="people" mobile={true} />
+              </>
             )}
           </ScrollView>
         </View>
@@ -64,6 +79,7 @@ export default function AreaPersonaleMain({ navigation }) {
     );
   }
 
+  // Desktop / Tablet Sidebar
   return (
     <View style={styles.container}>
       <View style={styles.sidebar}>
@@ -73,30 +89,22 @@ export default function AreaPersonaleMain({ navigation }) {
         </View>
 
         <ScrollView style={styles.nav}>
-          <TouchableOpacity style={[styles.navLink, active === 'profile' && styles.active]} onPress={() => setActive('profile')}>
-            <Ionicons name="person" size={18} color={active === 'profile' ? '#fff' : '#ccc'} />
-            <Text style={[styles.navText, active === 'profile' && styles.activeText]}>Profilo</Text>
-          </TouchableOpacity>
+          <MenuButton id="profile" label="Profilo" icon="person" mobile={false} />
 
-          { (user?.role || '').toLowerCase() === 'cittadino' && (
-            <TouchableOpacity style={[styles.navLink, active === 'mytickets' && styles.active]} onPress={() => setActive('mytickets')}>
-              <Ionicons name="list" size={18} color={active === 'mytickets' ? '#fff' : '#ccc'} />
-              <Text style={[styles.navText, active === 'mytickets' && styles.activeText]}>Le mie segnalazioni</Text>
-            </TouchableOpacity>
+          { userRole === 'cittadino' && (
+            <MenuButton id="mytickets" label="Le mie segnalazioni" icon="list" mobile={false} />
           )}
 
-          { (user?.role || '').toLowerCase() === 'operatore' && (
-            <TouchableOpacity style={[styles.navLink, active === 'operator' && styles.active]} onPress={() => setActive('operator')}>
-              <Ionicons name="hammer" size={18} color={active === 'operator' ? '#fff' : '#ccc'} />
-              <Text style={[styles.navText, active === 'operator' && styles.activeText]}>Gestione Ticket (Operatori)</Text>
-            </TouchableOpacity>
+          { userRole === 'operatore' && (
+            <MenuButton id="operator" label="Gestione Ticket (Op)" icon="hammer" mobile={false} />
           )}
 
-          { (user?.role || '').toLowerCase() === 'responsabile' && (
-            <TouchableOpacity style={[styles.navLink, active === 'responsible' && styles.active]} onPress={() => setActive('responsible')}>
-              <Ionicons name="people" size={18} color={active === 'responsible' ? '#fff' : '#ccc'} />
-              <Text style={[styles.navText, active === 'responsible' && styles.activeText]}>Gestione operatori / ticket (Responsabili)</Text>
-            </TouchableOpacity>
+          { userRole === 'responsabile' && (
+            <>
+              <Text style={styles.sectionHeader}>GESTIONE</Text>
+              <MenuButton id="responsible_tickets" label="Tutti i Ticket" icon="folder-open" mobile={false} />
+              <MenuButton id="responsible_users" label="Operatori" icon="people" mobile={false} />
+            </>
           )}
         </ScrollView>
 
@@ -131,6 +139,7 @@ const styles = StyleSheet.create({
   sidebarTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
   sidebarSub: { color: '#fff', opacity: 0.9, marginTop: 6 },
   nav: { flex:1, marginTop: 10 },
+  sectionHeader: { color: '#aaa', fontSize: 10, fontWeight: 'bold', marginTop: 15, marginBottom: 5, letterSpacing: 1 },
   navLink: { flexDirection: 'row', gap: 10, alignItems: 'center', padding: 12, borderRadius: 8, marginBottom: 8 },
   navText: { color: '#ccc', marginLeft: 8, fontSize: 14 },
   active: { backgroundColor: 'rgba(255,255,255,0.08)' },

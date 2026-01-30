@@ -1,25 +1,60 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { postTicket } from '../services/ticketService'; // Assicurati di aver importato il servizio
 
-export default function CreateTicketScreen({ navigation }) {
+export default function CreateTicketScreen({ navigation, route }) {
+  // 1. Recupera coordinate dai parametri di navigazione (se inviati dalla Mappa)
+  const initialLat = route.params?.lat || null;
+  const initialLng = route.params?.lon || null; // Attenzione: usa 'lon' o 'lng' coerentemente nel tuo router
+
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const [category, setCategory] = useState('Strade');
+  const [coords, setCoords] = useState({ lat: initialLat, lng: initialLng });
 
-  const handleSubmit = () => {
-    if (!title) return alert("Inserisci almeno un titolo!");
-    // Qui andrebbe la chiamata API
-    alert("Segnalazione inviata! Grazie per il tuo contributo.");
+  useEffect(() => {
+    if (initialLat && initialLng) {
+      setCoords({ lat: initialLat, lng: initialLng });
+    }
+    // TODO: Se mancano, qui potresti usare expo-location per ottenere la posizione GPS attuale
+  }, [initialLat, initialLng]);
+
+  const handleSubmit = async () => {
+    if (!title) return Alert.alert("Attenzione", "Inserisci almeno un titolo!");
+    if (!coords.lat || !coords.lng) return Alert.alert("Attenzione", "Posizione non rilevata.");
+
+    // Costruzione oggetto ticket
+    const newTicket = {
+      titolo: title,
+      descrizione: desc,
+      categoria: category,
+      latitudine: coords.lat,
+      longitudine: coords.lng,
+      // data: new Date().toISOString() // Spesso lo gestisce il backend
+    };
+
+    // Chiamata API (Decommenta quando il backend è pronto)
+    /*
+    const success = await postTicket(newTicket);
+    if (success) {
+      Alert.alert("Successo", "Segnalazione inviata!");
+      navigation.goBack();
+    } else {
+      Alert.alert("Errore", "Invio fallito. Riprova.");
+    }
+    */
+    
+    // Per ora, solo simulazione
+    console.log("Invio Ticket:", newTicket);
+    Alert.alert("Segnalazione inviata! (Simulazione)");
     navigation.goBack();
   };
 
   return (
     <View style={styles.container}>
       <SafeAreaView style={{flex: 1}}>
-        
-        {/* HEADER MODALE */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
             <Ionicons name="close" size={28} color="#1D2D44" />
@@ -29,9 +64,7 @@ export default function CreateTicketScreen({ navigation }) {
         </View>
 
         <ScrollView contentContainerStyle={styles.formContainer}>
-          
-          {/* UPLOAD FOTO (FINTO) */}
-          <TouchableOpacity style={styles.photoBox} onPress={() => alert('Apertura Fotocamera...')}>
+          <TouchableOpacity style={styles.photoBox} onPress={() => alert('Apertura Fotocamera (WIP)')}>
             <Ionicons name="camera-outline" size={40} color="#4A769E" />
             <Text style={styles.photoText}>Scatta o carica una foto</Text>
           </TouchableOpacity>
@@ -56,7 +89,7 @@ export default function CreateTicketScreen({ navigation }) {
             ))}
           </View>
 
-          <Text style={styles.label}>DESCRIZIONE DETTAGLIATA</Text>
+          <Text style={styles.label}>DESCRIZIONE</Text>
           <TextInput 
             style={[styles.input, styles.textArea]} 
             placeholder="Descrivi cosa vedi..." 
@@ -64,14 +97,18 @@ export default function CreateTicketScreen({ navigation }) {
             value={desc} onChangeText={setDesc} 
           />
 
+          {/* Box Posizione */}
           <View style={styles.infoBox}>
-            <Ionicons name="information-circle" size={20} color="#1D2D44" />
-            <Text style={styles.infoText}>La posizione verrà rilevata automaticamente dal GPS del dispositivo.</Text>
+            <Ionicons name="location" size={20} color="#1D2D44" />
+            <Text style={styles.infoText}>
+              {coords.lat 
+                ? `Posizione: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`
+                : "Rilevamento posizione in corso..."}
+            </Text>
           </View>
 
         </ScrollView>
 
-        {/* FOOTER ACTION */}
         <View style={styles.footer}>
           <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
             <Text style={styles.submitText}>INVIA SEGNALAZIONE</Text>
@@ -84,6 +121,8 @@ export default function CreateTicketScreen({ navigation }) {
   );
 }
 
+// ... mantieni gli stili esistenti (const styles = ...)
+// Assicurati di copiare gli stili che avevi nel file originale, qui omessi per brevità.
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, backgroundColor: 'white', elevation: 2 },
