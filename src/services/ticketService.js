@@ -10,6 +10,7 @@ export const getAllTickets = async () => {
       headers: { 'Accept': 'application/json' }
     });
 
+    if (!response.ok) throw new Error('HTTP error');
     const data = await response.json();
     if (response.ok && data.success) return data.tickets || [];
     return [];
