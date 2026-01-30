@@ -4,7 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { postTicket } from '../services/ticketService';
+// Assicurati che il percorso sia corretto in base alla tua struttura cartelle
+import { postTicket } from '../services/ticketService'; 
 
 export default function CreateTicketScreen({ navigation, route }) {
   // 1. Recupera coordinate dai parametri (dalla Mappa)
@@ -18,13 +19,15 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [address, setAddress] = useState('');
   const [imageUri, setImageUri] = useState(null);
   const [loadingAddr, setLoadingAddr] = useState(false);
+  
+  // STATO PER IL CARICAMENTO INVIO
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (initialLat && initialLng) {
       setCoords({ lat: initialLat, lng: initialLng });
       fetchAddress(initialLat, initialLng);
     } else {
-      // Se non ci sono coordinate, prova a prendere la posizione attuale
       (async () => {
         let { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
@@ -36,14 +39,12 @@ export default function CreateTicketScreen({ navigation, route }) {
     }
   }, [initialLat, initialLng]);
 
-  // Funzione per convertire coordinate in indirizzo (Nominatim OpenStreetMap)
   const fetchAddress = async (lat, lon) => {
     setLoadingAddr(true);
     try {
       const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
       const data = await response.json();
       if (data && data.display_name) {
-        // Prendiamo una versione accorciata dell'indirizzo
         const shortAddr = data.address.road ? `${data.address.road}, ${data.address.city || data.address.town}` : data.display_name.split(',')[0];
         setAddress(shortAddr || data.display_name);
       }
@@ -55,7 +56,6 @@ export default function CreateTicketScreen({ navigation, route }) {
     }
   };
 
-  // Funzione per Gestire le Foto
   const handlePhotoAction = async () => {
     Alert.alert(
       "Aggiungi Foto",
@@ -96,6 +96,8 @@ export default function CreateTicketScreen({ navigation, route }) {
     if (!title) return Alert.alert("Attenzione", "Inserisci almeno un titolo!");
     if (!coords.lat || !coords.lng) return Alert.alert("Attenzione", "Posizione non rilevata.");
 
+    setIsSubmitting(true);
+
     const newTicket = {
       titolo: title,
       descrizione: desc,
@@ -103,15 +105,23 @@ export default function CreateTicketScreen({ navigation, route }) {
       latitudine: coords.lat,
       longitudine: coords.lng,
       indirizzo: address,
-      immagine: imageUri // Il backend dovrà gestire il file upload
+      immagine: imageUri,
+      data: new Date().toISOString(),
+      stato: 'Ricevuto' // Stato iniziale come da UC-03
     };
 
-    // Simulazione invio
-    console.log("Invio Ticket:", newTicket);
-    // const success = await postTicket(newTicket); // Scommenta quando hai l'API
-    
-    Alert.alert("Successo", "Segnalazione inviata correttamente!");
-    navigation.goBack();
+    try {
+      // Chiamata effettiva al servizio (assicurati che ticketService esista e funzioni)
+      await postTicket(newTicket);
+      
+      Alert.alert("Successo", "Segnalazione inviata correttamente!");
+      navigation.goBack();
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Errore", "Impossibile inviare la segnalazione al momento.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -126,8 +136,6 @@ export default function CreateTicketScreen({ navigation, route }) {
         </View>
 
         <ScrollView contentContainerStyle={styles.formContainer}>
-          
-          {/* Sezione Foto */}
           <TouchableOpacity style={styles.photoBox} onPress={handlePhotoAction}>
             {imageUri ? (
               <Image source={{ uri: imageUri }} style={styles.previewImage} />
@@ -172,7 +180,6 @@ export default function CreateTicketScreen({ navigation, route }) {
             value={desc} onChangeText={setDesc} 
           />
 
-          {/* Box Posizione */}
           <View style={styles.infoBox}>
             <Ionicons name="location" size={24} color="#D32F2F" />
             <View style={{marginLeft: 10, flex: 1}}>
@@ -186,16 +193,24 @@ export default function CreateTicketScreen({ navigation, route }) {
                 )}
             </View>
           </View>
-
         </ScrollView>
 
         <View style={styles.footer}>
-          <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
-            <Text style={styles.submitText}>INVIA SEGNALAZIONE</Text>
-            <Ionicons name="send" size={18} color="white" style={{marginLeft: 10}} />
+          <TouchableOpacity 
+            style={[styles.submitBtn, isSubmitting && {backgroundColor: '#888'}]} 
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+                <ActivityIndicator color="white" />
+            ) : (
+                <>
+                    <Text style={styles.submitText}>INVIA SEGNALAZIONE</Text>
+                    <Ionicons name="send" size={18} color="white" style={{marginLeft: 10}} />
+                </>
+            )}
           </TouchableOpacity>
         </View>
-
       </SafeAreaView>
     </View>
   );
