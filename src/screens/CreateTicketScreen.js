@@ -1,54 +1,116 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Image, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { postTicket } from '../services/ticketService'; // Assicurati di aver importato il servizio
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import { postTicket } from '../services/ticketService';
 
 export default function CreateTicketScreen({ navigation, route }) {
-  // 1. Recupera coordinate dai parametri di navigazione (se inviati dalla Mappa)
+  // 1. Recupera coordinate dai parametri (dalla Mappa)
   const initialLat = route.params?.lat || null;
-  const initialLng = route.params?.lon || null; // Attenzione: usa 'lon' o 'lng' coerentemente nel tuo router
+  const initialLng = route.params?.lon || null;
 
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const [category, setCategory] = useState('Strade');
   const [coords, setCoords] = useState({ lat: initialLat, lng: initialLng });
+  const [address, setAddress] = useState('');
+  const [imageUri, setImageUri] = useState(null);
+  const [loadingAddr, setLoadingAddr] = useState(false);
 
   useEffect(() => {
     if (initialLat && initialLng) {
       setCoords({ lat: initialLat, lng: initialLng });
+      fetchAddress(initialLat, initialLng);
+    } else {
+      // Se non ci sono coordinate, prova a prendere la posizione attuale
+      (async () => {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          let location = await Location.getCurrentPositionAsync({});
+          setCoords({ lat: location.coords.latitude, lng: location.coords.longitude });
+          fetchAddress(location.coords.latitude, location.coords.longitude);
+        }
+      })();
     }
-    // TODO: Se mancano, qui potresti usare expo-location per ottenere la posizione GPS attuale
   }, [initialLat, initialLng]);
+
+  // Funzione per convertire coordinate in indirizzo (Nominatim OpenStreetMap)
+  const fetchAddress = async (lat, lon) => {
+    setLoadingAddr(true);
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      const data = await response.json();
+      if (data && data.display_name) {
+        // Prendiamo una versione accorciata dell'indirizzo
+        const shortAddr = data.address.road ? `${data.address.road}, ${data.address.city || data.address.town}` : data.display_name.split(',')[0];
+        setAddress(shortAddr || data.display_name);
+      }
+    } catch (error) {
+      console.log("Errore reverse geocoding:", error);
+      setAddress("Indirizzo non disponibile");
+    } finally {
+      setLoadingAddr(false);
+    }
+  };
+
+  // Funzione per Gestire le Foto
+  const handlePhotoAction = async () => {
+    Alert.alert(
+      "Aggiungi Foto",
+      "Scegli una sorgente",
+      [
+        { text: "Galleria", onPress: pickImage },
+        { text: "Fotocamera", onPress: takePhoto },
+        { text: "Annulla", style: "cancel" }
+      ]
+    );
+  };
+
+  const pickImage = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.5,
+    });
+    if (!result.canceled) setImageUri(result.assets[0].uri);
+  };
+
+  const takePhoto = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (permission.granted) {
+      let result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.5,
+      });
+      if (!result.canceled) setImageUri(result.assets[0].uri);
+    } else {
+      Alert.alert("Permesso negato", "Serve il permesso fotocamera.");
+    }
+  };
 
   const handleSubmit = async () => {
     if (!title) return Alert.alert("Attenzione", "Inserisci almeno un titolo!");
     if (!coords.lat || !coords.lng) return Alert.alert("Attenzione", "Posizione non rilevata.");
 
-    // Costruzione oggetto ticket
     const newTicket = {
       titolo: title,
       descrizione: desc,
       categoria: category,
       latitudine: coords.lat,
       longitudine: coords.lng,
-      // data: new Date().toISOString() // Spesso lo gestisce il backend
+      indirizzo: address,
+      immagine: imageUri // Il backend dovrà gestire il file upload
     };
 
-    // Chiamata API (Decommenta quando il backend è pronto)
-    /*
-    const success = await postTicket(newTicket);
-    if (success) {
-      Alert.alert("Successo", "Segnalazione inviata!");
-      navigation.goBack();
-    } else {
-      Alert.alert("Errore", "Invio fallito. Riprova.");
-    }
-    */
-    
-    // Per ora, solo simulazione
+    // Simulazione invio
     console.log("Invio Ticket:", newTicket);
-    Alert.alert("Segnalazione inviata! (Simulazione)");
+    // const success = await postTicket(newTicket); // Scommenta quando hai l'API
+    
+    Alert.alert("Successo", "Segnalazione inviata correttamente!");
     navigation.goBack();
   };
 
@@ -64,10 +126,23 @@ export default function CreateTicketScreen({ navigation, route }) {
         </View>
 
         <ScrollView contentContainerStyle={styles.formContainer}>
-          <TouchableOpacity style={styles.photoBox} onPress={() => alert('Apertura Fotocamera (WIP)')}>
-            <Ionicons name="camera-outline" size={40} color="#4A769E" />
-            <Text style={styles.photoText}>Scatta o carica una foto</Text>
+          
+          {/* Sezione Foto */}
+          <TouchableOpacity style={styles.photoBox} onPress={handlePhotoAction}>
+            {imageUri ? (
+              <Image source={{ uri: imageUri }} style={styles.previewImage} />
+            ) : (
+              <>
+                <Ionicons name="camera-outline" size={40} color="#4A769E" />
+                <Text style={styles.photoText}>Scatta o carica una foto</Text>
+              </>
+            )}
           </TouchableOpacity>
+          {imageUri && (
+             <TouchableOpacity onPress={() => setImageUri(null)} style={{alignSelf:'center', marginBottom:15}}>
+                <Text style={{color:'#D32F2F', fontSize:12}}>Rimuovi foto</Text>
+             </TouchableOpacity>
+          )}
 
           <Text style={styles.label}>TITOLO PROBLEMA</Text>
           <TextInput 
@@ -99,12 +174,17 @@ export default function CreateTicketScreen({ navigation, route }) {
 
           {/* Box Posizione */}
           <View style={styles.infoBox}>
-            <Ionicons name="location" size={20} color="#1D2D44" />
-            <Text style={styles.infoText}>
-              {coords.lat 
-                ? `Posizione: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`
-                : "Rilevamento posizione in corso..."}
-            </Text>
+            <Ionicons name="location" size={24} color="#D32F2F" />
+            <View style={{marginLeft: 10, flex: 1}}>
+                <Text style={styles.infoTitle}>Posizione rilevata</Text>
+                {loadingAddr ? (
+                    <Text style={styles.infoText}>Ricerca indirizzo...</Text>
+                ) : (
+                    <Text style={styles.infoText}>
+                      {address ? address : `${coords.lat?.toFixed(5)}, ${coords.lng?.toFixed(5)}`}
+                    </Text>
+                )}
+            </View>
           </View>
 
         </ScrollView>
@@ -121,25 +201,25 @@ export default function CreateTicketScreen({ navigation, route }) {
   );
 }
 
-// ... mantieni gli stili esistenti (const styles = ...)
-// Assicurati di copiare gli stili che avevi nel file originale, qui omessi per brevità.
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, backgroundColor: 'white', elevation: 2 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#1D2D44' },
   formContainer: { padding: 20 },
-  photoBox: { height: 160, backgroundColor: '#E9ECEF', borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed', borderWidth: 2, borderColor: '#CBD5E0', marginBottom: 25 },
+  photoBox: { height: 180, backgroundColor: '#E9ECEF', borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed', borderWidth: 2, borderColor: '#CBD5E0', marginBottom: 10, overflow: 'hidden' },
+  previewImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   photoText: { marginTop: 10, color: '#6C757D', fontWeight: '500' },
   label: { fontSize: 12, fontWeight: 'bold', color: '#6C757D', marginBottom: 8, letterSpacing: 1 },
   input: { backgroundColor: 'white', borderRadius: 8, padding: 15, fontSize: 16, borderWidth: 1, borderColor: '#DEE2E6', marginBottom: 20, color: '#1D2D44' },
-  textArea: { height: 120, textAlignVertical: 'top' },
+  textArea: { height: 100, textAlignVertical: 'top' },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 20 },
   chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: 'white', borderWidth: 1, borderColor: '#DEE2E6', marginRight: 10, marginBottom: 10 },
   chipActive: { backgroundColor: '#1D2D44', borderColor: '#1D2D44' },
   chipText: { color: '#495057', fontSize: 14 },
   chipTextActive: { color: 'white', fontWeight: 'bold' },
-  infoBox: { flexDirection: 'row', backgroundColor: '#E3F2FD', padding: 15, borderRadius: 8, alignItems: 'center' },
-  infoText: { marginLeft: 10, color: '#0D47A1', fontSize: 13, flex: 1 },
+  infoBox: { flexDirection: 'row', backgroundColor: '#fff', padding: 15, borderRadius: 8, alignItems: 'center', borderWidth:1, borderColor:'#eee', elevation:1 },
+  infoTitle: { fontWeight:'bold', color: '#333', fontSize: 14},
+  infoText: { color: '#555', fontSize: 13, flexWrap:'wrap' },
   footer: { padding: 20, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#eee' },
   submitBtn: { backgroundColor: '#D32F2F', borderRadius: 10, paddingVertical: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 3 },
   submitText: { color: 'white', fontWeight: 'bold', fontSize: 16, letterSpacing: 1 }

@@ -3,12 +3,11 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+// Se hai un file di colori globali, lo usiamo, altrimenti usiamo i colori hardcoded
+import { COLORS } from '../styles/global'; 
 
 export default function ProfileScreen({ navigation }) {
   const { user, logout } = useAuth();
-
-  // FIX: Non navighiamo condizionalmente durante il render.
-  // Gestiamo il redirect direttamente nella funzione handleLogout o controlliamo l'esistenza di user nel JSX.
 
   const handleLogout = () => {
     Alert.alert(
@@ -21,10 +20,10 @@ export default function ProfileScreen({ navigation }) {
                 style: "destructive", 
                 onPress: () => {
                     logout();
-                    // Usiamo reset per pulire lo stack e tornare alla Home pulita
+                    // Resetta la navigazione per impedire di tornare indietro col tasto fisico
                     navigation.reset({
                         index: 0,
-                        routes: [{ name: 'Home' }],
+                        routes: [{ name: 'Auth' }], // O 'Home' a seconda di come hai chiamato lo stack iniziale
                     });
                 }
             }
@@ -32,11 +31,12 @@ export default function ProfileScreen({ navigation }) {
     );
   };
 
-  // Se per qualche motivo l'utente è null (es. logout forzato), mostriamo un caricamento o nulla finché il reset non avviene
+  // Se l'utente non è caricato, non mostrare nulla per evitare errori
   if (!user) return null;
 
   return (
     <View style={styles.container}>
+      {/* Header colorato */}
       <SafeAreaView style={styles.header} edges={['top']}>
         <View style={styles.headerContent}>
             <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -52,10 +52,14 @@ export default function ProfileScreen({ navigation }) {
         {/* CARD UTENTE */}
         <View style={styles.profileCard}>
             <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>{user.name ? user.name.charAt(0).toUpperCase() : 'U'}</Text>
+                <Text style={styles.avatarText}>
+                    {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                </Text>
             </View>
             <Text style={styles.userName}>{user.name}</Text>
-            <Text style={styles.userRole}>{user.role ? user.role.toUpperCase() : 'OSPITE'}</Text>
+            <Text style={styles.userRole}>
+                {user.role ? user.role.toUpperCase() : 'OSPITE'}
+            </Text>
         </View>
 
         {/* --- SEZIONE MENU IN BASE AL RUOLO --- */}
@@ -88,7 +92,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
         )}
 
-        {/* 3. RESPONSABILE */}
+        {/* 3. RESPONSABILE / ADMIN */}
         {(user.role === 'responsabile' || user.role === 'admin') && (
             <View style={styles.menuGroup}>
                 <Text style={styles.menuTitle}>Amministrazione</Text>
@@ -113,7 +117,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
         )}
 
-        {/* DETTAGLI ACCOUNT */}
+        {/* DETTAGLI ACCOUNT (VISIBILE A TUTTI) */}
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dettagli Account</Text>
             <View style={styles.infoRow}>
@@ -128,7 +132,7 @@ export default function ProfileScreen({ navigation }) {
                 <Ionicons name="business-outline" size={20} color="#666" />
                 <View style={styles.infoTextContainer}>
                     <Text style={styles.label}>Comune</Text>
-                    <Text style={styles.value}>{user.municipality || 'Non assegnato'}</Text>
+                    <Text style={styles.value}>{user.municipality || 'Comune di Fisciano (Demo)'}</Text>
                 </View>
             </View>
         </View>
