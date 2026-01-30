@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -7,15 +7,33 @@ import { useAuth } from '../context/AuthContext';
 export default function ProfileScreen({ navigation }) {
   const { user, logout } = useAuth();
 
-  if (!user) {
-    navigation.replace('Home');
-    return null;
-  }
+  // FIX: Non navighiamo condizionalmente durante il render.
+  // Gestiamo il redirect direttamente nella funzione handleLogout o controlliamo l'esistenza di user nel JSX.
 
   const handleLogout = () => {
-    logout();
-    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+    Alert.alert(
+        "Logout",
+        "Sei sicuro di voler uscire?",
+        [
+            { text: "Annulla", style: "cancel" },
+            { 
+                text: "Esci", 
+                style: "destructive", 
+                onPress: () => {
+                    logout();
+                    // Usiamo reset per pulire lo stack e tornare alla Home pulita
+                    navigation.reset({
+                        index: 0,
+                        routes: [{ name: 'Home' }],
+                    });
+                }
+            }
+        ]
+    );
   };
+
+  // Se per qualche motivo l'utente è null (es. logout forzato), mostriamo un caricamento o nulla finché il reset non avviene
+  if (!user) return null;
 
   return (
     <View style={styles.container}>
@@ -34,26 +52,68 @@ export default function ProfileScreen({ navigation }) {
         {/* CARD UTENTE */}
         <View style={styles.profileCard}>
             <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>{user.name.charAt(0)}</Text>
+                <Text style={styles.avatarText}>{user.name ? user.name.charAt(0).toUpperCase() : 'U'}</Text>
             </View>
             <Text style={styles.userName}>{user.name}</Text>
-            <Text style={styles.userRole}>{user.role.toUpperCase()}</Text>
+            <Text style={styles.userRole}>{user.role ? user.role.toUpperCase() : 'OSPITE'}</Text>
         </View>
 
-        {/* --- NUOVO: SEZIONE TICKET (Solo per Cittadini) --- */}
+        {/* --- SEZIONE MENU IN BASE AL RUOLO --- */}
+        
+        {/* 1. CITTADINO */}
         {user.role === 'cittadino' && (
-            <TouchableOpacity style={styles.ticketActionBtn} onPress={() => navigation.navigate('UserTickets')}>
-                <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                    <View style={styles.iconBox}>
+            <View style={styles.menuGroup}>
+                <Text style={styles.menuTitle}>Le tue attività</Text>
+                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('UserTickets')}>
+                    <View style={[styles.iconBox, { backgroundColor: '#467599' }]}>
                         <Ionicons name="list" size={24} color="white" />
                     </View>
-                    <Text style={styles.ticketBtnText}>Le mie segnalazioni</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={24} color="#1F2937" />
-            </TouchableOpacity>
+                    <Text style={styles.actionText}>Le mie segnalazioni</Text>
+                    <Ionicons name="chevron-forward" size={24} color="#ccc" />
+                </TouchableOpacity>
+            </View>
         )}
 
-        {/* DETTAGLI */}
+        {/* 2. OPERATORE */}
+        {user.role === 'operatore' && (
+            <View style={styles.menuGroup}>
+                <Text style={styles.menuTitle}>Gestione Operativa</Text>
+                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('OperatorTickets')}>
+                    <View style={[styles.iconBox, { backgroundColor: '#F59E0B' }]}>
+                        <Ionicons name="construct" size={24} color="white" />
+                    </View>
+                    <Text style={styles.actionText}>Ticket Assegnati</Text>
+                    <Ionicons name="chevron-forward" size={24} color="#ccc" />
+                </TouchableOpacity>
+            </View>
+        )}
+
+        {/* 3. RESPONSABILE */}
+        {(user.role === 'responsabile' || user.role === 'admin') && (
+            <View style={styles.menuGroup}>
+                <Text style={styles.menuTitle}>Amministrazione</Text>
+                
+                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('ResponsibleTickets')}>
+                    <View style={[styles.iconBox, { backgroundColor: '#10B981' }]}>
+                        <Ionicons name="folder-open" size={24} color="white" />
+                    </View>
+                    <Text style={styles.actionText}>Gestione Ticket Comune</Text>
+                    <Ionicons name="chevron-forward" size={24} color="#ccc" />
+                </TouchableOpacity>
+
+                <View style={styles.divider} />
+
+                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('ManageOperators')}>
+                    <View style={[styles.iconBox, { backgroundColor: '#6366F1' }]}>
+                        <Ionicons name="people" size={24} color="white" />
+                    </View>
+                    <Text style={styles.actionText}>Gestione Operatori</Text>
+                    <Ionicons name="chevron-forward" size={24} color="#ccc" />
+                </TouchableOpacity>
+            </View>
+        )}
+
+        {/* DETTAGLI ACCOUNT */}
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dettagli Account</Text>
             <View style={styles.infoRow}>
@@ -73,15 +133,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
         </View>
 
-        {/* OPZIONI */}
-        <View style={styles.section}>
-            <TouchableOpacity style={styles.optionRow}>
-                <Ionicons name="settings-outline" size={22} color="#1F2937" />
-                <Text style={styles.optionText}>Impostazioni</Text>
-                <Ionicons name="chevron-forward" size={20} color="#ccc" />
-            </TouchableOpacity>
-        </View>
-
+        {/* LOGOUT */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
             <Text style={styles.logoutText}>ESCI</Text>
         </TouchableOpacity>
@@ -97,16 +149,19 @@ const styles = StyleSheet.create({
   headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: 'white' },
   scroll: { padding: 20 },
+  
   profileCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, alignItems: 'center', marginBottom: 20, elevation: 2 },
   avatarCircle: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#1F2937', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
   avatarText: { color: 'white', fontSize: 28, fontWeight: 'bold' },
   userName: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
   userRole: { fontSize: 11, color: '#666', marginTop: 2, letterSpacing: 1 },
+
+  menuGroup: { marginBottom: 20 },
+  menuTitle: { fontSize: 14, fontWeight: 'bold', color: '#6B7280', marginBottom: 8, marginLeft: 5, textTransform: 'uppercase' },
   
-  // Stile Bottone "I Miei Ticket"
-  ticketActionBtn: { backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 3 },
-  iconBox: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#467599', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  ticketBtnText: { fontSize: 16, fontWeight: 'bold', color: '#1F2937' },
+  actionBtn: { backgroundColor: 'white', borderRadius: 12, padding: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 1 },
+  iconBox: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  actionText: { fontSize: 16, fontWeight: '600', color: '#1F2937', flex: 1 },
 
   section: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 20, elevation: 1 },
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#1F2937', marginBottom: 15 },
@@ -114,9 +169,8 @@ const styles = StyleSheet.create({
   infoTextContainer: { marginLeft: 15 },
   label: { fontSize: 12, color: '#999' },
   value: { fontSize: 15, color: '#333', fontWeight: '500' },
-  optionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
-  optionText: { flex: 1, marginLeft: 15, fontSize: 16, color: '#333' },
   divider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 10 },
-  logoutBtn: { backgroundColor: '#ffebee', padding: 15, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#ffcdd2' },
+  
+  logoutBtn: { backgroundColor: '#ffebee', padding: 15, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#ffcdd2', marginTop: 10, marginBottom: 30 },
   logoutText: { color: '#d32f2f', fontWeight: 'bold', fontSize: 16 }
 });

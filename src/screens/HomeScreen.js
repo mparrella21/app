@@ -1,12 +1,14 @@
 import React, { useState, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Dimensions, Text, ScrollView, StatusBar } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Dimensions, Text, ScrollView, StatusBar, Alert } from 'react-native';
 import MapView, { PROVIDER_DEFAULT, Marker, Geojson } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import SearchBar from '../component/SearchBar';
+import { searchCity } from '../services/nominatim'; // Import necessario per la ricerca
 
-// IMPORTA GEOJSON (Assicurati che esista)
+// IMPORTA GEOJSON (Assicurati che esista questo file nel percorso indicato)
+// Se non lo hai, commenta la riga sotto e il tag <Geojson> nel render
 import ItalyBoundary from '../assets/data/limits_IT_simplified.json'; 
 
 const { width, height } = Dimensions.get('window');
@@ -21,6 +23,27 @@ export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth(); 
   const [menuVisible, setMenuVisible] = useState(false);
   const mapRef = useRef(null);
+
+  // --- LOGICA DI RICERCA AGGIUNTA ---
+  const handleSearch = async (text) => {
+    const result = await searchCity(text);
+    
+    if (result && mapRef.current) {
+        // Muovi la mappa sulla posizione trovata
+        mapRef.current.animateToRegion({
+            latitude: parseFloat(result.lat),
+            longitude: parseFloat(result.lon),
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+        }, 1000); 
+    } else {
+        Alert.alert(
+            "Non trovato", 
+            "Nessun risultato per questa ricerca. Prova con un comune (es. 'Salerno') o un indirizzo specifico."
+        );
+    }
+  };
+  // -----------------------------------
 
   const handleZoom = (amount) => {
     mapRef.current?.getCamera().then((cam) => {
@@ -90,7 +113,8 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.navBarContent}>
             
             <View style={styles.searchContainer}>
-               <SearchBar />
+               {/* Passiamo la funzione onSearch qui */}
+               <SearchBar onSearch={handleSearch} />
             </View>
 
             <View style={styles.userContainer}>
@@ -115,7 +139,6 @@ export default function HomeScreen({ navigation }) {
                 </View>
                 <View style={styles.divider}/>
                 
-                {/* --- MODIFICA QUI --- */}
                 <TouchableOpacity 
                     style={styles.menuItem} 
                     onPress={() => { 
@@ -126,7 +149,6 @@ export default function HomeScreen({ navigation }) {
                     <Ionicons name="person-circle-outline" size={20} color="#333" />
                     <Text style={styles.menuText}>Area Personale</Text>
                 </TouchableOpacity>
-                {/* ------------------- */}
 
                 <TouchableOpacity style={styles.menuItem} onPress={() => { logout(); setMenuVisible(false); }}>
                     <Ionicons name="log-out-outline" size={20} color="#d32f2f" />
@@ -171,7 +193,7 @@ export default function HomeScreen({ navigation }) {
               <TouchableOpacity style={styles.zoomBtn} onPress={() => handleZoom(-1)}><Ionicons name="remove" size={24} color="#333" /></TouchableOpacity>
           </View>
 
-          {/* FAB (+) COLORE CORRETTO (#467599) - SOLO CITTADINO */}
+          {/* FAB COLORE CORRETTO (#467599) - SOLO CITTADINO */}
           {(!user || user.role === 'cittadino') && (
               <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate(user ? 'CreateTicket' : 'AuthModal')}>
                   <Ionicons name="add" size={32} color="white" />
@@ -192,6 +214,7 @@ const styles = StyleSheet.create({
   headerContainer: { backgroundColor: '#1F2937', zIndex: 10, elevation: 5 },
   navBarContent: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12 },
   searchContainer: { flex: 1, marginRight: 15 },
+  userContainer: { justifyContent: 'center' }, // Aggiunto per allineamento
   avatarBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#374151', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#4B5563' },
   avatarText: { color: 'white', fontWeight: 'bold' },
   loginLinkBtn: { backgroundColor: '#374151', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6 },
