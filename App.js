@@ -7,37 +7,34 @@ import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from './src/context/AuthContext'; 
 
 // --- SCREENS IMPORT ---
-// Schermate Pubbliche
-import HomeScreen from './src/screens/HomeScreen';
+import HomeScreen from './src/screens/HomeScreen'; // Mappa pubblica
 import AuthModal from './src/screens/AuthModal';
 
 // Schermate Cittadino
-import CitizenHomeScreen from './src/screens/CitizenHomeScreen';
+import CitizenHomeScreen from './src/screens/CitizenHomeScreen'; // Dashboard Dashboard
 import CreateTicketScreen from './src/screens/CreateTicketScreen';
-import UserTicketsScreen from './src/screens/UserTicketsScreen';
+import UserTicketsScreen from './src/screens/UserTicketsScreen'; 
 
 // Schermate Operatore
-import OperatorTicketsScreen from './src/screens/OperatorTicketsScreen';
+import OperatorTicketsScreen from './src/screens/OperatorTicketsScreen'; // Dashboard Operativa
 
 // Schermate Responsabile
-import ResponsibleTicketsScreen from './src/screens/ResponsibleTicketsScreen';
+import ResponsibleTicketsScreen from './src/screens/ResponsibleTicketsScreen'; // Dashboard Gestionale
 import ManageOperatorsScreen from './src/screens/ManageOperatorsScreen';
 
-// Schermate Comuni (accessibili dopo login)
+// Schermate Comuni
 import TicketDetailScreen from './src/screens/TicketDetailScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 
 const Stack = createStackNavigator();
 
-/**
- * Componente per gestire la logica di navigazione
- * separato per poter usare l'hook useAuth()
- */
 function RootNavigator() {
   const { user, loading } = useAuth();
 
-  // 1. Schermata di Caricamento (mentre controlla il token salvato)
+  // Helper per gestire i ruoli in modo sicuro (case insensitive)
+  const getRole = () => user?.role ? user.role.toLowerCase() : '';
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FA' }}>
@@ -56,9 +53,7 @@ function RootNavigator() {
         }}
       >
         {user == null ? (
-          // ************************************************************
-          // GRUPPO 1: UTENTE NON LOGGATO (PUBLIC)
-          // ************************************************************
+          // --- NON LOGGATO ---
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen 
@@ -72,33 +67,33 @@ function RootNavigator() {
             />
           </>
         ) : (
-          // ************************************************************
-          // GRUPPO 2: UTENTE LOGGATO (PROTECTED)
-          // ************************************************************
+          // --- LOGGATO ---
           <>
-            {/* A. SCELTA DELLA HOME IN BASE AL RUOLO */}
-            {user.role === 'Responsabile' ? (
-              // Stack Responsabile
+            {/* 1. Routing Principale in base al Ruolo */}
+            {getRole() === 'responsabile' ? (
               <>
                 <Stack.Screen name="ResponsibleHome" component={ResponsibleTicketsScreen} />
                 <Stack.Screen name="ManageOperators" component={ManageOperatorsScreen} />
               </>
-            ) : user.role === 'Operatore' ? (
-              // Stack Operatore
+            ) : getRole() === 'operatore' ? (
+              // Operatore va diretto ai lavori
               <Stack.Screen name="OperatorHome" component={OperatorTicketsScreen} />
             ) : (
-              // Stack Cittadino (Default)
+              // Cittadino (o default) va alla dashboard personale
               <Stack.Screen name="CitizenHome" component={CitizenHomeScreen} />
             )}
 
-            {/* B. SCHERMATE COMUNI (Accessibili a tutti i ruoli loggati) */}
+            {/* 2. Schermate di Supporto (Accessibili da tutti i ruoli) */}
             <Stack.Screen name="TicketDetail" component={TicketDetailScreen} options={{ presentation: 'card' }} />
             <Stack.Screen name="Profile" component={ProfileScreen} options={{ presentation: 'card' }} />
             <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ presentation: 'card' }} />
             
-            {/* Schermate specifiche per Cittadino ma definite qui per accesso globale se serve */}
+            {/* 3. Schermate specifiche richiamate dai flussi */}
             <Stack.Screen name="CreateTicket" component={CreateTicketScreen} options={{ presentation: 'modal' }} />
             <Stack.Screen name="UserTickets" component={UserTicketsScreen} options={{ presentation: 'card' }} />
+            
+            {/* La mappa è accessibile anche da loggati (es. dal FAB del cittadino) */}
+            <Stack.Screen name="Map" component={HomeScreen} /> 
           </>
         )}
       </Stack.Navigator>
@@ -106,7 +101,6 @@ function RootNavigator() {
   );
 }
 
-// Componente Principale
 export default function App() {
   return (
     <SafeAreaProvider>
