@@ -1,21 +1,20 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext'; 
-import { getUserTickets } from '../services/ticketService'; // Importiamo il servizio reale
+import { getUserTickets } from '../services/ticketService'; 
 
 export default function UserTicketsScreen({ navigation }) {
-  const { user } = useAuth(); // Recuperiamo l'utente loggato
+  const { user } = useAuth(); 
   const [myTickets, setMyTickets] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Funzione per caricare i ticket
   const loadTickets = async () => {
     if (!user) return;
     setLoading(true);
     try {
-      // Chiama il servizio che filtra già per user.id
+      // Chiama il servizio filtrato per utente (Corretto per Requisito IF-2.4)
       const tickets = await getUserTickets(user.id);
       setMyTickets(tickets);
     } catch (error) {
@@ -25,7 +24,6 @@ export default function UserTicketsScreen({ navigation }) {
     }
   };
 
-  // Ricarica i dati ogni volta che la schermata ottiene il focus
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       loadTickets();
@@ -34,17 +32,14 @@ export default function UserTicketsScreen({ navigation }) {
   }, [navigation, user]);
 
   const getStatusColor = (status) => {
-    // Normalizzazione stringhe per gestire maiuscole/minuscole o ID numerici se necessario
     const s = status ? String(status).toLowerCase() : '';
-    
-    if (s === 'aperto' || s === 'open') return '#D32F2F'; // Rosso
-    if (s === 'in corso' || s === 'in_progress' || s === 'assegnato') return '#F59E0B'; // Arancio
-    if (s === 'risolto' || s === 'resolved' || s === 'chiuso') return '#4CAF50'; // Verde
+    if (s === 'aperto' || s === 'open') return '#D32F2F'; 
+    if (s === 'in corso' || s === 'in_progress' || s === 'assegnato') return '#F59E0B'; 
+    if (s === 'risolto' || s === 'resolved' || s === 'chiuso') return '#4CAF50'; 
     return '#999';
   };
 
   const renderItem = ({ item }) => (
-    // Passiamo l'intero oggetto 'item' alla schermata di dettaglio
     <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('TicketDetail', { ticket: item })}>
       <View style={styles.cardHeader}>
         <Text style={styles.category}>{item.category || item.categoria || 'Generico'}</Text>
@@ -70,8 +65,6 @@ export default function UserTicketsScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1F2937" />
-      
-      {/* HEADER */}
       <SafeAreaView style={styles.header} edges={['top']}>
         <View style={styles.headerContent}>
             <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -82,7 +75,6 @@ export default function UserTicketsScreen({ navigation }) {
         </View>
       </SafeAreaView>
 
-      {/* LISTA TICKET */}
       {loading ? (
         <View style={{flex:1, justifyContent:'center', alignItems:'center'}}>
             <ActivityIndicator size="large" color="#467599" />
@@ -95,7 +87,7 @@ export default function UserTicketsScreen({ navigation }) {
           keyExtractor={item => item.id ? item.id.toString() : Math.random().toString()}
           contentContainerStyle={styles.listContent}
           refreshing={loading}
-          onRefresh={loadTickets} // Pull to refresh
+          onRefresh={loadTickets}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={50} color="#ccc" />
@@ -115,7 +107,18 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: 'white' },
   listContent: { padding: 15 },
   
-  card: { backgroundColor: 'white', borderRadius: 10, padding: 15, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
+  // Ripristinate le ombreggiature più ricche per iOS (shadow*)
+  card: { 
+      backgroundColor: 'white', 
+      borderRadius: 10, 
+      padding: 15, 
+      marginBottom: 15, 
+      elevation: 2, 
+      shadowColor: '#000', 
+      shadowOpacity: 0.1, 
+      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 2 }
+  },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   category: { fontSize: 12, color: '#666', textTransform: 'uppercase', fontWeight: 'bold' },
   badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
@@ -125,7 +128,6 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: '#eee', marginVertical: 10 },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   detailsLink: { color: '#467599', fontWeight: 'bold', fontSize: 13 },
-  
   emptyState: { alignItems: 'center', marginTop: 50 },
   emptyText: { color: '#999', marginTop: 10 }
 });

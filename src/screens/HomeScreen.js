@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity, Dimensions, Text, ScrollView, StatusBar, Alert, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, ScrollView, StatusBar, Alert, ActivityIndicator } from 'react-native';
 import MapView, { PROVIDER_DEFAULT, Marker, Geojson } from 'react-native-maps';
 import * as Location from 'expo-location'; 
 import { Ionicons } from '@expo/vector-icons';
@@ -9,8 +9,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import SearchBar from '../component/SearchBar';
 import { searchCity } from '../services/nominatim';
-import { getAllTickets, getUserTickets } from '../services/ticketService'; // API Ticket Reali
-import { searchTenantByCoordinates } from '../services/tenantService'; // API Confini Dinamici
+import { getAllTickets, getOperatorTickets } from '../services/ticketService'; 
+import { searchTenantByCoordinates } from '../services/tenantService'; 
 
 export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth(); 
@@ -18,40 +18,44 @@ export default function HomeScreen({ navigation }) {
   const mapRef = useRef(null);
   
   // STATO DATI
-  const [tickets, setTickets] = useState([]);
+  const [tickets, setTickets] = useState([]); // Tutti i ticket per la mappa (Cittadini/Admin)
+  const [operatorTasks, setOperatorTasks] = useState([]); // Solo per operatori (Task assegnati)
   const [loading, setLoading] = useState(false);
   
   // STATO MAPPA & CONFINI
-  const [currentBoundary, setCurrentBoundary] = useState(null); // Confine dinamico
+  const [currentBoundary, setCurrentBoundary] = useState(null); 
   const [region, setRegion] = useState({
-      latitude: 41.8719,
-      longitude: 12.5674,
-      latitudeDelta: 6, 
-      longitudeDelta: 6,
+      latitude: 41.8719, longitude: 12.5674,
+      latitudeDelta: 6, longitudeDelta: 6,
   });
 
-  // 1. CARICAMENTO TICKET (Esegui ogni volta che lo schermo prende focus)
+  // 1. CARICAMENTO DATI (Logica Corretta per Ruoli)
   useFocusEffect(
     useCallback(() => {
-      fetchTickets();
+      fetchData();
     }, [user])
   );
 
-  const fetchTickets = async () => {
+  const fetchData = async () => {
     setLoading(true);
     try {
-        // Se sei operatore o responsabile potresti voler vedere tutti i ticket o quelli assegnati
-        // Per ora usiamo getAllTickets che restituisce la lista pubblica o filtrata dal backend
-        const data = await getAllTickets();
-        setTickets(data);
+        // A. Carica TUTTI i ticket per la mappa (Requisito IF-2.5: Cittadini vedono tutto)
+        const allData = await getAllTickets();
+        setTickets(allData);
+
+        // B. Se è operatore, carica i SUOI task specifici (Requisito IF-3.8: Dashboard Operativa)
+        if (user && user.role === 'operatore') {
+            const myTasks = await getOperatorTickets(user.id);
+            setOperatorTasks(myTasks);
+        }
     } catch (e) {
-        console.error("Errore fetch tickets home:", e);
+        console.error("Errore fetch home:", e);
     } finally {
         setLoading(false);
     }
   };
 
-  // 2. POSIZIONE INIZIALE UTENTE
+  // 2. POSIZIONE INIZIALE
   useEffect(() => {
     (async () => {
       try {
@@ -66,17 +70,13 @@ export default function HomeScreen({ navigation }) {
           };
           setRegion(userRegion);
           mapRef.current?.animateToRegion(userRegion, 1000);
-          
-          // Opzionale: Carica il confine del comune in cui si trova l'utente all'avvio
           loadBoundaryForLocation(loc.coords.latitude, loc.coords.longitude);
         }
-      } catch (e) {
-        console.log("Impossibile recuperare posizione, uso default Italia");
-      }
+      } catch (e) { console.log("Posizione default"); }
     })();
   }, []);
 
-  // 3. LOGICA RICERCA E CONFINI DINAMICI
+  // 3. MAPPA E CONFINI
   const handleSearch = async (text) => {
     const result = await searchCity(text);
     if (result && mapRef.current) {
@@ -87,11 +87,9 @@ export default function HomeScreen({ navigation }) {
             longitudeDelta: 0.05,
         };
         mapRef.current.animateToRegion(newRegion, 1000); 
-        
-        // Carica dinamicamente il confine del comune cercato
         loadBoundaryForLocation(result.lat, result.lon);
     } else {
-        Alert.alert("Non trovato", "Luogo non trovato. Prova con una città o indirizzo.");
+        Alert.alert("Non trovato", "Luogo non trovato.");
     }
   };
 
@@ -101,13 +99,12 @@ export default function HomeScreen({ navigation }) {
           if (result && result.boundary) {
               setCurrentBoundary(result.boundary);
           } else {
-              setCurrentBoundary(null); // Nessun comune gestito qui
+              setCurrentBoundary(null);
           }
-      } catch (e) {
-          console.error("Errore boundary:", e);
-      }
+      } catch (e) { console.error("Errore boundary:", e); }
   };
 
+  // Funzione ZOOM (Ripristinata)
   const handleZoom = (amount) => {
     mapRef.current?.getCamera().then((cam) => {
       cam.zoom += amount;
@@ -115,23 +112,22 @@ export default function HomeScreen({ navigation }) {
     });
   };
 
-  // HELPER STATUS COLOR
   const getStatusColor = (status) => {
       const s = status ? status.toLowerCase() : '';
-      if (s === 'risolto' || s === 'chiuso') return '#4CAF50'; // Verde
-      if (s === 'in corso' || s === 'assegnato') return 'orange'; // Arancio
-      return '#D32F2F'; // Rosso (Aperto)
+      if (s === 'risolto' || s === 'chiuso') return '#4CAF50'; 
+      if (s === 'in corso' || s === 'assegnato') return 'orange';
+      return '#D32F2F'; 
   };
 
-  // --- DASHBOARD MANAGER (Dati Reali) ---
+  // --- DASHBOARD MANAGER (Responsabile) ---
   const renderManagerPanel = () => {
     const openCount = tickets.filter(t => t.status === 'Aperto' || t.status === 'OPEN').length;
     const progressCount = tickets.filter(t => t.status === 'In Corso' || t.status === 'WORKING').length;
-    const closedCount = tickets.filter(t => t.status === 'Risolto' || t.status === 'CLOSED' || t.status === 'Chiuso').length;
+    const closedCount = tickets.filter(t => t.status === 'Risolto' || t.status === 'CLOSED').length;
 
     return (
       <View style={styles.rolePanel}>
-        <Text style={styles.panelTitle}>Dashboard Gestione</Text>
+        <Text style={styles.panelTitle}>Dashboard Comune</Text>
         <View style={styles.statGrid}>
             <View style={styles.statCard}>
                 <Text style={[styles.statNum, {color: '#D32F2F'}]}>{openCount}</Text>
@@ -146,47 +142,46 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.statLabel}>Risolti</Text>
             </View>
         </View>
-        <Text style={styles.subHeader}>Ultime Segnalazioni</Text>
-        {loading ? <ActivityIndicator color="#467599"/> : (
-            <ScrollView style={{height: 120}}>
-                {tickets.slice(0, 10).map(t => (
-                    <TouchableOpacity key={t.id} style={styles.listItem} onPress={() => navigation.navigate('TicketDetail', {ticket: t})}>
-                        <View style={{flex: 1}}>
-                            <Text style={{fontWeight:'bold', color: '#1F2937'}} numberOfLines={1}>{t.title || t.titolo}</Text>
-                            <Text style={{fontSize:11, color:'#666'}}>{t.category || t.categoria}</Text>
-                        </View>
-                        <Text style={{fontSize:10, color: getStatusColor(t.status), fontWeight:'bold'}}>
-                            {(t.status || 'APERTO').toUpperCase()}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </ScrollView>
-        )}
+        <Text style={styles.subHeader}>Recenti nel comune</Text>
+        <ScrollView style={{height: 120}}>
+            {tickets.slice(0, 10).map(t => (
+                <TouchableOpacity key={t.id} style={styles.listItem} onPress={() => navigation.navigate('TicketDetail', {ticket: t})}>
+                    <View style={{flex: 1}}>
+                        <Text style={{fontWeight:'bold', color: '#1F2937'}} numberOfLines={1}>{t.title || t.titolo}</Text>
+                        <Text style={{fontSize:11, color:'#666'}}>{t.category || t.categoria}</Text>
+                    </View>
+                    <Text style={{fontSize:10, color: getStatusColor(t.status), fontWeight:'bold'}}>
+                        {(t.status || 'APERTO').toUpperCase()}
+                    </Text>
+                </TouchableOpacity>
+            ))}
+        </ScrollView>
       </View>
     );
   };
 
-  // --- DASHBOARD OPERATORE (Dati Reali) ---
-  // Nota: Idealmente dovremmo filtrare per "Assegnati a me". 
-  // Qui filtriamo per "In Corso" come esempio, oppure se l'API getAllTickets supporta filtri.
+  // --- DASHBOARD OPERATORE (Logica Corretta: Usa operatorTasks) ---
   const renderOperatorPanel = () => {
-    // Filtro client-side veloce per mostrare qualcosa (migliorabile con endpoint dedicato)
-    const myTasks = tickets.filter(t => t.status === 'In Corso' || t.status === 'WORKING' || t.status === 'Assegnato');
-
     return (
       <View style={styles.rolePanel}>
-        <Text style={styles.panelTitle}>Ticket In Lavorazione</Text>
+        <Text style={styles.panelTitle}>I Tuoi Incarichi</Text>
         {loading ? <ActivityIndicator color="#467599"/> : (
             <ScrollView>
-                {myTasks.length === 0 ? <Text style={{color:'#666'}}>Nessun ticket in corso.</Text> : null}
-                {myTasks.map(t => (
+                {operatorTasks.length === 0 ? 
+                    <Text style={{color:'#666', fontStyle:'italic', padding: 10}}>Nessun ticket assegnato attualmente.</Text> 
+                    : null
+                }
+                {operatorTasks.map(t => (
                     <TouchableOpacity key={t.id} style={styles.taskItem} onPress={() => navigation.navigate('TicketDetail', {ticket: t})}>
                         <Ionicons name="construct" size={24} color="#467599" />
                         <View style={{marginLeft: 10, flex: 1}}>
                             <Text style={{fontWeight:'bold', color: '#1F2937'}} numberOfLines={1}>{t.title || t.titolo}</Text>
-                            <Text style={{fontSize:12, color:'#666'}}>{t.address || t.indirizzo || 'Nessun indirizzo'}</Text>
+                            <Text style={{fontSize:12, color:'#666'}}>{t.address || t.indirizzo || 'Vedi mappa'}</Text>
                         </View>
-                        <Ionicons name="chevron-forward" size={20} color="#ccc" />
+                        <View style={{alignItems:'flex-end'}}>
+                             <Text style={{fontSize:10, color:'orange', fontWeight:'bold'}}>{(t.status || '').toUpperCase()}</Text>
+                             <Ionicons name="chevron-forward" size={20} color="#ccc" />
+                        </View>
                     </TouchableOpacity>
                 ))}
             </ScrollView>
@@ -206,14 +201,13 @@ export default function HomeScreen({ navigation }) {
                <SearchBar onSearch={handleSearch} />
             </View>
 
-            {/* --- CAMPANELLA NOTIFICHE (Visibile solo se loggato) --- */}
+            {/* CAMPANELLA NOTIFICHE (Ripristinata) */}
             {user && (
                 <TouchableOpacity 
                     style={styles.notifBtn} 
                     onPress={() => navigation.navigate('Notifications')}
                 >
                     <Ionicons name="notifications-outline" size={24} color="white" />
-                    {/* Logica badge simulata - da collegare a notifiche reali */}
                     <View style={styles.badgeDot} />
                 </TouchableOpacity>
             )}
@@ -231,7 +225,7 @@ export default function HomeScreen({ navigation }) {
             </View>
         </View>
 
-        {/* MENU A TENDINA */}
+        {/* MENU DROPDOWN */}
         {menuVisible && user && (
             <View style={styles.dropdownMenu}>
                 <View style={styles.dropdownHeader}>
@@ -239,18 +233,14 @@ export default function HomeScreen({ navigation }) {
                     <Text style={styles.userRole}>{user.role.toUpperCase()}</Text>
                 </View>
                 <View style={styles.divider}/>
-                
-                <TouchableOpacity 
-                    style={styles.menuItem} 
-                    onPress={() => { 
-                        setMenuVisible(false);
-                        navigation.navigate('Profile'); 
-                    }}
-                >
-                    <Ionicons name="person-circle-outline" size={20} color="#333" />
-                    <Text style={styles.menuText}>Area Personale</Text>
+                <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('UserTickets'); }}> 
+                    <Ionicons name="list" size={20} color="#333" />
+                    <Text style={styles.menuText}>Le mie segnalazioni</Text>
                 </TouchableOpacity>
-
+                <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('Profile'); }}>
+                    <Ionicons name="person" size={20} color="#333" />
+                    <Text style={styles.menuText}>Profilo</Text>
+                </TouchableOpacity>
                 <TouchableOpacity style={styles.menuItem} onPress={() => { logout(); setMenuVisible(false); }}>
                     <Ionicons name="log-out-outline" size={20} color="#d32f2f" />
                     <Text style={[styles.menuText, {color: '#d32f2f'}]}>Logout</Text>
@@ -267,29 +257,20 @@ export default function HomeScreen({ navigation }) {
             provider={PROVIDER_DEFAULT}
             initialRegion={region}
             showsUserLocation={true}
-            rotateEnabled={false} 
+            rotateEnabled={false}
           >
-            {/* Confine Dinamico (mostrato solo se recuperato dalle API) */}
             {currentBoundary && (
-                <Geojson 
-                    geojson={currentBoundary} 
-                    strokeColor="#467599" 
-                    fillColor="rgba(70, 117, 153, 0.15)" 
-                    strokeWidth={2} 
-                />
+                <Geojson geojson={currentBoundary} strokeColor="#467599" fillColor="rgba(70, 117, 153, 0.15)" strokeWidth={2} />
             )}
-
-            {/* Marker Ticket Reali */}
+            
+            {/* Visualizzazione Ticket sulla Mappa */}
             {tickets.map(t => {
-                // Assicuriamoci che lat e lon siano numeri
                 const lat = parseFloat(t.lat || t.latitude);
                 const lon = parseFloat(t.lon || t.longitude);
                 if (!lat || !lon) return null;
-
                 return (
                   <Marker 
-                    key={t.id} 
-                    coordinate={{ latitude: lat, longitude: lon }}
+                    key={t.id} coordinate={{ latitude: lat, longitude: lon }}
                     onCalloutPress={() => navigation.navigate('TicketDetail', { ticket: t })}
                   >
                     <View style={[styles.markerCircle, {backgroundColor: getStatusColor(t.status)}]}>
@@ -300,14 +281,14 @@ export default function HomeScreen({ navigation }) {
             })}
           </MapView>
 
-          {/* ZOOM CONTROLS */}
+          {/* CONTROLLI ZOOM (Ripristinati) */}
           <View style={styles.zoomControls}>
               <TouchableOpacity style={styles.zoomBtn} onPress={() => handleZoom(1)}><Ionicons name="add" size={24} color="#333" /></TouchableOpacity>
               <View style={styles.zoomDivider} />
               <TouchableOpacity style={styles.zoomBtn} onPress={() => handleZoom(-1)}><Ionicons name="remove" size={24} color="#333" /></TouchableOpacity>
           </View>
 
-          {/* FAB - Solo se Cittadino o Ospite */}
+          {/* FAB - Solo per Cittadini */}
           {(!user || user.role === 'cittadino') && (
               <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate(user ? 'CreateTicket' : 'AuthModal')}>
                   <Ionicons name="add" size={32} color="white" />
@@ -347,17 +328,15 @@ const styles = StyleSheet.create({
   mapContainer: { flex: 1 },
   map: { width: '100%', height: '100%' },
   markerCircle: { width: 30, height: 30, borderRadius: 15, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white', elevation: 3 },
+  
+  // Stili Zoom (Erano mancanti)
   zoomControls: { position: 'absolute', right: 15, top: 20, backgroundColor: 'white', borderRadius: 8, elevation: 5 },
   zoomBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   zoomDivider: { height: 1, backgroundColor: '#eee', width: '80%', alignSelf: 'center' },
   
-  fab: { 
-    position: 'absolute', bottom: 30, right: 20, width: 60, height: 60, borderRadius: 30, 
-    backgroundColor: '#467599', 
-    justifyContent: 'center', alignItems: 'center', elevation: 8 
-  },
-
-  rolePanel: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '40%', backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, elevation: 15, shadowColor: '#000', shadowOpacity: 0.2 },
+  fab: { position: 'absolute', bottom: 30, right: 20, width: 60, height: 60, borderRadius: 30, backgroundColor: '#467599', justifyContent: 'center', alignItems: 'center', elevation: 8 },
+  
+  rolePanel: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '40%', backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, elevation: 15 },
   panelTitle: { fontSize: 18, fontWeight: 'bold', color: '#1F2937', marginBottom: 15 },
   statGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
   statCard: { flex: 1, backgroundColor: '#F9FAFB', padding: 10, borderRadius: 8, alignItems: 'center', marginHorizontal: 5, borderLeftWidth: 4, elevation: 2 },

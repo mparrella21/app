@@ -53,6 +53,30 @@ export const getUserTickets = async (userId) => {
   }
 };
 
+export const getOperatorTickets = async (operatorId) => {
+  try {
+    const allTickets = await getAllTickets();
+    
+    if (!operatorId) return [];
+
+    // Filtra per i ticket assegnati a questo operatore e che non sono ancora chiusi definitivamente
+    // Nota: Verifica il nome del campo 'operator_id' o 'assigned_to' nel JSON del backend
+    const myTasks = allTickets.filter(t => {
+        // Controllo se il ticket è assegnato a questo operatore
+        const isAssignedToMe = (t.operator_id === operatorId || t.assigned_to === operatorId || t.id_operator === operatorId);
+        // Controllo stati rilevanti per l'operatore
+        const isActive = (t.status === 'In Corso' || t.status === 'Assegnato' || t.status === 'WORKING');
+        
+        return isAssignedToMe && isActive;
+    });
+
+    return myTasks; 
+  } catch (e) {
+    console.error('ticketService.getOperatorTickets', e);
+    return [];
+  }
+};
+
 export const getTicket = async (id) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
