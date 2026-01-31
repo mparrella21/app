@@ -17,9 +17,11 @@ export const getAllTickets = async () => {
 
     if (!response.ok) throw new Error('HTTP error');
     const data = await response.json();
-    // Gestione robusta: supporta sia { tickets: [...] } che array diretto
-    if (response.ok && data.success) return data.tickets || [];
+    
+    // Gestione robusta della risposta (array diretto o oggetto wrapper)
+    if (data.success && Array.isArray(data.tickets)) return data.tickets;
     if (Array.isArray(data)) return data; 
+    
     return [];
   } catch (e) {
     console.error('ticketService.getAllTickets', e);
@@ -27,19 +29,24 @@ export const getAllTickets = async () => {
   }
 };
 
-// Recupera solo i ticket dell'utente loggato
-export const getUserTickets = async () => {
+// Recupera SOLO i ticket dell'utente loggato
+export const getUserTickets = async (userId) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    // Proviamo a passare userId come query param se il backend lo supporta, 
-    // altrimenti filtrare lato client è il fallback sicuro.
-    // Assumiamo che GET /ticket ritorni tutto e filtriamo per sicurezza o usiamo un endpoint specifico se esiste
+    // 1. Recuperiamo tutti i ticket (se il backend non ha endpoint dedicato /ticket/me)
     const allTickets = await getAllTickets();
     
-    // NOTA: Qui idealmente il backend dovrebbe avere un endpoint /ticket/me o /ticket?user_id=...
-    // Per ora, dato che non abbiamo l'ID utente qui nel service, ritorniamo tutto 
-    // e lasciamo che la Screen filtri, oppure implementiamo una chiamata specifica se il backend la ha.
-    return allTickets; 
+    if (!userId) return [];
+
+    // 2. Filtriamo lato client per garantire che si vedano solo i propri
+    // Nota: 'id_creator_user' è il campo standard usato nel backend/sito.
+    // Controlliamo anche 'user_id' o 'userId' per robustezza.
+    const myTickets = allTickets.filter(t => 
+        t.id_creator_user === userId || 
+        t.user_id === userId || 
+        t.userId === userId
+    );
+
+    return myTickets; 
   } catch (e) {
     console.error('ticketService.getUserTickets', e);
     return [];
@@ -69,6 +76,7 @@ export const getTicket = async (id) => {
 export const getCategories = async () => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
+    // Endpoint basato sull'architettura (Ticket Service gestisce metadati)
     const response = await fetch(`${API_BASE}/ticket/categories`, {
       method: 'GET',
       headers: { 
@@ -105,8 +113,11 @@ export const postTicket = async (ticketData, photos = []) => {
     const data = await response.json();
     
     // 2. Se creato, caricamento Media (se presenti)
-    if (data.success && data.ticketId && photos.length > 0) {
-       await uploadTicketMedia(data.ticketId, photos, token);
+    // Supportiamo sia 'ticketId' che 'id' nella risposta
+    const newTicketId = data.ticketId || (data.ticket && data.ticket.id);
+    
+    if (data.success && newTicketId && photos.length > 0) {
+       await uploadTicketMedia(newTicketId, photos, token);
     }
 
     return data.success === true;
@@ -121,10 +132,13 @@ const uploadTicketMedia = async (ticketId, photos, token) => {
     try {
         const formData = new FormData();
         photos.forEach((photo, index) => {
+            // Estrazione nome file o generazione
+            const fileName = photo.fileName || `ticket_${ticketId}_${index}.jpg`;
+            
             formData.append('files', {
                 uri: photo.uri,
                 type: 'image/jpeg', 
-                name: `ticket_${ticketId}_${index}.jpg`
+                name: fileName
             });
         });
         
@@ -184,15 +198,14 @@ export const postReply = async (idTicket, replyData) => {
   }
 };
 
-// Aggiornamento Stato Generico (Per Operatori: Presa in carico, ecc.)
+// Aggiornamento Stato Generico (Per Operatori)
 export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
-    // Utilizziamo una PUT/PATCH generica sul ticket
     const response = await fetch(`${API_BASE}/ticket/${idTicket}`, {
-      method: 'PUT', // o PATCH a seconda del backend, PUT è standard per replace
+      method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -201,7 +214,6 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
       body: JSON.stringify({
         status: statusStr,
         id_status: statusId
-        // Eventualmente aggiungere assignedTo: ... se gestito dal backend tramite token operatore
       })
     });
 
@@ -213,7 +225,7 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
   }
 };
 
-// Chiusura Ticket (Scorciatoia specifica se esiste endpoint dedicato)
+// Chiusura Ticket
 export const closeTicket = async (idTicket) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
