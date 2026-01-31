@@ -1,13 +1,18 @@
 import { API_BASE } from './config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// --- TICKET SERVICE (Lettura e Creazione) ---
+
 export const getAllTickets = async () => {
   try {
+    const token = await AsyncStorage.getItem('app_auth_token'); // Aggiunto token se serve per tenant isolation
     const url = `${API_BASE}/ticket`;
-    console.info('ticketService.getAllTickets fetching', url);
     const response = await fetch(url, {
       method: 'GET',
-      headers: { 'Accept': 'application/json' }
+      headers: { 
+        'Accept': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : undefined 
+      }
     });
 
     if (!response.ok) throw new Error('HTTP error');
@@ -34,6 +39,67 @@ export const getTicket = async (id) => {
     throw e;
   }
 };
+
+// Creazione Ticket con gestione Media separata (Architecture Compliant)
+export const postTicket = async (ticketData, photos = []) => {
+  try {
+    const token = await AsyncStorage.getItem('app_auth_token');
+    if (!token) throw new Error('Non autenticato');
+
+    // 1. Creazione del Ticket
+    const response = await fetch(`${API_BASE}/ticket`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(ticketData)
+    });
+
+    const data = await response.json();
+    
+    if (data.success && data.ticketId && photos.length > 0) {
+       // 2. Se il ticket è creato, carichiamo le foto (Media Service)
+       // Questo rispetta il diagramma di sequenza dell'Architettura
+       await uploadTicketMedia(data.ticketId, photos, token);
+    }
+
+    return data.success === true;
+  } catch (e) {
+    console.error('ticketService.postTicket', e);
+    return false;
+  }
+};
+
+// Funzione helper per il Media Service
+const uploadTicketMedia = async (ticketId, photos, token) => {
+    try {
+        const formData = new FormData();
+        photos.forEach((photo, index) => {
+            formData.append('files', {
+                uri: photo.uri,
+                type: 'image/jpeg', // o rileva il tipo dinamicamente
+                name: `ticket_${ticketId}_${index}.jpg`
+            });
+        });
+        
+        // Endpoint Media Service 
+        await fetch(`${API_BASE}/media/${ticketId}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'multipart/form-data',
+            },
+            body: formData
+        });
+    } catch (error) {
+        console.error("Errore upload media:", error);
+        // Non blocchiamo il ritorno true della creazione ticket, ma logghiamo l'errore
+    }
+}
+
+// --- REPLIES & ACTIONS ---
 
 export const getAllReplies = async (idTicket) => {
   try {
@@ -90,30 +156,6 @@ export const closeTicket = async (idTicket) => {
     return data.success === true;
   } catch (e) {
     console.error('ticketService.closeTicket', e);
-    return false;
-  }
-};
-
-export const postTicket = async (ticket) => {
-  try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-
-    if (!token) throw new Error('Non autenticato');
-
-    const response = await fetch(`${API_BASE}/ticket`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(ticket)
-    });
-
-    const data = await response.json();
-    return data.success === true;
-  } catch (e) {
-    console.error('ticketService.postTicket', e);
     return false;
   }
 };
