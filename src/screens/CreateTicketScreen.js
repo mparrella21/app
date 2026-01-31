@@ -5,8 +5,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { postTicket, getCategories } from '../services/ticketService'; 
+// [FIX] Import necessario per recuperare l'ID utente (Requirement IF-1.1/IF-2.4)
+import { useAuth } from '../context/AuthContext';
 
 export default function CreateTicketScreen({ navigation, route }) {
+  // [FIX] Recupero utente per inviare id_creator_user
+  const { user } = useAuth();
+
   // 1. Recupera coordinate dai parametri (dalla Mappa)
   const initialLat = route.params?.lat || null;
   const initialLng = route.params?.lon || null;
@@ -120,16 +125,16 @@ export default function CreateTicketScreen({ navigation, route }) {
 
     setIsSubmitting(true);
 
-    // Architettura: Dati del ticket puliti (senza immagine Base64 dentro)
-    // UPDATE: Stato impostato a "Ricevuto" come da Requisiti UC-03
+    // [FIX] Architettura: Allineamento nomi campi con il Sito (ticket.js) e CitizenHomeScreen.js
     const ticketData = {
-      title: title,
-      description: desc,
-      category: category,
-      latitude: coords.lat,
-      longitude: coords.lng,
-      address: address,
-      status: 'Ricevuto', // STATO CORRETTO
+      titolo: title,           // App usava 'title', Sito/DB usa 'titolo'
+      descrizione: desc,       // App usava 'description'
+      categoria: category,     // App usava 'category'
+      lat: coords.lat,         // App usava 'latitude'
+      lon: coords.lng,         // App usava 'longitude'
+      indirizzo: address,      // App usava 'address'
+      status: 'Ricevuto', 
+      id_creator_user: user?.id, // [FIX] Aggiunto ID utente come fa il Sito
       timestamp: new Date().toISOString(),
     };
 
