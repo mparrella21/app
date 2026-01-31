@@ -4,7 +4,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-// Assicurati che il percorso sia corretto in base alla tua struttura cartelle
 import { postTicket } from '../services/ticketService'; 
 
 export default function CreateTicketScreen({ navigation, route }) {
@@ -17,7 +16,7 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [category, setCategory] = useState('Strade');
   const [coords, setCoords] = useState({ lat: initialLat, lng: initialLng });
   const [address, setAddress] = useState('');
-  const [imageUri, setImageUri] = useState(null);
+  const [images, setImages] = useState([]); // Gestiamo un array di immagini come da architettura
   const [loadingAddr, setLoadingAddr] = useState(false);
   
   // STATO PER IL CARICAMENTO INVIO
@@ -62,7 +61,7 @@ export default function CreateTicketScreen({ navigation, route }) {
       "Scegli una sorgente",
       [
         { text: "Galleria", onPress: pickImage },
-        { text: "Fotocamera", onPress: takePhoto },
+        // { text: "Fotocamera", onPress: takePhoto }, // Decommenta se implementi takePhoto
         { text: "Annulla", style: "cancel" }
       ]
     );
@@ -75,21 +74,8 @@ export default function CreateTicketScreen({ navigation, route }) {
       aspect: [4, 3],
       quality: 0.5,
     });
-    if (!result.canceled) setImageUri(result.assets[0].uri);
-  };
-
-  const takePhoto = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (permission.granted) {
-      let result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.5,
-      });
-      if (!result.canceled) setImageUri(result.assets[0].uri);
-    } else {
-      Alert.alert("Permesso negato", "Serve il permesso fotocamera.");
-    }
+    // Architettura: Prepariamo l'array di immagini
+    if (!result.canceled) setImages([result.assets[0]]); 
   };
 
   const handleSubmit = async () => {
@@ -98,24 +84,29 @@ export default function CreateTicketScreen({ navigation, route }) {
 
     setIsSubmitting(true);
 
-    const newTicket = {
-      titolo: title,
-      descrizione: desc,
-      categoria: category,
-      latitudine: coords.lat,
-      longitudine: coords.lng,
-      indirizzo: address,
-      immagine: imageUri,
-      data: new Date().toISOString(),
-      stato: 'Ricevuto' // Stato iniziale come da UC-03
+    // Architettura: Dati del ticket puliti (senza immagine Base64 dentro)
+    const ticketData = {
+      title: title,
+      description: desc,
+      category: category,
+      latitude: coords.lat,
+      longitude: coords.lng,
+      address: address,
+      status: 'OPEN', // Standardizziamo a OPEN per il backend
+      timestamp: new Date().toISOString(),
     };
 
     try {
-      // Chiamata effettiva al servizio (assicurati che ticketService esista e funzioni)
-      await postTicket(newTicket);
+      // Passiamo ticketData E images separatamente al service
+      // Il service gestirà la doppia chiamata (Ticket Service + Media Service)
+      const success = await postTicket(ticketData, images);
       
-      Alert.alert("Successo", "Segnalazione inviata correttamente!");
-      navigation.goBack();
+      if (success) {
+        Alert.alert("Successo", "Segnalazione inviata correttamente!");
+        navigation.goBack();
+      } else {
+        throw new Error("Errore backend");
+      }
     } catch (error) {
       console.error(error);
       Alert.alert("Errore", "Impossibile inviare la segnalazione al momento.");
@@ -137,8 +128,8 @@ export default function CreateTicketScreen({ navigation, route }) {
 
         <ScrollView contentContainerStyle={styles.formContainer}>
           <TouchableOpacity style={styles.photoBox} onPress={handlePhotoAction}>
-            {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.previewImage} />
+            {images.length > 0 ? (
+              <Image source={{ uri: images[0].uri }} style={styles.previewImage} />
             ) : (
               <>
                 <Ionicons name="camera-outline" size={40} color="#4A769E" />
@@ -146,8 +137,8 @@ export default function CreateTicketScreen({ navigation, route }) {
               </>
             )}
           </TouchableOpacity>
-          {imageUri && (
-             <TouchableOpacity onPress={() => setImageUri(null)} style={{alignSelf:'center', marginBottom:15}}>
+          {images.length > 0 && (
+             <TouchableOpacity onPress={() => setImages([])} style={{alignSelf:'center', marginBottom:15}}>
                 <Text style={{color:'#D32F2F', fontSize:12}}>Rimuovi foto</Text>
              </TouchableOpacity>
           )}
