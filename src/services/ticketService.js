@@ -17,7 +17,9 @@ export const getAllTickets = async () => {
 
     if (!response.ok) throw new Error('HTTP error');
     const data = await response.json();
+    // Gestione robusta: supporta sia { tickets: [...] } che array diretto se il backend cambia
     if (response.ok && data.success) return data.tickets || [];
+    if (Array.isArray(data)) return data; 
     return [];
   } catch (e) {
     console.error('ticketService.getAllTickets', e);
@@ -37,7 +39,7 @@ export const getTicket = async (id) => {
     });
     const data = await response.json();
     if (response.ok && data.success) return data.ticket;
-    return null; // Modificato per gestire meglio l'assenza dati
+    return null; 
   } catch (e) {
     console.error('ticketService.getTicket', e);
     throw e;
@@ -75,19 +77,19 @@ export const postTicket = async (ticketData, photos = []) => {
   }
 };
 
-// Funzione helper per il Media Service (RIPRISTINATO TUO ENDPOINT)
+// Funzione helper per il Media Service
 const uploadTicketMedia = async (ticketId, photos, token) => {
     try {
         const formData = new FormData();
         photos.forEach((photo, index) => {
+            // Fix per React Native FormData: serve name, type e uri
             formData.append('files', {
                 uri: photo.uri,
-                type: 'image/jpeg', // o detection dinamica
+                type: 'image/jpeg', 
                 name: `ticket_${ticketId}_${index}.jpg`
             });
         });
         
-        // Endpoint Media Service originale
         await fetch(`${API_BASE}/media/${ticketId}`, {
             method: 'POST',
             headers: {
@@ -144,7 +146,7 @@ export const postReply = async (idTicket, replyData) => {
   }
 };
 
-// Chiusura Ticket (RIPRISTINATO TUO ENDPOINT)
+// Chiusura Ticket
 export const closeTicket = async (idTicket) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
@@ -163,6 +165,31 @@ export const closeTicket = async (idTicket) => {
     return data.success === true;
   } catch (e) {
     console.error('ticketService.closeTicket', e);
+    return false;
+  }
+};
+
+// --- FEEDBACK / RATING (Nuovo) ---
+export const sendFeedback = async (idTicket, rating, comment = "") => {
+  try {
+    const token = await AsyncStorage.getItem('app_auth_token');
+    if (!token) throw new Error('Non autenticato');
+
+    // Endpoint conforme alle specifiche REST per risorse sottostanti
+    const response = await fetch(`${API_BASE}/ticket/${idTicket}/feedback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ rating, comment })
+    });
+
+    const data = await response.json();
+    return data.success === true;
+  } catch (e) {
+    console.error('ticketService.sendFeedback', e);
     return false;
   }
 };

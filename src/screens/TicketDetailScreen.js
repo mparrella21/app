@@ -3,10 +3,10 @@ import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet,
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
-import { getTicket, getAllReplies, postReply, closeTicket } from '../services/ticketService';
+import { getTicket, getAllReplies, postReply, closeTicket, sendFeedback } from '../services/ticketService';
 
 export default function TicketDetailScreen({ route, navigation }) {
-  // 1. Recupero dati
+  // 1. Recupero dati iniziali
   const { ticket: paramTicket, id } = route.params || {};
   const { user } = useAuth();
   
@@ -16,11 +16,35 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [rating, setRating] = useState(ticket?.rating || 0); // Ripristinato Rating
+  
+  // Rating state
+  const [rating, setRating] = useState(0); 
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
-  // 3. Caricamento Dati Completi
+  // 3. Helper per decodificare lo stato (Gestisce sia Stringhe che ID Numerici dal backend)
+  const getStatusLabel = (t) => {
+      if (!t) return 'Sconosciuto';
+      
+      // Se il backend ritorna una stringa
+      if (t.status && typeof t.status === 'string') return t.status;
+      if (t.stato && typeof t.stato === 'string') return t.stato;
+
+      // Se il backend ritorna id_status (come nel mock del sito)
+      const sid = t.id_status || t.statusId;
+      switch (sid) {
+          case 1: return 'Aperto';
+          case 2: return 'In Corso'; // o Assegnato
+          case 3: return 'Risolto'; // o Chiuso
+          case 4: return 'Chiuso';
+          default: return 'Aperto';
+      }
+  };
+
+  const statusLabel = getStatusLabel(ticket);
+  const isResolved = statusLabel.toLowerCase() === 'risolto' || statusLabel.toLowerCase() === 'chiuso';
+
+  // 4. Caricamento Dati Completi
   const fetchData = async () => {
-      // Mostra loading solo se non abbiamo già i dati base
       if (!ticket && !paramTicket) setLoading(true);
       
       try {
@@ -31,7 +55,11 @@ export default function TicketDetailScreen({ route, navigation }) {
         const freshTicket = await getTicket(ticketId);
         if (freshTicket) {
            setTicket(freshTicket);
-           if(freshTicket.rating) setRating(freshTicket.rating);
+           // Se il ticket ha già un rating salvato, lo impostiamo
+           if(freshTicket.rating) {
+               setRating(freshTicket.rating);
+               setRatingSubmitted(true);
+           }
         }
 
         // B. Scarica Messaggi
@@ -49,13 +77,11 @@ export default function TicketDetailScreen({ route, navigation }) {
     fetchData();
   }, [id]);
 
-  // 4. Logica Ruoli e Stato
+  // 5. Logica Ruoli
   const isOperator = user?.role === 'operatore';
   const isCitizen = !user || user?.role === 'cittadino';
-  const currentStatus = ticket?.status || ticket?.stato || 'Aperto';
-  const isResolved = currentStatus === 'Risolto' || currentStatus === 'Chiuso';
 
-  // 5. Azioni Operatore
+  // 6. Azioni Operatore
   const handleStatusChange = async (newStatus) => {
     if (newStatus === 'Risolto') {
         Alert.alert("Conferma", "Vuoi chiudere definitivamente il ticket?", [
@@ -65,7 +91,8 @@ export default function TicketDetailScreen({ route, navigation }) {
                 const success = await closeTicket(ticket.id);
                 setActionLoading(false);
                 if (success) {
-                    setTicket(prev => ({ ...prev, status: 'Risolto' }));
+                    // Aggiorniamo lo stato localmente per riflettere la chiusura
+                    setTicket(prev => ({ ...prev, status: 'Risolto', id_status: 3 }));
                     Alert.alert("Successo", "Ticket chiuso correttamente.");
                 } else {
                     Alert.alert("Errore", "Impossibile chiudere il ticket.");
@@ -73,18 +100,18 @@ export default function TicketDetailScreen({ route, navigation }) {
             }}
         ]);
     } else {
-         Alert.alert("Info", "Cambio stato non disponibile via API.");
+         Alert.alert("Info", "Cambio stato intermedio non disponibile da app Mobile.");
     }
   };
 
-  // 6. Invio Messaggio
+  // 7. Invio Messaggio
   const handleSendComment = async () => {
     if(!newComment.trim()) return;
     
     setActionLoading(true);
     const replyData = {
         text: newComment, 
-        author: user?.name || 'Utente', // Fallback se backend non lo prende dal token
+        author: user?.name || 'Utente', 
         date: new Date().toISOString()
     };
 
@@ -93,17 +120,33 @@ export default function TicketDetailScreen({ route, navigation }) {
 
     if (success) {
         setNewComment('');
-        fetchData(); // Ricarica messaggi
+        fetchData(); // Ricarica messaggi dal server
     } else {
         Alert.alert("Errore", "Impossibile inviare il messaggio.");
     }
   };
 
-  // 7. Gestione Rating (Ripristinato)
-  const handleRating = (stars) => {
-    setRating(stars);
-    Alert.alert("Grazie!", `Hai valutato l'intervento con ${stars} stelle.`);
-    // TODO: Aggiungere chiamata API salvataggio rating se prevista
+  // 8. Gestione Rating (Ora DINAMICO)
+  const handleRating = async (stars) => {
+    if(ratingSubmitted) return; // Evita doppi voti
+
+    Alert.alert("Valutazione", `Confermi una valutazione di ${stars} stelle?`, [
+        { text: "Annulla", style: "cancel"},
+        { text: "Invia", onPress: async () => {
+            setRating(stars);
+            setActionLoading(true);
+            const success = await sendFeedback(ticket.id, stars);
+            setActionLoading(false);
+            
+            if (success) {
+                setRatingSubmitted(true);
+                Alert.alert("Grazie!", "La tua valutazione è stata inviata.");
+            } else {
+                // Se fallisce, resetta (o mostra errore, ma lascia le stelle visive)
+                Alert.alert("Attenzione", "Impossibile salvare la valutazione sul server, riprova più tardi.");
+            }
+        }}
+    ]);
   };
 
   if (loading || !ticket) {
@@ -114,6 +157,19 @@ export default function TicketDetailScreen({ route, navigation }) {
         </View>
       );
   }
+
+  // Colore badge stato
+  const getStatusColor = () => {
+     if (isResolved) return '#D1E7DD'; // Verde
+     if (statusLabel === 'In Corso' || statusLabel === 'Assegnato') return '#FFF3CD'; // Giallo
+     return '#F8D7DA'; // Rosso
+  };
+  
+  const getStatusTextColor = () => {
+     if (isResolved) return '#0F5132';
+     if (statusLabel === 'In Corso' || statusLabel === 'Assegnato') return '#856404';
+     return '#721C24';
+  };
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1, backgroundColor:'#F3F4F6'}}>
@@ -144,9 +200,9 @@ export default function TicketDetailScreen({ route, navigation }) {
             <View style={styles.catBadge}>
                 <Text style={styles.catText}>{ticket.categoria || ticket.category || 'Generico'}</Text>
             </View>
-            <View style={[styles.statusBadge, {backgroundColor: isResolved ? '#D1E7DD' : (currentStatus === 'In Corso' ? '#FFF3CD' : '#F8D7DA')}]}>
-                <Text style={{color: isResolved ? '#0F5132' : (currentStatus === 'In Corso' ? '#856404' : '#721C24'), fontWeight:'bold'}}>
-                    {currentStatus ? currentStatus.toUpperCase() : 'APERTO'}
+            <View style={[styles.statusBadge, {backgroundColor: getStatusColor()}]}>
+                <Text style={{color: getStatusTextColor(), fontWeight:'bold'}}>
+                    {statusLabel.toUpperCase()}
                 </Text>
             </View>
           </View>
@@ -182,22 +238,31 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* RATING (Ripristinato) */}
+          {/* RATING / FEEDBACK (Per Cittadini su ticket risolti) */}
           {isResolved && isCitizen && (
             <View style={styles.ratingBox}>
-                <Text style={styles.ratingTitle}>Valuta l'intervento</Text>
+                <Text style={styles.ratingTitle}>
+                    {ratingSubmitted ? "Grazie per il tuo feedback!" : "Valuta l'intervento"}
+                </Text>
                 <View style={{flexDirection:'row', justifyContent:'center'}}>
                    {[1,2,3,4,5].map(star => (
-                      <TouchableOpacity key={star} onPress={()=>handleRating(star)}>
-                          <Ionicons name={star <= rating ? "star" : "star-outline"} size={32} color="#FFD700" style={{marginHorizontal:4}} />
+                      <TouchableOpacity key={star} onPress={()=>handleRating(star)} disabled={ratingSubmitted}>
+                          <Ionicons 
+                            name={star <= rating ? "star" : "star-outline"} 
+                            size={32} 
+                            color={ratingSubmitted ? "#FFC107" : "#FFD700"} // Colore diverso se confermato
+                            style={{marginHorizontal:4, opacity: ratingSubmitted ? 0.8 : 1}} 
+                          />
                       </TouchableOpacity>
                    ))}
                 </View>
-                <Text style={styles.ratingSub}>{rating > 0 ? "Valutazione inviata" : "Tocca le stelle per valutare"}</Text>
+                <Text style={styles.ratingSub}>
+                    {ratingSubmitted ? "Valutazione registrata" : "Tocca le stelle per valutare"}
+                </Text>
             </View>
           )}
 
-          {/* MESSAGGI (Stile Chat Ripristinato) */}
+          {/* MESSAGGI */}
           <Text style={styles.sectionTitle}>MESSAGGI</Text>
           {replies.length === 0 ? (
               <View style={{padding:20, alignItems:'center'}}>
@@ -208,7 +273,7 @@ export default function TicketDetailScreen({ route, navigation }) {
               replies.map((r, i) => (
                 <View key={i} style={[styles.msgBox, r.id_user === user?.id ? styles.msgMine : styles.msgOther]}>
                     <Text style={styles.msgUser}>
-                        {r.user_name || (r.author) || (r.id_user === user?.id ? 'Tu' : 'Utente')}
+                        {r.user_name || r.author || (r.id_user === user?.id ? 'Tu' : 'Utente')}
                     </Text>
                     <Text style={styles.msgText}>{r.text || r.messaggio || r.body}</Text>
                     <Text style={styles.msgDate}>{r.date ? new Date(r.date).toLocaleDateString() : ''}</Text>
@@ -218,18 +283,20 @@ export default function TicketDetailScreen({ route, navigation }) {
         </View>
       </ScrollView>
 
-      {/* INPUT BAR */}
-      <View style={styles.inputArea}>
-         <TextInput 
-            style={styles.input} 
-            placeholder="Scrivi un aggiornamento..." 
-            value={newComment} 
-            onChangeText={setNewComment} 
-         />
-         <TouchableOpacity style={styles.sendBtn} onPress={handleSendComment} disabled={actionLoading}>
-            <Ionicons name="send" size={20} color="white" />
-         </TouchableOpacity>
-      </View>
+      {/* INPUT BAR (Disabilitata se risolto, opzionale) */}
+      {!isResolved && (
+          <View style={styles.inputArea}>
+             <TextInput 
+                style={styles.input} 
+                placeholder="Scrivi un aggiornamento..." 
+                value={newComment} 
+                onChangeText={setNewComment} 
+             />
+             <TouchableOpacity style={styles.sendBtn} onPress={handleSendComment} disabled={actionLoading}>
+                {actionLoading ? <ActivityIndicator color="white" size="small"/> : <Ionicons name="send" size={20} color="white" />}
+             </TouchableOpacity>
+          </View>
+      )}
 
     </KeyboardAvoidingView>
   );
@@ -264,7 +331,6 @@ const styles = StyleSheet.create({
   ratingTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 10 },
   ratingSub: { fontSize: 12, color: '#6B7280', marginTop: 5 },
 
-  // Stili Messaggi Ripristinati
   msgBox: { padding: 12, borderRadius: 12, marginBottom: 10, maxWidth: '85%' },
   msgOther: { backgroundColor: '#fff', alignSelf: 'flex-start', elevation: 1, borderBottomLeftRadius: 0 },
   msgMine: { backgroundColor: '#E3F2FD', alignSelf: 'flex-end', elevation: 1, borderBottomRightRadius: 0 },
