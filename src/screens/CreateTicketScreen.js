@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { postTicket } from '../services/ticketService'; 
+import { postTicket, getCategories } from '../services/ticketService'; 
 
 export default function CreateTicketScreen({ navigation, route }) {
   // 1. Recupera coordinate dai parametri (dalla Mappa)
@@ -13,16 +13,23 @@ export default function CreateTicketScreen({ navigation, route }) {
 
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
-  const [category, setCategory] = useState('Strade');
+  
+  // STATO PER CATEGORIE DINAMICHE
+  const [categories, setCategories] = useState([]);
+  const [category, setCategory] = useState(''); // Stringa vuota all'inizio
+  const [loadingCats, setLoadingCats] = useState(false);
+
   const [coords, setCoords] = useState({ lat: initialLat, lng: initialLng });
   const [address, setAddress] = useState('');
-  const [images, setImages] = useState([]); // Gestiamo un array di immagini come da architettura
+  const [images, setImages] = useState([]); 
   const [loadingAddr, setLoadingAddr] = useState(false);
   
   // STATO PER IL CARICAMENTO INVIO
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Caricamento Iniziale (Posizione + Categorie)
   useEffect(() => {
+    // A. Gestione Posizione
     if (initialLat && initialLng) {
       setCoords({ lat: initialLat, lng: initialLng });
       fetchAddress(initialLat, initialLng);
@@ -36,7 +43,35 @@ export default function CreateTicketScreen({ navigation, route }) {
         }
       })();
     }
+
+    // B. Caricamento Categorie dal Server
+    fetchCategories();
   }, [initialLat, initialLng]);
+
+  const fetchCategories = async () => {
+      setLoadingCats(true);
+      try {
+          const cats = await getCategories();
+          // Se l'array è valido, lo usiamo, altrimenti fallback statico
+          if (cats && cats.length > 0) {
+              setCategories(cats);
+              // Imposta la prima categoria come default se disponibile
+              setCategory(cats[0].label || cats[0]);
+          } else {
+              // Fallback statico se il server non risponde o array vuoto
+              const defaults = ['Strade', 'Illuminazione', 'Verde', 'Rifiuti', 'Altro'];
+              setCategories(defaults);
+              setCategory(defaults[0]);
+          }
+      } catch (e) {
+          console.log("Fallback categorie statiche");
+          const defaults = ['Strade', 'Illuminazione', 'Verde', 'Rifiuti', 'Altro'];
+          setCategories(defaults);
+          setCategory(defaults[0]);
+      } finally {
+          setLoadingCats(false);
+      }
+  };
 
   const fetchAddress = async (lat, lon) => {
     setLoadingAddr(true);
@@ -80,6 +115,7 @@ export default function CreateTicketScreen({ navigation, route }) {
 
   const handleSubmit = async () => {
     if (!title) return Alert.alert("Attenzione", "Inserisci almeno un titolo!");
+    if (!category) return Alert.alert("Attenzione", "Seleziona una categoria!");
     if (!coords.lat || !coords.lng) return Alert.alert("Attenzione", "Posizione non rilevata.");
 
     setIsSubmitting(true);
@@ -150,17 +186,29 @@ export default function CreateTicketScreen({ navigation, route }) {
             value={title} onChangeText={setTitle} 
           />
 
-          <Text style={styles.label}>CATEGORIA</Text>
+          <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
+            <Text style={styles.label}>CATEGORIA</Text>
+            {loadingCats && <ActivityIndicator size="small" color="#1D2D44"/>}
+          </View>
+          
           <View style={styles.chipsRow}>
-            {['Strade', 'Illuminazione', 'Verde', 'Rifiuti', 'Altro'].map(cat => (
-               <TouchableOpacity 
-                 key={cat} 
-                 style={[styles.chip, category === cat && styles.chipActive]}
-                 onPress={() => setCategory(cat)}
-               >
-                 <Text style={[styles.chipText, category === cat && styles.chipTextActive]}>{cat}</Text>
-               </TouchableOpacity>
-            ))}
+            {categories.map((cat, index) => {
+               // Gestione dinamica: supporta sia stringhe semplici che oggetti {id, label}
+               const catLabel = typeof cat === 'object' ? cat.label : cat;
+               const catId = typeof cat === 'object' ? cat.id : cat;
+               
+               return (
+                 <TouchableOpacity 
+                   key={index} 
+                   style={[styles.chip, category === catLabel && styles.chipActive]}
+                   onPress={() => setCategory(catLabel)}
+                 >
+                   <Text style={[styles.chipText, category === catLabel && styles.chipTextActive]}>
+                      {catLabel}
+                   </Text>
+                 </TouchableOpacity>
+               );
+            })}
           </View>
 
           <Text style={styles.label}>DESCRIZIONE</Text>

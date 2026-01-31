@@ -46,6 +46,27 @@ export const getTicket = async (id) => {
   }
 };
 
+// Recupero Categorie (Reso Dinamico come da Architecture definition - Note Ticket Service)
+export const getCategories = async () => {
+  try {
+    const token = await AsyncStorage.getItem('app_auth_token');
+    // Endpoint ipotizzato basato sulle note del PDF architetturale
+    const response = await fetch(`${API_BASE}/ticket/categories`, {
+      method: 'GET',
+      headers: { 
+        'Accept': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : undefined
+      }
+    });
+    const data = await response.json();
+    if (response.ok && data.success) return data.categories || [];
+    return []; 
+  } catch (e) {
+    console.error('ticketService.getCategories', e);
+    return [];
+  }
+};
+
 // Creazione Ticket con gestione Media (Architecture Compliant)
 export const postTicket = async (ticketData, photos = []) => {
   try {
@@ -169,21 +190,26 @@ export const closeTicket = async (idTicket) => {
   }
 };
 
-// --- FEEDBACK / RATING (Nuovo) ---
+// --- FEEDBACK / RATING (Corretto secondo Architecture Definition: Intervention Service) ---
 export const sendFeedback = async (idTicket, rating, comment = "") => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
-    // Endpoint conforme alle specifiche REST per risorse sottostanti
-    const response = await fetch(`${API_BASE}/ticket/${idTicket}/feedback`, {
+    // FIX: L'architettura prevede POST /rating nell'Intervention Service, non /ticket/.../feedback
+    // Il body deve contenere il riferimento al ticket (ticketId)
+    const response = await fetch(`${API_BASE}/rating`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ rating, comment })
+      body: JSON.stringify({ 
+          ticketId: idTicket,
+          vote: rating, 
+          comment: comment 
+      })
     });
 
     const data = await response.json();
