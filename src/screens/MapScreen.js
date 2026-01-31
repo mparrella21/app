@@ -1,25 +1,28 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, Platform } from 'react-native';
-import MapView, { Marker, Geojson } from 'react-native-maps';
+import MapView, { Marker, Geojson, Callout } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
-import { postTicket } from '../services/ticketService';
-import { searchTenantByCoordinates } from '../services/tenantService'; // NUOVO SERVIZIO
+import { postTicket, getAllTickets } from '../services/ticketService'; // Aggiunto getAllTickets
+import { searchTenantByCoordinates } from '../services/tenantService'; 
 import { OFFLINE_MODE } from '../services/config';
 import { addTicket as addMockTicket } from '../services/mockTicketStore';
 import { useAuth } from '../context/AuthContext';
 import { getAddressFromCoordinates, searchCity } from '../services/nominatim';
 import SearchBar from '../component/SearchBar';
 
-// NOTA: Rimossa importazione statica dei confini italiani per usare API dinamica
-
 export default function MapScreen({ navigation }) {
   const mapRef = useRef(null);
   const [region, setRegion] = useState(null);
+  
+  // Stato creazione nuovo ticket
   const [marker, setMarker] = useState(null);
   const [address, setAddress] = useState('');
+  
+  // Stato visualizzazione ticket esistenti (Requisito IF-2.5)
+  const [existingTickets, setExistingTickets] = useState([]);
   
   // Gestione Confini Dinamici
   const [currentBoundary, setCurrentBoundary] = useState(null);
@@ -36,6 +39,7 @@ export default function MapScreen({ navigation }) {
 
   useEffect(() => {
     (async () => {
+      // 1. Permessi e Posizione Iniziale
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permesso negato', 'Serve il permesso di posizione per usare la mappa');
@@ -49,32 +53,43 @@ export default function MapScreen({ navigation }) {
         latitudeDelta: 0.05,
         longitudeDelta: 0.05
       });
+
+      // 2. Caricamento Ticket Esistenti per visualizzazione su mappa
+      fetchExistingTickets();
     })();
   }, []);
+
+  // Funzione per ricaricare i ticket (utile anche dopo un inserimento)
+  const fetchExistingTickets = async () => {
+      try {
+          const tickets = await getAllTickets();
+          // Filtriamo solo i ticket che hanno coordinate valide
+          const validTickets = tickets.filter(t => t.lat && t.lon);
+          setExistingTickets(validTickets);
+      } catch (e) {
+          console.warn("Errore caricamento pin mappa:", e);
+      }
+  };
 
   // Logica validazione zona tramite API
   const validateZoneAndSetMarker = async (lat, lon) => {
     setValidatingZone(true);
     setMarker({ latitude: lat, longitude: lon });
     setAddress("Verifica zona in corso...");
-    setCurrentBoundary(null); // Pulisce il vecchio boundary
+    setCurrentBoundary(null); 
     setIsValidZone(false);
 
     try {
-        // 1. Cerca se il punto è in un Tenant gestito
         const result = await searchTenantByCoordinates(lat, lon);
 
         if (result && result.boundary) {
-            // Zona valida!
             setIsValidZone(true);
-            setCurrentBoundary(result.boundary); // GeoJSON specifico del comune
+            setCurrentBoundary(result.boundary); 
             
-            // 2. Ottieni indirizzo leggibile (opzionale, solo per UI)
             const addr = await getAddressFromCoordinates(lat, lon);
             setAddress(addr || "Posizione valida rilevata");
 
         } else {
-            // Zona non gestita
             setIsValidZone(false);
             setAddress("Zona non coperta dal servizio");
             Alert.alert("Attenzione", "Il punto selezionato non rientra in nessuno dei comuni gestiti dal sistema.");
@@ -104,8 +119,6 @@ export default function MapScreen({ navigation }) {
         };
         setRegion(newRegion);
         mapRef.current?.animateToRegion(newRegion, 1000);
-        
-        // Quando cerchi una città, verifica subito se è gestita
         await validateZoneAndSetMarker(coords.lat, coords.lon);
     } else {
         Alert.alert("Non trovato", "Luogo non trovato.");
@@ -167,6 +180,7 @@ export default function MapScreen({ navigation }) {
             if (newT) {
                 Alert.alert('Successo', 'Segnalazione creata (Locale)');
                 resetForm();
+                fetchExistingTickets(); // Aggiorna la mappa
             } else {
                 Alert.alert('Errore', 'Errore salvataggio locale');
             }
@@ -175,6 +189,7 @@ export default function MapScreen({ navigation }) {
             if (success) {
                 Alert.alert('Inviato', 'Segnalazione inviata al server');
                 resetForm();
+                fetchExistingTickets(); // Aggiorna la mappa
             } else {
                 Alert.alert('Errore', 'Impossibile contattare il server');
             }
@@ -213,17 +228,49 @@ export default function MapScreen({ navigation }) {
         showsUserLocation={true}
         provider={Platform.OS === 'android' ? 'google' : undefined}
       >
-        {/* Disegna il confine del comune SOLO se trovato tramite API */}
+        {/* Confine Comune (se attivo) */}
         {currentBoundary && (
             <Geojson 
                 geojson={currentBoundary} 
-                strokeColor="#4CAF50" // Verde per indicare zona valida 
+                strokeColor="#4CAF50" 
                 fillColor="rgba(76, 175, 80, 0.2)" 
                 strokeWidth={2}
             />
         )}
 
-        {marker && <Marker coordinate={marker} pinColor={isValidZone ? "#D32F2F" : "#888"} />}
+        {/* 1. Marker per NUOVA segnalazione (rosso se non valida, grigio/verde se valida) */}
+        {marker && (
+            <Marker coordinate={marker} pinColor={isValidZone ? "#D32F2F" : "#888"}>
+                <Callout>
+                    <View style={{padding: 5}}>
+                        <Text style={{fontWeight:'bold'}}>Nuova Segnalazione</Text>
+                        <Text>{isValidZone ? "Zona Valida" : "Verifica zona..."}</Text>
+                    </View>
+                </Callout>
+            </Marker>
+        )}
+
+        {/* 2. Markers per TICKET ESISTENTI (IF-2.5) */}
+        {existingTickets.map((t, index) => {
+            const isResolved = t.status === 'Risolto' || t.status === 'CHIUSO' || t.status === 'CLOSED';
+            return (
+                <Marker 
+                    key={`ticket-${t.id}-${index}`}
+                    coordinate={{ latitude: parseFloat(t.lat), longitude: parseFloat(t.lon) }}
+                    pinColor={isResolved ? "green" : "orange"} // Verde risolto, Arancio in corso/aperto
+                    opacity={0.8}
+                >
+                    <Callout tooltip onPress={() => navigation.navigate('TicketDetail', { id: t.id })}>
+                        <View style={styles.calloutBubble}>
+                            <Text style={styles.calloutTitle}>{t.title || t.titolo}</Text>
+                            <Text style={styles.calloutStatus}>{t.status || 'Aperto'}</Text>
+                            <Text style={styles.calloutNote}>Clicca per dettagli</Text>
+                        </View>
+                    </Callout>
+                </Marker>
+            );
+        })}
+
       </MapView>
 
       {/* Form Bottom Sheet */}
@@ -319,5 +366,11 @@ const styles = StyleSheet.create({
   submitBtn: { 
     backgroundColor: '#D32F2F', padding: 15, borderRadius: 10, alignItems: 'center' 
   },
-  submitText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
+  submitText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  
+  // Stili per Callout Mappa
+  calloutBubble: { backgroundColor: 'white', borderRadius: 6, padding: 10, width: 150, alignItems: 'center' },
+  calloutTitle: { fontWeight: 'bold', fontSize: 14, marginBottom: 2 },
+  calloutStatus: { fontSize: 12, color: '#666', marginBottom: 2 },
+  calloutNote: { fontSize: 10, color: 'blue', fontStyle: 'italic' }
 });

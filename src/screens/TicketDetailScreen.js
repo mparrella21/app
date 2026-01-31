@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
 import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus, sendFeedback } from '../services/ticketService';
 
 export default function TicketDetailScreen({ route, navigation }) {
-  // 1. Recupero ID (Priorità all'ID passato, fallback sull'oggetto ticket se presente)
+  // 1. Recupero ID
   const { id, ticket: paramTicket } = route.params || {};
   const ticketId = id || paramTicket?.id;
 
@@ -23,12 +23,15 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [rating, setRating] = useState(0); 
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
+  // REPORT DI INTERVENTO (Modale per IF-3.10)
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [interventionReport, setInterventionReport] = useState('');
+
   // 3. Helper per decodificare lo stato
   const getStatusLabel = (t) => {
       if (!t) return 'Sconosciuto';
       const sid = t.id_status || t.statusId;
       if (t.status && typeof t.status === 'string') return t.status;
-      // Fallback su ID se stringa manca
       switch (sid) {
           case 1: return 'Aperto';
           case 2: return 'In Corso'; 
@@ -38,13 +41,12 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // 4. Caricamento Dati Completi (SEMPRE dal server per coerenza)
+  // 4. Caricamento Dati Completi
   const fetchData = async () => {
       if (!ticketId) return;
       setLoading(true);
       
       try {
-        // A. Scarica Dettagli Ticket Freschi
         const freshTicket = await getTicket(ticketId);
         if (freshTicket) {
            setTicket(freshTicket);
@@ -57,7 +59,6 @@ export default function TicketDetailScreen({ route, navigation }) {
             navigation.goBack();
         }
 
-        // B. Scarica Messaggi
         const fetchedReplies = await getAllReplies(ticketId);
         setReplies(fetchedReplies);
 
@@ -72,7 +73,6 @@ export default function TicketDetailScreen({ route, navigation }) {
     fetchData();
   }, [ticketId]);
 
-  // Logiche UI basate sul ticket scaricato
   const statusLabel = ticket ? getStatusLabel(ticket) : '';
   const isResolved = statusLabel.toLowerCase() === 'risolto' || statusLabel.toLowerCase() === 'chiuso';
   const isInProgress = statusLabel.toLowerCase() === 'in corso' || statusLabel.toLowerCase() === 'assegnato';
@@ -81,28 +81,68 @@ export default function TicketDetailScreen({ route, navigation }) {
 
   // 6. Azioni Operatore
   const handleStatusChange = async (newStatus, newStatusId) => {
+    // Se l'operatore vuole risolvere, richiediamo il rapporto (IF-3.10)
+    if (newStatus === 'Risolto') {
+        setReportModalVisible(true);
+        return;
+    }
+
+    // Altrimenti cambio stato normale (es. In Corso)
     Alert.alert("Conferma", `Vuoi impostare lo stato a "${newStatus}"?`, [
         { text: "Annulla", style: "cancel" },
         { text: "Conferma", onPress: async () => {
-            setActionLoading(true);
-            let success = false;
-
-            if (newStatus === 'Risolto') {
-                success = await closeTicket(ticket.id);
-            } else {
-                success = await updateTicketStatus(ticket.id, newStatus, newStatusId);
-            }
-
-            setActionLoading(false);
-            if (success) {
-                // Ricarica dati per vedere aggiornamento
-                fetchData();
-                Alert.alert("Successo", `Stato aggiornato a ${newStatus}.`);
-            } else {
-                Alert.alert("Errore", "Impossibile aggiornare lo stato.");
-            }
+            performStatusUpdate(newStatus, newStatusId);
         }}
     ]);
+  };
+
+  const performStatusUpdate = async (newStatus, newStatusId) => {
+      setActionLoading(true);
+      const success = await updateTicketStatus(ticket.id, newStatus, newStatusId);
+      setActionLoading(false);
+      
+      if (success) {
+          fetchData();
+          Alert.alert("Successo", `Stato aggiornato a ${newStatus}.`);
+      } else {
+          Alert.alert("Errore", "Impossibile aggiornare lo stato.");
+      }
+  };
+
+  // Funzione per Gestire Chiusura con Rapporto
+  const handleSubmitReportAndClose = async () => {
+      if (!interventionReport.trim()) {
+          Alert.alert("Attenzione", "Il rapporto di intervento è obbligatorio per chiudere il ticket.");
+          return;
+      }
+
+      setReportModalVisible(false);
+      setActionLoading(true);
+
+      try {
+          // 1. Invia il rapporto come messaggio dell'operatore (o su endpoint dedicato se esistente)
+          await postReply(ticket.id, {
+              text: `[RAPPORTO INTERVENTO UFFICIALE]: ${interventionReport}`,
+              author: user?.name || 'Operatore',
+              date: new Date().toISOString()
+          });
+
+          // 2. Chiudi il ticket
+          const closeSuccess = await closeTicket(ticket.id);
+
+          if (closeSuccess) {
+              setInterventionReport('');
+              fetchData();
+              Alert.alert("Ticket Chiuso", "L'intervento è stato registrato e il ticket è stato chiuso.");
+          } else {
+              Alert.alert("Errore", "Impossibile chiudere il ticket, riprova.");
+          }
+      } catch (e) {
+          console.error(e);
+          Alert.alert("Errore", "Si è verificato un problema durante il salvataggio.");
+      } finally {
+          setActionLoading(false);
+      }
   };
 
   // 7. Invio Messaggio
@@ -160,7 +200,6 @@ export default function TicketDetailScreen({ route, navigation }) {
 
   if (!ticket) return null;
 
-  // Colori dinamici
   const getStatusColor = () => {
      if (isResolved) return '#D1E7DD'; 
      if (isInProgress) return '#FFF3CD'; 
@@ -247,7 +286,7 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* RATING / FEEDBACK */}
+          {/* RATING */}
           {isResolved && isCitizen && (
             <View style={styles.ratingBox}>
                 <Text style={styles.ratingTitle}>
@@ -292,7 +331,7 @@ export default function TicketDetailScreen({ route, navigation }) {
         </View>
       </ScrollView>
 
-      {/* INPUT BAR */}
+      {/* INPUT BAR (Chat) */}
       {!isResolved && (
           <View style={styles.inputArea}>
              <TextInput 
@@ -306,6 +345,39 @@ export default function TicketDetailScreen({ route, navigation }) {
              </TouchableOpacity>
           </View>
       )}
+
+      {/* MODALE RAPPORTO INTERVENTO (IF-3.10) */}
+      <Modal
+          animationType="slide"
+          transparent={true}
+          visible={reportModalVisible}
+          onRequestClose={() => setReportModalVisible(false)}
+      >
+          <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                  <Text style={styles.modalTitle}>Rapporto di Intervento</Text>
+                  <Text style={styles.modalSub}>Descrivi le operazioni effettuate prima di chiudere il ticket.</Text>
+                  
+                  <TextInput 
+                      style={styles.modalInput}
+                      multiline
+                      numberOfLines={4}
+                      placeholder="Descrizione tecnica dell'intervento..."
+                      value={interventionReport}
+                      onChangeText={setInterventionReport}
+                  />
+
+                  <View style={styles.modalButtons}>
+                      <TouchableOpacity style={[styles.modalBtn, {backgroundColor: '#ccc'}]} onPress={() => setReportModalVisible(false)}>
+                          <Text style={styles.modalBtnText}>Annulla</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.modalBtn, {backgroundColor: '#10B981'}]} onPress={handleSubmitReportAndClose}>
+                          <Text style={styles.modalBtnText}>Conferma e Chiudi</Text>
+                      </TouchableOpacity>
+                  </View>
+              </View>
+          </View>
+      </Modal>
 
     </KeyboardAvoidingView>
   );
@@ -349,5 +421,15 @@ const styles = StyleSheet.create({
 
   inputArea: { flexDirection: 'row', padding: 10, backgroundColor: '#fff', elevation: 10, borderTopWidth: 1, borderTopColor: '#eee' },
   input: { flex: 1, backgroundColor: '#f0f0f0', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, marginRight: 10 },
-  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.primary || '#D32F2F', justifyContent: 'center', alignItems: 'center' }
+  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.primary || '#D32F2F', justifyContent: 'center', alignItems: 'center' },
+
+  // Stili Modale
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { width: '90%', backgroundColor: 'white', borderRadius: 12, padding: 20, elevation: 5 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 5 },
+  modalSub: { fontSize: 12, color: '#666', marginBottom: 15 },
+  modalInput: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 10, height: 100, textAlignVertical: 'top', marginBottom: 20 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  modalBtn: { paddingVertical: 10, paddingHorizontal: 15, borderRadius: 6 },
+  modalBtnText: { color: 'white', fontWeight: 'bold' }
 });
