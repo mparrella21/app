@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView, Modal, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView, Modal, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getAllTickets, closeTicket } from '../services/ticketService';
+// Aggiunto getCategories agli import
+import { getAllTickets, closeTicket, getCategories } from '../services/ticketService';
 import { getOperators } from '../services/userService'; 
 import { assignTicketToOperator } from '../services/interventionService';
 import { COLORS } from '../styles/global';
@@ -11,21 +12,43 @@ import EmptyState from '../component/EmptyState';
 export default function ResponsibleTicketsScreen({ navigation }) {
   const [allTickets, setAllTickets] = useState([]);
   const [filteredTickets, setFilteredTickets] = useState([]);
-  const [filterStatus, setFilterStatus] = useState('Tutti'); 
-  const [operators, setOperators] = useState([]);
   
+  // Filtri
+  const [filterStatus, setFilterStatus] = useState('Tutti'); 
+  const [filterCategory, setFilterCategory] = useState('Tutte'); // Nuovo filtro categoria
+  
+  // Dati di supporto
+  const [operators, setOperators] = useState([]);
+  const [categories, setCategories] = useState(['Tutte']); // Lista categorie caricata
+  const [loading, setLoading] = useState(true);
+
   // Stati Modale Assegnazione
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
   const loadData = async () => {
-    // 1. Carica Ticket
-    let t = await getAllTickets();
-    setAllTickets(t);
-    // 2. Carica Operatori (per l'assegnazione)
-    if (!OFFLINE_MODE) {
-        const ops = await getOperators();
-        setOperators(ops);
+    setLoading(true);
+    try {
+      // 1. Carica Ticket
+      let t = await getAllTickets();
+      setAllTickets(t);
+      
+      // 2. Carica Operatori (per l'assegnazione)
+      if (!OFFLINE_MODE) {
+          const ops = await getOperators();
+          setOperators(ops);
+      }
+
+      // 3. Carica Categorie (Per i filtri)
+      const cats = await getCategories();
+      // Normalizza le categorie: se sono oggetti {id, label} prendi label, altrimenti la stringa
+      const catList = cats.map(c => (typeof c === 'object' ? c.label : c));
+      setCategories(['Tutte', ...catList]);
+
+    } catch (e) {
+      console.error("Errore caricamento responsabile:", e);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -33,19 +56,33 @@ export default function ResponsibleTicketsScreen({ navigation }) {
     loadData();
   }, []);
 
-  // Filtro
+  // Logica di Filtro Combinata (Stato AND Categoria)
   useEffect(() => {
-    if (filterStatus === 'Tutti') {
-      setFilteredTickets(allTickets);
-    } else {
-      // Nota: Verifica se il backend ritorna 'OPEN' o 'Aperto'. Qui adatto il filtro.
-      // Se il backend usa 'OPEN', mappiamo il filtro 'Aperti' su 'OPEN'
+    let result = allTickets;
+
+    // 1. Filtro per Stato
+    if (filterStatus !== 'Tutti') {
       let targetStatus = filterStatus;
-      if (filterStatus === 'Aperti') targetStatus = 'OPEN';
+      if (filterStatus === 'Aperti') targetStatus = 'OPEN'; // Mapping se backend usa OPEN
       
-      setFilteredTickets(allTickets.filter(t => t.status === targetStatus || t.status === filterStatus));
+      // Controllo case-insensitive per robustezza
+      result = result.filter(t => {
+         const s = (t.status || '').toUpperCase();
+         return s === targetStatus.toUpperCase() || s === filterStatus.toUpperCase();
+      });
     }
-  }, [filterStatus, allTickets]);
+
+    // 2. Filtro per Categoria
+    if (filterCategory !== 'Tutte') {
+      result = result.filter(t => {
+         // Gestione robusta: category potrebbe essere null o diversa
+         const c = t.category || t.categoria || '';
+         return c.toLowerCase() === filterCategory.toLowerCase();
+      });
+    }
+
+    setFilteredTickets(result);
+  }, [filterStatus, filterCategory, allTickets]);
 
   // Gestione Assegnazione
   const openAssignModal = (ticket) => {
@@ -69,82 +106,118 @@ export default function ResponsibleTicketsScreen({ navigation }) {
     const ok = await closeTicket(id);
     if (ok) {
       loadData();
-      alert('Ticket chiuso con successo');
+      Alert.alert('Successo', 'Ticket chiuso con successo');
     } else {
-      alert('Errore nella chiusura');
+      Alert.alert('Errore', 'Errore nella chiusura');
     }
   };
 
-  const FilterTab = ({ label, value }) => (
+  // Componente Tab per i Filtri (Riutilizzabile)
+  const FilterTab = ({ label, selected, onSelect }) => (
     <TouchableOpacity 
-      style={[styles.filterTab, filterStatus === value && styles.activeFilterTab]} 
-      onPress={() => setFilterStatus(value)}
+      style={[styles.filterTab, selected === label && styles.activeFilterTab]} 
+      onPress={() => onSelect(label)}
     >
-      <Text style={[styles.filterText, filterStatus === value && styles.activeFilterText]}>{label}</Text>
+      <Text style={[styles.filterText, selected === label && styles.activeFilterText]}>
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Gestione Ticket</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.title}>Gestione Ticket</Text>
+        <TouchableOpacity onPress={loadData}>
+          <Ionicons name="reload" size={20} color={COLORS.primary} />
+        </TouchableOpacity>
+      </View>
       
-      <View style={styles.filterContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <FilterTab label="Tutti" value="Tutti" />
-          <FilterTab label="Aperti" value="Aperti" /> 
-          <FilterTab label="In Corso" value="In Corso" />
-          <FilterTab label="Risolti" value="Risolto" />
+      {/* Area Filtri */}
+      <View style={styles.filtersWrapper}>
+        {/* Riga 1: Stato */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollFilters}>
+          <FilterTab label="Tutti" selected={filterStatus} onSelect={setFilterStatus} />
+          <FilterTab label="Aperti" selected={filterStatus} onSelect={setFilterStatus} /> 
+          <FilterTab label="In Corso" selected={filterStatus} onSelect={setFilterStatus} />
+          <FilterTab label="Risolti" selected={filterStatus} onSelect={setFilterStatus} />
+        </ScrollView>
+
+        {/* Riga 2: Categorie */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.scrollFilters, {marginTop: 8}]}>
+          {categories.map((cat, index) => (
+             <FilterTab key={index} label={cat} selected={filterCategory} onSelect={setFilterCategory} />
+          ))}
         </ScrollView>
       </View>
 
-      <FlatList 
-        data={filteredTickets} 
-        keyExtractor={i => String(i.id)} 
-        renderItem={({item}) => (
-          <View style={styles.cardWrapper}>
-            <TouchableOpacity style={styles.card} onPress={()=> navigation.navigate('TicketDetail', { ticketId: item.id })}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.itemTitle}>{item.title}</Text>
-                <View style={[styles.statusBadge, {backgroundColor: getStatusColor(item.status)}]}>
-                   <Text style={styles.statusText}>{item.status}</Text>
+      {loading ? (
+        <ActivityIndicator size="large" color={COLORS.primary} style={{marginTop: 20}} />
+      ) : (
+        <FlatList 
+            data={filteredTickets} 
+            keyExtractor={i => String(i.id)} 
+            contentContainerStyle={{paddingBottom: 20}}
+            renderItem={({item}) => (
+            <View style={styles.cardWrapper}>
+                <TouchableOpacity style={styles.card} onPress={()=> navigation.navigate('TicketDetail', { ticketId: item.id })}>
+                <View style={styles.cardHeader}>
+                    <Text style={styles.itemTitle}>{item.title}</Text>
+                    <View style={[styles.statusBadge, {backgroundColor: getStatusColor(item.status)}]}>
+                    <Text style={styles.statusText}>{item.status}</Text>
+                    </View>
                 </View>
-              </View>
-              <Text style={styles.itemSub}>{item.creation_date || item.timestamp} - {item.author || 'Cittadino'}</Text>
-            </TouchableOpacity>
-            
-            <View style={styles.actionRow}>
-                {/* Tasto Assegna solo se è Aperti/OPEN */}
-                {(item.status === 'OPEN' || item.status === 'Ricevuto') && (
-                    <TouchableOpacity style={[styles.btnSmall, {backgroundColor: '#007BFF', marginRight: 8}]} onPress={() => openAssignModal(item)}>
-                        <Text style={styles.btnTextSmall}>Assegna</Text>
-                    </TouchableOpacity>
-                )}
+                <View style={{flexDirection:'row', justifyContent:'space-between', marginTop: 4}}>
+                    <Text style={styles.itemSub}>{item.creation_date || item.timestamp}</Text>
+                    <Text style={[styles.itemSub, {fontWeight:'bold', color: COLORS.primary}]}>
+                        {item.category || 'N/A'}
+                    </Text>
+                </View>
+                <Text style={styles.itemSub}>{item.author || 'Cittadino'}</Text>
+                </TouchableOpacity>
                 
-                {item.status !== 'Risolto' && (
-                  <TouchableOpacity style={[styles.btnSmall, {backgroundColor: COLORS.primary}]} onPress={() => handleClose(item.id)}>
-                    <Text style={styles.btnTextSmall}>Chiudi</Text>
-                  </TouchableOpacity>
-                )}
+                <View style={styles.actionRow}>
+                    {/* Tasto Assegna solo se è Aperti/OPEN o Ricevuto */}
+                    {(['OPEN', 'APERTO', 'RICEVUTO'].includes((item.status||'').toUpperCase())) && (
+                        <TouchableOpacity style={[styles.btnSmall, {backgroundColor: '#007BFF', marginRight: 8}]} onPress={() => openAssignModal(item)}>
+                            <Text style={styles.btnTextSmall}>Assegna</Text>
+                        </TouchableOpacity>
+                    )}
+                    
+                    {/* Tasto Chiudi se non è già Risolto/Chiuso */}
+                    {!['RISOLTO', 'CHIUSO', 'CLOSED'].includes((item.status||'').toUpperCase()) && (
+                    <TouchableOpacity style={[styles.btnSmall, {backgroundColor: COLORS.primary}]} onPress={() => handleClose(item.id)}>
+                        <Text style={styles.btnTextSmall}>Chiudi</Text>
+                    </TouchableOpacity>
+                    )}
+                </View>
             </View>
-          </View>
-        )} 
-        ListEmptyComponent={<EmptyState text="Nessun ticket per questo filtro" />} 
-      />
+            )} 
+            ListEmptyComponent={<EmptyState text="Nessun ticket trovato con questi filtri" />} 
+        />
+      )}
 
       {/* MODAL ASSEGNAZIONE */}
       <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Assegna Ticket</Text>
-                <Text style={{marginBottom:10, color:'#666'}}>A chi vuoi assegnare "{selectedTicket?.title}"?</Text>
+                <Text style={{marginBottom:15, color:'#666'}}>
+                    Seleziona l'operatore per "{selectedTicket?.title}":
+                </Text>
                 
                 <FlatList
                     data={operators}
                     keyExtractor={(item) => item.id.toString()}
+                    style={{maxHeight: 300}}
                     renderItem={({ item }) => (
                         <TouchableOpacity style={styles.operatorItem} onPress={() => handleAssign(item.id)}>
-                            <Ionicons name="person-circle-outline" size={32} color="#555" />
-                            <Text style={styles.operatorName}>{item.name} {item.surname}</Text>
+                            <Ionicons name="person-circle-outline" size={36} color={COLORS.primary} />
+                            <View style={{marginLeft: 12}}>
+                                <Text style={styles.operatorName}>{item.name} {item.surname}</Text>
+                                <Text style={styles.operatorRole}>{item.role || 'Operatore'}</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={20} color="#ccc" style={{marginLeft:'auto'}} />
                         </TouchableOpacity>
                     )}
                 />
@@ -160,38 +233,43 @@ export default function ResponsibleTicketsScreen({ navigation }) {
 }
 
 const getStatusColor = (s) => {
-  if(s==='Risolto') return '#4CAF50';
-  if(s==='In Corso') return '#F59E0B';
-  return '#D32F2F';
+  if(!s) return '#999';
+  const status = s.toUpperCase();
+  if(status === 'RISOLTO' || status === 'CHIUSO' || status === 'CLOSED') return '#4CAF50'; // Verde
+  if(status === 'IN CORSO' || status === 'WORKING' || status === 'ASSEGNATO') return '#F59E0B'; // Arancio
+  return '#D32F2F'; // Rosso (Aperto/Open)
 };
 
 const styles = StyleSheet.create({
   container:{flex:1,padding:16,backgroundColor:COLORS.bg || '#f5f5f5'},
-  title:{fontSize:20,fontWeight:'800',color:COLORS.primary || '#D32F2F', marginBottom:12},
+  headerRow: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: 12},
+  title:{fontSize:20,fontWeight:'800',color:COLORS.primary || '#D32F2F'},
   
-  filterContainer: { flexDirection: 'row', marginBottom: 15, height: 40 },
-  filterTab: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, backgroundColor: '#E0E0E0', marginRight: 10 },
+  filtersWrapper: { marginBottom: 15 },
+  scrollFilters: { height: 40 },
+  filterTab: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#E0E0E0', marginRight: 8, justifyContent:'center' },
   activeFilterTab: { backgroundColor: COLORS.primary || '#D32F2F' },
-  filterText: { color: '#333', fontWeight: '600' },
+  filterText: { color: '#333', fontWeight: '600', fontSize: 13 },
   activeFilterText: { color: 'white' },
 
-  cardWrapper: { marginBottom: 10, backgroundColor:'#fff', borderRadius:8, elevation:2, padding: 12 },
+  cardWrapper: { marginBottom: 12, backgroundColor:'#fff', borderRadius:10, elevation:2, padding: 14, shadowColor:'#000', shadowOpacity:0.1, shadowRadius:4 },
   card:{ marginBottom: 8 },
   cardHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'center'},
-  itemTitle:{fontWeight:'700', fontSize: 16, color: '#333'},
+  itemTitle:{fontWeight:'700', fontSize: 16, color: '#333', flex:1, marginRight: 8},
   itemSub:{color:'#666',marginTop:4, fontSize: 12},
-  statusBadge: { paddingHorizontal:6, paddingVertical:2, borderRadius:4 },
-  statusText: { color:'white', fontSize:10, fontWeight:'bold' },
+  statusBadge: { paddingHorizontal:8, paddingVertical:4, borderRadius:6 },
+  statusText: { color:'white', fontSize:10, fontWeight:'bold', textTransform:'uppercase' },
   
-  actionRow: { flexDirection: 'row', justifyContent: 'flex-end', borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 8},
-  btnSmall: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6},
+  actionRow: { flexDirection: 'row', justifyContent: 'flex-end', borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 10, marginTop: 5},
+  btnSmall: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 6},
   btnTextSmall: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
 
   // Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { width: '85%', maxHeight: '60%', backgroundColor: '#fff', borderRadius: 12, padding: 20, elevation: 5 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 5 },
-  operatorItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  operatorName: { marginLeft: 10, fontSize: 16, color: '#333' },
-  closeModalBtn: { marginTop: 15, alignSelf: 'center', padding: 10 }
+  modalContent: { width: '90%', backgroundColor: '#fff', borderRadius: 16, padding: 20, elevation: 10 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 5, color: '#333' },
+  operatorItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  operatorName: { fontSize: 16, color: '#333', fontWeight:'600' },
+  operatorRole: { fontSize: 12, color: '#888' },
+  closeModalBtn: { marginTop: 20, alignSelf: 'center', padding: 10 }
 });
