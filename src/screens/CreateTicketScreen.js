@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { postTicket, getCategories } from '../services/ticketService'; 
-// [FIX] Import necessario per recuperare l'ID utente (Requirement IF-1.1/IF-2.4)
 import { useAuth } from '../context/AuthContext';
 
 export default function CreateTicketScreen({ navigation, route }) {
@@ -63,14 +62,15 @@ export default function CreateTicketScreen({ navigation, route }) {
               // Imposta la prima categoria come default se disponibile
               setCategory(cats[0].label || cats[0]);
           } else {
-              // Fallback statico se il server non risponde o array vuoto
-              const defaults = ['Strade', 'Illuminazione', 'Verde', 'Rifiuti', 'Altro'];
+              // [FIX] Fallback statico allineato con le categorie del SITO (aggiuntaTicket.html)
+              const defaults = ['Buca stradale', 'Illuminazione guasta', 'Rifiuti abbandonati', 'Verde pubblico', 'Altro'];
               setCategories(defaults);
               setCategory(defaults[0]);
           }
       } catch (e) {
           console.log("Fallback categorie statiche");
-          const defaults = ['Strade', 'Illuminazione', 'Verde', 'Rifiuti', 'Altro'];
+          // [FIX] Fallback allineato
+          const defaults = ['Buca stradale', 'Illuminazione guasta', 'Rifiuti abbandonati', 'Verde pubblico', 'Altro'];
           setCategories(defaults);
           setCategory(defaults[0]);
       } finally {
@@ -101,7 +101,7 @@ export default function CreateTicketScreen({ navigation, route }) {
       "Scegli una sorgente",
       [
         { text: "Galleria", onPress: pickImage },
-        // { text: "Fotocamera", onPress: takePhoto }, // Decommenta se implementi takePhoto
+        // { text: "Fotocamera", onPress: takePhoto }, 
         { text: "Annulla", style: "cancel" }
       ]
     );
@@ -125,16 +125,18 @@ export default function CreateTicketScreen({ navigation, route }) {
 
     setIsSubmitting(true);
 
-    // [FIX] Architettura: Allineamento nomi campi con il Sito (ticket.js) e CitizenHomeScreen.js
+    // [FIX] Architettura: Allineamento nomi campi con le API del Sito
+    // Usiamo chiavi in INGLESE come si aspetta il backend (visto nel file ticket.js del sito)
     const ticketData = {
-      titolo: title,           // App usava 'title', Sito/DB usa 'titolo'
-      descrizione: desc,       // App usava 'description'
-      categoria: category,     // App usava 'category'
-      lat: coords.lat,         // App usava 'latitude'
-      lon: coords.lng,         // App usava 'longitude'
-      indirizzo: address,      // App usava 'address'
-      status: 'Ricevuto', 
-      id_creator_user: user?.id, // [FIX] Aggiunto ID utente come fa il Sito
+      title: title,            
+      description: desc,       
+      category: category,     
+      lat: coords.lat,         
+      lon: coords.lng,         
+      address: address,      
+      status: 'Ricevuto',
+      id_status: 1,            // Aggiunto per coerenza con il sito
+      id_creator_user: user?.id, 
       timestamp: new Date().toISOString(),
     };
 

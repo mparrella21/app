@@ -44,6 +44,7 @@ export const getUserTickets = async (userId) => {
     // Fallback: Recupera tutti e filtra lato client (OK per volumi bassi)
     const allTickets = await getAllTickets();
 
+    // [FIX] Coerenza con il Sito: id_creator_user è la chiave primaria per l'ownership
     const myTickets = allTickets.filter(t => 
         t.id_creator_user === userId || 
         t.user_id === userId || 
