@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 const { width } = Dimensions.get('window');
 
 export default function AuthModal({ navigation }) {
-  const { login } = useAuth();
+  const { login } = useAuth(); // Prende la funzione dal Context
   const [activeTab, setActiveTab] = useState('login'); 
   
   // Login State
@@ -19,16 +19,26 @@ export default function AuthModal({ navigation }) {
   const [cellulare, setCellulare] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const handleAuthAction = () => {
+  const handleAuthAction = async () => {
     if (activeTab === 'login') {
         if (!email || !password) {
             Alert.alert("Errore", "Inserisci Email e Password");
             return;
         }
-        login(email); // In futuro passare anche password
-        navigation.goBack(); 
+        
+        // CHIAMATA REALE AL CONTEXT
+        // Il backend restituirà il ruolo, e il Context aggiornerà lo stato 'user'
+        const result = await login(email, password);
+        
+        if (result.success) {
+             // Chiude la modale, la navigazione cambierà automaticamente grazie al Context in App.js
+             navigation.goBack(); 
+        } else {
+             Alert.alert("Errore Login", result.error || "Credenziali non valide");
+        }
+
     } else {
-        // Logica Registrazione
+        // Logica Registrazione (Simulata o collegata a service)
         if (!nome || !cognome || !email || !password || !confirmPassword) {
             Alert.alert("Errore", "Compila tutti i campi obbligatori");
             return;
@@ -37,15 +47,16 @@ export default function AuthModal({ navigation }) {
             Alert.alert("Errore", "Le password non coincidono");
             return;
         }
+        // Qui dovresti chiamare register(nome, cognome, email, password)...
         Alert.alert("Registrazione", "Account creato con successo! Ora puoi accedere.");
         setActiveTab('login');
     }
   };
 
   const handleGoogleLogin = () => {
-      Alert.alert("Google Login", "Funzionalità simulata. Accesso come Cittadino.");
-      login('cittadino.google@test.it');
-      navigation.goBack();
+      // Per il progetto universitario, se non hai implementato il Google Sign-in nativo su mobile,
+      // puoi lasciare un alert o simulare un login cittadino standard.
+      Alert.alert("Google Login", "Funzionalità non ancora attiva su mobile.");
   };
 
   return (
@@ -75,7 +86,7 @@ export default function AuthModal({ navigation }) {
 
             <ScrollView showsVerticalScrollIndicator={false} style={styles.form}>
               
-              {/* CAMPI REGISTRAZIONE AGGIUNTIVI */}
+              {/* CAMPI REGISTRAZIONE */}
               {activeTab === 'register' && (
                 <>
                   <View style={styles.row}>
@@ -89,12 +100,12 @@ export default function AuthModal({ navigation }) {
                   </View>
                   <View style={styles.inputContainer}>
                     <Ionicons name="call-outline" size={20} color="#666" style={{marginRight:10}} />
-                    <TextInput placeholder="Cellulare (Opzionale)" keyboardType="phone-pad" style={styles.input} value={cellulare} onChangeText={setCellulare} placeholderTextColor="#999"/>
+                    <TextInput placeholder="Cellulare" keyboardType="phone-pad" style={styles.input} value={cellulare} onChangeText={setCellulare} placeholderTextColor="#999"/>
                   </View>
                 </>
               )}
 
-              {/* CAMPI COMUNI (EMAIL/PWD) */}
+              {/* CAMPI LOGIN */}
               <View style={styles.inputContainer}>
                 <Ionicons name="mail-outline" size={20} color="#666" style={{marginRight:10}} />
                 <TextInput 
@@ -138,7 +149,7 @@ export default function AuthModal({ navigation }) {
                 <Text style={styles.mainBtnText}>{activeTab === 'login' ? 'ACCEDI' : 'REGISTRATI'}</Text>
               </TouchableOpacity>
 
-              {/* Google Login (SOLO NELLA TAB LOGIN) */}
+              {/* Google Login */}
               {activeTab === 'login' && (
                   <>
                     <View style={styles.divider}>
@@ -148,23 +159,9 @@ export default function AuthModal({ navigation }) {
                     </View>
 
                     <TouchableOpacity style={styles.googleBtn} onPress={handleGoogleLogin}>
-                        {/* Google Icon SVG styled or FontAwesome */}
                         <FontAwesome5 name="google" size={18} color="#DB4437" style={{marginRight: 10}} />
                         <Text style={styles.googleBtnText}>Accedi con Google</Text>
                     </TouchableOpacity>
-
-                    {/* Debug Buttons (Solo in Login per pulizia) */}
-                    <View style={{flexDirection: 'row', justifyContent: 'space-between', marginTop: 20}}>
-                        <TouchableOpacity onPress={() => {setEmail('resp@comune.it'); setPassword('123');}} style={styles.debugBtn}>
-                            <Text style={styles.debugText}>Resp.</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => {setEmail('operatore@comune.it'); setPassword('123');}} style={styles.debugBtn}>
-                            <Text style={styles.debugText}>Op.</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => {setEmail('cittadino@test.it'); setPassword('123');}} style={styles.debugBtn}>
-                            <Text style={styles.debugText}>Cittadino</Text>
-                        </TouchableOpacity>
-                    </View>
                   </>
               )}
             </ScrollView>
@@ -197,6 +194,4 @@ const styles = StyleSheet.create({
   divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 15 },
   line: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.3)' },
   orText: { color: 'rgba(255,255,255,0.8)', marginHorizontal: 10, fontSize: 12 },
-  debugBtn: { backgroundColor: 'rgba(255,255,255,0.2)', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 5 },
-  debugText: { color: 'white', fontSize: 11, fontWeight: 'bold' }
 });
