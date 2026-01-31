@@ -3,10 +3,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // --- TICKET SERVICE (Core Domain: Ticket Lifecycle) ---
 
+/**
+ * Recupera tutti i ticket dal sistema.
+ */
 export const getAllTickets = async () => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
     const url = `${API_BASE}/ticket`;
+    
     const response = await fetch(url, {
       method: 'GET',
       headers: { 
@@ -15,9 +19,10 @@ export const getAllTickets = async () => {
       }
     });
 
-    if (!response.ok) throw new Error('HTTP error');
+    if (!response.ok) throw new Error(`HTTP error status: ${response.status}`);
     const data = await response.json();
     
+    // Gestione formati di risposta multipli (array diretto o oggetto { tickets: [...] })
     if (data.success && Array.isArray(data.tickets)) return data.tickets;
     if (Array.isArray(data)) return data; 
     
@@ -28,21 +33,28 @@ export const getAllTickets = async () => {
   }
 };
 
-// Recupera SOLO i ticket dell'utente loggato
-// UPDATED: Tenta di usare endpoint filtrato lato server se disponibile, altrimenti fallback
+/**
+ * Recupera SOLO i ticket creati dall'utente loggato.
+ */
 export const getUserTickets = async (userId) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
-    
-    // Tentativo 1: Chiamata ottimizzata (Best Practice)
-    // Se il backend supporta /ticket?userId=... o /ticket/me
-    /* const response = await fetch(`${API_BASE}/ticket?userId=${userId}`, ...);
-    if(response.ok) return (await response.json()).tickets;
+    if (!userId) return [];
+
+    // NOTA: Se il backend supporta il filtro server-side (es: /ticket?userId=XYZ), 
+    // scommentare la chiamata fetch specifica per efficienza.
+    /*
+    const response = await fetch(`${API_BASE}/ticket?userId=${userId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if(response.ok) {
+        const data = await response.json();
+        return data.tickets || [];
+    }
     */
 
-    // Fallback attuale (Client-side filtering - Meno performante ma funzionante con backend semplice)
+    // Fallback: Recupera tutti e filtra lato client (OK per volumi bassi)
     const allTickets = await getAllTickets();
-    if (!userId) return [];
 
     const myTickets = allTickets.filter(t => 
         t.id_creator_user === userId || 
@@ -57,24 +69,56 @@ export const getUserTickets = async (userId) => {
   }
 };
 
-// Recupera i ticket assegnati a un operatore
-// NOTA: Architetturalmente, questo dovrebbe passare per interventionService.getAssignments()
-// Manteniamo questa funzione per compatibilità se il backend Ticket restituisce il campo operator_id
+/**
+ * Recupera i ticket assegnati a un operatore specifico.
+ * AGGIORNATO: Rispetta l'architettura a microservizi recuperando prima le assegnazioni.
+ */
 export const getOperatorTickets = async (operatorId) => {
   try {
-    // Se usiamo l'approccio "Ticket Service sa tutto":
-    const allTickets = await getAllTickets();
-    
+    const token = await AsyncStorage.getItem('app_auth_token');
     if (!operatorId) return [];
 
-    const myTasks = allTickets.filter(t => {
-        // Controllo se il ticket è assegnato a questo operatore
-        // Nota: Assicurarsi che il backend popoli questi campi nel JSON del ticket
-        const isAssignedToMe = (t.operator_id === operatorId || t.assigned_to === operatorId);
-        // Filtriamo stati non rilevanti (es. già chiusi da tempo)
-        const isActive = (t.status !== 'CLOSED' && t.status !== 'Risolto'); 
+    let assignedTicketIds = [];
+    
+    // 1. Tenta di recuperare le assegnazioni dall'Assignment/Intervention Service
+    // Questo è il flusso corretto secondo l'architettura (Assignment Service è la fonte di verità)
+    try {
+        const assignResponse = await fetch(`${API_BASE}/assignment`, {
+            method: 'GET',
+            headers: { 
+                'Accept': 'application/json',
+                'Authorization': token ? `Bearer ${token}` : undefined 
+            }
+        });
         
-        return isAssignedToMe && isActive;
+        if (assignResponse.ok) {
+            const assignData = await assignResponse.json();
+            const assignments = assignData.assignments || assignData || [];
+            
+            // Filtra assegnazioni per questo operatore e estrae gli ID dei ticket
+            assignedTicketIds = assignments
+                .filter(a => a.operatorId === operatorId || a.operator_id === operatorId)
+                .map(a => a.ticketId || a.ticket_id);
+        }
+    } catch (assignError) {
+        console.warn("Impossibile recuperare assegnazioni dal service dedicato, uso fallback ticket.", assignError);
+    }
+
+    // 2. Recupera i ticket
+    const allTickets = await getAllTickets();
+
+    // 3. Filtra i ticket
+    const myTasks = allTickets.filter(t => {
+        // Criterio A: Il ticket è nella lista delle assegnazioni recuperate
+        const isInAssignments = assignedTicketIds.includes(t.id);
+        
+        // Criterio B (Fallback): Il ticket ha il campo operatore stampato dentro (backend legacy/semplificato)
+        const isDirectlyAssigned = (t.operator_id === operatorId || t.assigned_to === operatorId);
+        
+        // Criterio C: Il ticket deve essere attivo
+        const isActive = (t.status !== 'CLOSED' && t.status !== 'Risolto' && t.status !== 'CHIUSO'); 
+        
+        return (isInAssignments || isDirectlyAssigned) && isActive;
     });
 
     return myTasks; 
@@ -127,6 +171,7 @@ export const postTicket = async (ticketData, photos = []) => {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
+    // 1. Crea il Ticket
     const response = await fetch(`${API_BASE}/ticket`, {
       method: 'POST',
       headers: {
@@ -138,15 +183,14 @@ export const postTicket = async (ticketData, photos = []) => {
     });
 
     const data = await response.json();
-    
     const newTicketId = data.ticketId || (data.ticket && data.ticket.id);
     
-    // Gestione caricamento foto su Media Service
-    if (data.success && newTicketId && photos.length > 0) {
+    // 2. Se successo, carica le foto sul Media Service
+    if ((data.success || response.status === 201) && newTicketId && photos.length > 0) {
        await uploadTicketMedia(newTicketId, photos, token);
     }
 
-    return data.success === true;
+    return data.success === true || response.status === 201;
   } catch (e) {
     console.error('ticketService.postTicket', e);
     return false;
@@ -157,7 +201,9 @@ const uploadTicketMedia = async (ticketId, photos, token) => {
     try {
         const formData = new FormData();
         photos.forEach((photo, index) => {
-            const fileName = photo.fileName || `ticket_${ticketId}_${index}.jpg`;
+            // Estrazione nome file o generazione nome univoco
+            const fileName = photo.fileName || `ticket_${ticketId}_img_${index}.jpg`;
+            
             formData.append('files', {
                 uri: photo.uri,
                 type: 'image/jpeg', 
@@ -165,6 +211,7 @@ const uploadTicketMedia = async (ticketId, photos, token) => {
             });
         });
         
+        // Chiamata al Media Service (come da architettura)
         await fetch(`${API_BASE}/media/${ticketId}`, {
             method: 'POST',
             headers: {
@@ -178,7 +225,7 @@ const uploadTicketMedia = async (ticketId, photos, token) => {
     }
 }
 
-// --- REPLIES ---
+// --- REPLIES & STATUS ---
 
 export const getAllReplies = async (idTicket) => {
   try {
@@ -235,7 +282,7 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
       },
       body: JSON.stringify({
         status: statusStr,
-        id_status: statusId
+        id_status: statusId // Opzionale, dipende dal backend
       })
     });
 
@@ -252,6 +299,7 @@ export const closeTicket = async (idTicket) => {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
+    // Alcuni backend usano PUT /ticket/{id} con status CLOSED, altri endpoint dedicato
     const response = await fetch(`${API_BASE}/ticket/${idTicket}/close`, {
       method: 'POST',
       headers: {
@@ -265,6 +313,7 @@ export const closeTicket = async (idTicket) => {
     return data.success === true;
   } catch (e) {
     console.error('ticketService.closeTicket', e);
-    return false;
+    // Fallback: prova updateStatus standard se endpoint dedicato fallisce
+    return await updateTicketStatus(idTicket, 'CLOSED', 3);
   }
 };
