@@ -17,12 +17,31 @@ export const getAllTickets = async () => {
 
     if (!response.ok) throw new Error('HTTP error');
     const data = await response.json();
-    // Gestione robusta: supporta sia { tickets: [...] } che array diretto se il backend cambia
+    // Gestione robusta: supporta sia { tickets: [...] } che array diretto
     if (response.ok && data.success) return data.tickets || [];
     if (Array.isArray(data)) return data; 
     return [];
   } catch (e) {
     console.error('ticketService.getAllTickets', e);
+    return [];
+  }
+};
+
+// Recupera solo i ticket dell'utente loggato
+export const getUserTickets = async () => {
+  try {
+    const token = await AsyncStorage.getItem('app_auth_token');
+    // Proviamo a passare userId come query param se il backend lo supporta, 
+    // altrimenti filtrare lato client è il fallback sicuro.
+    // Assumiamo che GET /ticket ritorni tutto e filtriamo per sicurezza o usiamo un endpoint specifico se esiste
+    const allTickets = await getAllTickets();
+    
+    // NOTA: Qui idealmente il backend dovrebbe avere un endpoint /ticket/me o /ticket?user_id=...
+    // Per ora, dato che non abbiamo l'ID utente qui nel service, ritorniamo tutto 
+    // e lasciamo che la Screen filtri, oppure implementiamo una chiamata specifica se il backend la ha.
+    return allTickets; 
+  } catch (e) {
+    console.error('ticketService.getUserTickets', e);
     return [];
   }
 };
@@ -46,11 +65,10 @@ export const getTicket = async (id) => {
   }
 };
 
-// Recupero Categorie (Reso Dinamico come da Architecture definition - Note Ticket Service)
+// Recupero Categorie (Dinamico)
 export const getCategories = async () => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
-    // Endpoint ipotizzato basato sulle note del PDF architetturale
     const response = await fetch(`${API_BASE}/ticket/categories`, {
       method: 'GET',
       headers: { 
@@ -67,7 +85,7 @@ export const getCategories = async () => {
   }
 };
 
-// Creazione Ticket con gestione Media (Architecture Compliant)
+// Creazione Ticket con gestione Media
 export const postTicket = async (ticketData, photos = []) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
@@ -103,7 +121,6 @@ const uploadTicketMedia = async (ticketId, photos, token) => {
     try {
         const formData = new FormData();
         photos.forEach((photo, index) => {
-            // Fix per React Native FormData: serve name, type e uri
             formData.append('files', {
                 uri: photo.uri,
                 type: 'image/jpeg', 
@@ -167,7 +184,36 @@ export const postReply = async (idTicket, replyData) => {
   }
 };
 
-// Chiusura Ticket
+// Aggiornamento Stato Generico (Per Operatori: Presa in carico, ecc.)
+export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
+  try {
+    const token = await AsyncStorage.getItem('app_auth_token');
+    if (!token) throw new Error('Non autenticato');
+
+    // Utilizziamo una PUT/PATCH generica sul ticket
+    const response = await fetch(`${API_BASE}/ticket/${idTicket}`, {
+      method: 'PUT', // o PATCH a seconda del backend, PUT è standard per replace
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        status: statusStr,
+        id_status: statusId
+        // Eventualmente aggiungere assignedTo: ... se gestito dal backend tramite token operatore
+      })
+    });
+
+    const data = await response.json();
+    return data.success === true;
+  } catch (e) {
+    console.error('ticketService.updateTicketStatus', e);
+    return false;
+  }
+};
+
+// Chiusura Ticket (Scorciatoia specifica se esiste endpoint dedicato)
 export const closeTicket = async (idTicket) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
@@ -190,14 +236,12 @@ export const closeTicket = async (idTicket) => {
   }
 };
 
-// --- FEEDBACK / RATING (Corretto secondo Architecture Definition: Intervention Service) ---
+// --- FEEDBACK / RATING ---
 export const sendFeedback = async (idTicket, rating, comment = "") => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
-    // FIX: L'architettura prevede POST /rating nell'Intervention Service, non /ticket/.../feedback
-    // Il body deve contenere il riferimento al ticket (ticketId)
     const response = await fetch(`${API_BASE}/rating`, {
       method: 'POST',
       headers: {

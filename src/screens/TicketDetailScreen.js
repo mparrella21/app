@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet,
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
-import { getTicket, getAllReplies, postReply, closeTicket, sendFeedback } from '../services/ticketService';
+import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus, sendFeedback } from '../services/ticketService';
 
 export default function TicketDetailScreen({ route, navigation }) {
   // 1. Recupero dati iniziali
@@ -21,20 +21,18 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [rating, setRating] = useState(0); 
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
-  // 3. Helper per decodificare lo stato (Gestisce sia Stringhe che ID Numerici dal backend)
+  // 3. Helper per decodificare lo stato
   const getStatusLabel = (t) => {
       if (!t) return 'Sconosciuto';
       
-      // Se il backend ritorna una stringa
       if (t.status && typeof t.status === 'string') return t.status;
       if (t.stato && typeof t.stato === 'string') return t.stato;
 
-      // Se il backend ritorna id_status (come nel mock del sito)
       const sid = t.id_status || t.statusId;
       switch (sid) {
           case 1: return 'Aperto';
-          case 2: return 'In Corso'; // o Assegnato
-          case 3: return 'Risolto'; // o Chiuso
+          case 2: return 'In Corso'; 
+          case 3: return 'Risolto'; 
           case 4: return 'Chiuso';
           default: return 'Aperto';
       }
@@ -42,6 +40,7 @@ export default function TicketDetailScreen({ route, navigation }) {
 
   const statusLabel = getStatusLabel(ticket);
   const isResolved = statusLabel.toLowerCase() === 'risolto' || statusLabel.toLowerCase() === 'chiuso';
+  const isInProgress = statusLabel.toLowerCase() === 'in corso' || statusLabel.toLowerCase() === 'assegnato';
 
   // 4. Caricamento Dati Completi
   const fetchData = async () => {
@@ -55,7 +54,6 @@ export default function TicketDetailScreen({ route, navigation }) {
         const freshTicket = await getTicket(ticketId);
         if (freshTicket) {
            setTicket(freshTicket);
-           // Se il ticket ha già un rating salvato, lo impostiamo
            if(freshTicket.rating) {
                setRating(freshTicket.rating);
                setRatingSubmitted(true);
@@ -81,27 +79,31 @@ export default function TicketDetailScreen({ route, navigation }) {
   const isOperator = user?.role === 'operatore';
   const isCitizen = !user || user?.role === 'cittadino';
 
-  // 6. Azioni Operatore
-  const handleStatusChange = async (newStatus) => {
-    if (newStatus === 'Risolto') {
-        Alert.alert("Conferma", "Vuoi chiudere definitivamente il ticket?", [
-            { text: "Annulla", style: "cancel" },
-            { text: "Conferma", onPress: async () => {
-                setActionLoading(true);
-                const success = await closeTicket(ticket.id);
-                setActionLoading(false);
-                if (success) {
-                    // Aggiorniamo lo stato localmente per riflettere la chiusura
-                    setTicket(prev => ({ ...prev, status: 'Risolto', id_status: 3 }));
-                    Alert.alert("Successo", "Ticket chiuso correttamente.");
-                } else {
-                    Alert.alert("Errore", "Impossibile chiudere il ticket.");
-                }
-            }}
-        ]);
-    } else {
-         Alert.alert("Info", "Cambio stato intermedio non disponibile da app Mobile.");
-    }
+  // 6. Azioni Operatore (RESO DINAMICO)
+  const handleStatusChange = async (newStatus, newStatusId) => {
+    Alert.alert("Conferma", `Vuoi impostare lo stato a "${newStatus}"?`, [
+        { text: "Annulla", style: "cancel" },
+        { text: "Conferma", onPress: async () => {
+            setActionLoading(true);
+            let success = false;
+
+            // Se è la chiusura definitiva, usa l'endpoint specifico se preferito, oppure quello generico
+            if (newStatus === 'Risolto') {
+                success = await closeTicket(ticket.id);
+            } else {
+                // Per "In Corso" o altri stati
+                success = await updateTicketStatus(ticket.id, newStatus, newStatusId);
+            }
+
+            setActionLoading(false);
+            if (success) {
+                setTicket(prev => ({ ...prev, status: newStatus, id_status: newStatusId }));
+                Alert.alert("Successo", `Stato aggiornato a ${newStatus}.`);
+            } else {
+                Alert.alert("Errore", "Impossibile aggiornare lo stato.");
+            }
+        }}
+    ]);
   };
 
   // 7. Invio Messaggio
@@ -120,15 +122,15 @@ export default function TicketDetailScreen({ route, navigation }) {
 
     if (success) {
         setNewComment('');
-        fetchData(); // Ricarica messaggi dal server
+        fetchData(); 
     } else {
         Alert.alert("Errore", "Impossibile inviare il messaggio.");
     }
   };
 
-  // 8. Gestione Rating (Ora DINAMICO)
+  // 8. Gestione Rating
   const handleRating = async (stars) => {
-    if(ratingSubmitted) return; // Evita doppi voti
+    if(ratingSubmitted) return;
 
     Alert.alert("Valutazione", `Confermi una valutazione di ${stars} stelle?`, [
         { text: "Annulla", style: "cancel"},
@@ -142,7 +144,6 @@ export default function TicketDetailScreen({ route, navigation }) {
                 setRatingSubmitted(true);
                 Alert.alert("Grazie!", "La tua valutazione è stata inviata.");
             } else {
-                // Se fallisce, resetta (o mostra errore, ma lascia le stelle visive)
                 Alert.alert("Attenzione", "Impossibile salvare la valutazione sul server, riprova più tardi.");
             }
         }}
@@ -158,16 +159,16 @@ export default function TicketDetailScreen({ route, navigation }) {
       );
   }
 
-  // Colore badge stato
+  // Colori dinamici
   const getStatusColor = () => {
      if (isResolved) return '#D1E7DD'; // Verde
-     if (statusLabel === 'In Corso' || statusLabel === 'Assegnato') return '#FFF3CD'; // Giallo
+     if (isInProgress) return '#FFF3CD'; // Giallo
      return '#F8D7DA'; // Rosso
   };
   
   const getStatusTextColor = () => {
      if (isResolved) return '#0F5132';
-     if (statusLabel === 'In Corso' || statusLabel === 'Assegnato') return '#856404';
+     if (isInProgress) return '#856404';
      return '#721C24';
   };
 
@@ -215,7 +216,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
           <Text style={styles.desc}>{ticket.descrizione || ticket.description || ticket.desc || "Nessuna descrizione."}</Text>
 
-          {/* AREA OPERATORE */}
+          {/* AREA OPERATORE: Ora completamente dinamica */}
           {isOperator && (
             <View style={styles.operatorPanel}>
                 <Text style={styles.opTitle}>Pannello Operatore</Text>
@@ -223,10 +224,19 @@ export default function TicketDetailScreen({ route, navigation }) {
                     <ActivityIndicator color="#F59E0B" />
                 ) : (
                     <View style={styles.opButtons}>
+                        {/* Se è APERTO (o non risolto/non in corso), mostra "Prendi in carico" */}
+                        {!isResolved && !isInProgress && (
+                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#3B82F6', marginRight: 10}]} onPress={() => handleStatusChange('In Corso', 2)}>
+                                <Ionicons name="construct" size={18} color="white" />
+                                <Text style={styles.opBtnText}>PRENDI IN CARICO</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Se non è RISOLTO, mostra "Segna Risolto" */}
                         {!isResolved ? (
-                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#10B981'}]} onPress={() => handleStatusChange('Risolto')}>
+                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#10B981'}]} onPress={() => handleStatusChange('Risolto', 3)}>
                                 <Ionicons name="checkmark-circle" size={18} color="white" />
-                                <Text style={styles.opBtnText}>SEGNA COME RISOLTO</Text>
+                                <Text style={styles.opBtnText}>RISOLTO</Text>
                             </TouchableOpacity>
                         ) : (
                             <Text style={{color:'#10B981', fontWeight:'bold', textAlign:'center', flex:1}}>
@@ -238,7 +248,7 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* RATING / FEEDBACK (Per Cittadini su ticket risolti) */}
+          {/* RATING / FEEDBACK */}
           {isResolved && isCitizen && (
             <View style={styles.ratingBox}>
                 <Text style={styles.ratingTitle}>
@@ -250,7 +260,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                           <Ionicons 
                             name={star <= rating ? "star" : "star-outline"} 
                             size={32} 
-                            color={ratingSubmitted ? "#FFC107" : "#FFD700"} // Colore diverso se confermato
+                            color={ratingSubmitted ? "#FFC107" : "#FFD700"} 
                             style={{marginHorizontal:4, opacity: ratingSubmitted ? 0.8 : 1}} 
                           />
                       </TouchableOpacity>
@@ -283,7 +293,7 @@ export default function TicketDetailScreen({ route, navigation }) {
         </View>
       </ScrollView>
 
-      {/* INPUT BAR (Disabilitata se risolto, opzionale) */}
+      {/* INPUT BAR */}
       {!isResolved && (
           <View style={styles.inputArea}>
              <TextInput 
@@ -323,7 +333,7 @@ const styles = StyleSheet.create({
 
   operatorPanel: { marginTop: 20, padding: 15, backgroundColor: '#FFF7E6', borderRadius: 10, borderWidth: 1, borderColor: '#FFE0B2' },
   opTitle: { fontWeight: 'bold', color: '#B45309', marginBottom: 10, textTransform: 'uppercase', fontSize: 12 },
-  opButtons: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  opButtons: { flexDirection: 'row', justifyContent: 'space-between', gap: 5 },
   opBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 8 },
   opBtnText: { color: 'white', fontWeight: 'bold', fontSize: 11, marginLeft: 5 },
 
