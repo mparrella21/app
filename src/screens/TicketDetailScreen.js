@@ -6,51 +6,46 @@ import { COLORS } from '../styles/global';
 import { getTicket, getAllReplies, postReply, closeTicket } from '../services/ticketService';
 
 export default function TicketDetailScreen({ route, navigation }) {
-  // 1. Recupero dati passati dalla navigazione o ID
+  // 1. Recupero dati
   const { ticket: paramTicket, id } = route.params || {};
   const { user } = useAuth();
   
   // 2. Stato Locale
   const [ticket, setTicket] = useState(paramTicket || null);
-  const [replies, setReplies] = useState([]); // Commenti / Storia scaricati dal DB
-  const [loading, setLoading] = useState(false); // Caricamento dati iniziali
-  const [actionLoading, setActionLoading] = useState(false); // Caricamento per le azioni (es. chiusura)
+  const [replies, setReplies] = useState([]); 
+  const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [rating, setRating] = useState(ticket?.rating || 0);
+  const [rating, setRating] = useState(ticket?.rating || 0); // Ripristinato Rating
 
-  // 3. Caricamento Dati Completi (Ticket + Risposte)
-  useEffect(() => {
-    const fetchData = async () => {
-      // Se non abbiamo i dati completi, mostriamo il loading
+  // 3. Caricamento Dati Completi
+  const fetchData = async () => {
+      // Mostra loading solo se non abbiamo già i dati base
       if (!ticket && !paramTicket) setLoading(true);
       
       try {
         const ticketId = id || ticket?.id || paramTicket?.id;
         if (!ticketId) return;
 
-        // A. Scarica Dettagli Ticket (se servono)
-        // Se abbiamo già passato l'oggetto ticket dalla lista, usiamo quello, altrimenti scarichiamo l'aggiornamento
+        // A. Scarica Dettagli Ticket
         const freshTicket = await getTicket(ticketId);
         if (freshTicket) {
            setTicket(freshTicket);
+           if(freshTicket.rating) setRating(freshTicket.rating);
         }
 
-        // B. Scarica Messaggi/Risposte
+        // B. Scarica Messaggi
         const fetchedReplies = await getAllReplies(ticketId);
         setReplies(fetchedReplies);
 
       } catch (error) {
         console.error("Errore fetch ticket detail", error);
-        // Non blocchiamo tutto se fallisce il refresh, manteniamo i dati vecchi se ci sono
-        if (!ticket && !paramTicket) {
-             Alert.alert("Errore", "Impossibile recuperare i dettagli del ticket");
-             navigation.goBack();
-        }
       } finally {
         setLoading(false);
       }
-    };
+  };
 
+  useEffect(() => {
     fetchData();
   }, [id]);
 
@@ -60,31 +55,25 @@ export default function TicketDetailScreen({ route, navigation }) {
   const currentStatus = ticket?.status || ticket?.stato || 'Aperto';
   const isResolved = currentStatus === 'Risolto' || currentStatus === 'Chiuso';
 
-  // 5. Gestione Azioni Operatore
-  const handleStatusChange = (newStatus) => {
+  // 5. Azioni Operatore
+  const handleStatusChange = async (newStatus) => {
     if (newStatus === 'Risolto') {
         Alert.alert("Conferma", "Vuoi chiudere definitivamente il ticket?", [
             { text: "Annulla", style: "cancel" },
             { text: "Conferma", onPress: async () => {
                 setActionLoading(true);
-                try {
-                    const success = await closeTicket(ticket.id);
-                    if (success) {
-                        setTicket(prev => ({ ...prev, status: 'Risolto' }));
-                        Alert.alert("Successo", "Ticket chiuso correttamente.");
-                    } else {
-                        Alert.alert("Errore", "Impossibile chiudere il ticket.");
-                    }
-                } catch (e) {
-                    Alert.alert("Errore", "Errore di connessione.");
-                } finally {
-                    setActionLoading(false);
+                const success = await closeTicket(ticket.id);
+                setActionLoading(false);
+                if (success) {
+                    setTicket(prev => ({ ...prev, status: 'Risolto' }));
+                    Alert.alert("Successo", "Ticket chiuso correttamente.");
+                } else {
+                    Alert.alert("Errore", "Impossibile chiudere il ticket.");
                 }
             }}
         ]);
     } else {
-        // Se il backend supporta altri stati (es. "In Corso"), qui andrebbe la chiamata API specifica
-        Alert.alert("Info", "Cambio stato 'In Corso' non ancora disponibile via API.");
+         Alert.alert("Info", "Cambio stato non disponibile via API.");
     }
   };
 
@@ -92,33 +81,31 @@ export default function TicketDetailScreen({ route, navigation }) {
   const handleSendComment = async () => {
     if(!newComment.trim()) return;
     
-    // Preparazione payload compatibile con il backend
+    setActionLoading(true);
     const replyData = {
         text: newComment, 
+        author: user?.name || 'Utente', // Fallback se backend non lo prende dal token
         date: new Date().toISOString()
-        // Il backend ricaverà l'utente dal token o possiamo aggiungerlo qui se richiesto
     };
 
-    // UI Optimistic update (opzionale, qui facciamo reload per sicurezza)
     const success = await postReply(ticket.id, replyData);
+    setActionLoading(false);
+
     if (success) {
         setNewComment('');
-        // Ricarica le risposte per vedere il nuovo messaggio
-        const updatedReplies = await getAllReplies(ticket.id);
-        setReplies(updatedReplies);
+        fetchData(); // Ricarica messaggi
     } else {
         Alert.alert("Errore", "Impossibile inviare il messaggio.");
     }
   };
 
-  // 7. Gestione Rating
+  // 7. Gestione Rating (Ripristinato)
   const handleRating = (stars) => {
     setRating(stars);
     Alert.alert("Grazie!", `Hai valutato l'intervento con ${stars} stelle.`);
-    // Qui andrebbe la chiamata API per salvare il rating
+    // TODO: Aggiungere chiamata API salvataggio rating se prevista
   };
 
-  // Loader iniziale
   if (loading || !ticket) {
       return (
         <View style={styles.center}>
@@ -141,7 +128,7 @@ export default function TicketDetailScreen({ route, navigation }) {
 
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
         
-        {/* IMMAGINE DI COPERTINA */}
+        {/* COPERTINA */}
         {ticket.images && ticket.images.length > 0 ? (
           <Image source={{ uri: ticket.images[0] }} style={styles.coverImg} />
         ) : (
@@ -152,8 +139,7 @@ export default function TicketDetailScreen({ route, navigation }) {
         )}
 
         <View style={styles.content}>
-          
-          {/* BADGES (Categoria e Stato) */}
+          {/* BADGES */}
           <View style={styles.badgeRow}>
             <View style={styles.catBadge}>
                 <Text style={styles.catText}>{ticket.categoria || ticket.category || 'Generico'}</Text>
@@ -165,17 +151,15 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           </View>
 
-          {/* TITOLO E INDIRIZZO */}
           <Text style={styles.title}>{ticket.titolo || ticket.title}</Text>
           <Text style={styles.address}>
              <Ionicons name="location-outline" size={14} /> {ticket.indirizzo || ticket.address || 'Posizione non disponibile'}
           </Text>
-          
-          {/* DESCRIZIONE */}
-          <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
-          <Text style={styles.desc}>{ticket.descrizione || ticket.description || ticket.desc || "Nessuna descrizione fornita."}</Text>
 
-          {/* AREA OPERATORE (Visibile solo se loggato come operatore) */}
+          <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
+          <Text style={styles.desc}>{ticket.descrizione || ticket.description || ticket.desc || "Nessuna descrizione."}</Text>
+
+          {/* AREA OPERATORE */}
           {isOperator && (
             <View style={styles.operatorPanel}>
                 <Text style={styles.opTitle}>Pannello Operatore</Text>
@@ -198,14 +182,14 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* RATING (Visibile solo se Cittadino e Ticket Risolto) */}
+          {/* RATING (Ripristinato) */}
           {isResolved && isCitizen && (
             <View style={styles.ratingBox}>
                 <Text style={styles.ratingTitle}>Valuta l'intervento</Text>
                 <View style={{flexDirection:'row', justifyContent:'center'}}>
                    {[1,2,3,4,5].map(star => (
                       <TouchableOpacity key={star} onPress={()=>handleRating(star)}>
-                         <Ionicons name={star <= rating ? "star" : "star-outline"} size={32} color="#FFD700" style={{marginHorizontal:4}} />
+                          <Ionicons name={star <= rating ? "star" : "star-outline"} size={32} color="#FFD700" style={{marginHorizontal:4}} />
                       </TouchableOpacity>
                    ))}
                 </View>
@@ -213,7 +197,7 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* MESSAGGI / CRONOLOGIA */}
+          {/* MESSAGGI (Stile Chat Ripristinato) */}
           <Text style={styles.sectionTitle}>MESSAGGI</Text>
           {replies.length === 0 ? (
               <View style={{padding:20, alignItems:'center'}}>
@@ -224,17 +208,17 @@ export default function TicketDetailScreen({ route, navigation }) {
               replies.map((r, i) => (
                 <View key={i} style={[styles.msgBox, r.id_user === user?.id ? styles.msgMine : styles.msgOther]}>
                     <Text style={styles.msgUser}>
-                        {r.user_name || (r.id_user === user?.id ? 'Tu' : 'Utente')}
+                        {r.user_name || (r.author) || (r.id_user === user?.id ? 'Tu' : 'Utente')}
                     </Text>
                     <Text style={styles.msgText}>{r.text || r.messaggio || r.body}</Text>
-                    <Text style={styles.msgDate}>{r.date || r.data_invio || ''}</Text>
+                    <Text style={styles.msgDate}>{r.date ? new Date(r.date).toLocaleDateString() : ''}</Text>
                 </View>
               ))
           )}
         </View>
       </ScrollView>
 
-      {/* INPUT BAR (Sempre visibile per inviare messaggi) */}
+      {/* INPUT BAR */}
       <View style={styles.inputArea}>
          <TextInput 
             style={styles.input} 
@@ -242,7 +226,7 @@ export default function TicketDetailScreen({ route, navigation }) {
             value={newComment} 
             onChangeText={setNewComment} 
          />
-         <TouchableOpacity style={styles.sendBtn} onPress={handleSendComment}>
+         <TouchableOpacity style={styles.sendBtn} onPress={handleSendComment} disabled={actionLoading}>
             <Ionicons name="send" size={20} color="white" />
          </TouchableOpacity>
       </View>
@@ -253,14 +237,11 @@ export default function TicketDetailScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  
-  header: { paddingTop: 40, paddingBottom: 15, paddingHorizontal: 15, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', elevation: 4 },
+  header: { paddingTop: 40, paddingBottom: 15, paddingHorizontal: 15, backgroundColor: COLORS.primary || '#D32F2F', flexDirection: 'row', alignItems: 'center', elevation: 4 },
   backBtn: { padding: 5 },
   headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold', marginLeft: 15 },
-  
   coverImg: { width: '100%', height: 200, backgroundColor: '#ccc' },
   placeholderImg: { backgroundColor: '#467599', justifyContent: 'center', alignItems: 'center' },
-  
   content: { padding: 20 },
   
   badgeRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
@@ -283,6 +264,7 @@ const styles = StyleSheet.create({
   ratingTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 10 },
   ratingSub: { fontSize: 12, color: '#6B7280', marginTop: 5 },
 
+  // Stili Messaggi Ripristinati
   msgBox: { padding: 12, borderRadius: 12, marginBottom: 10, maxWidth: '85%' },
   msgOther: { backgroundColor: '#fff', alignSelf: 'flex-start', elevation: 1, borderBottomLeftRadius: 0 },
   msgMine: { backgroundColor: '#E3F2FD', alignSelf: 'flex-end', elevation: 1, borderBottomRightRadius: 0 },
@@ -292,5 +274,5 @@ const styles = StyleSheet.create({
 
   inputArea: { flexDirection: 'row', padding: 10, backgroundColor: '#fff', elevation: 10, borderTopWidth: 1, borderTopColor: '#eee' },
   input: { flex: 1, backgroundColor: '#f0f0f0', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, marginRight: 10 },
-  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }
+  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.primary || '#D32F2F', justifyContent: 'center', alignItems: 'center' }
 });

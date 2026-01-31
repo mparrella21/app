@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const getAllTickets = async () => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token'); // Aggiunto token se serve per tenant isolation
+    const token = await AsyncStorage.getItem('app_auth_token');
     const url = `${API_BASE}/ticket`;
     const response = await fetch(url, {
       method: 'GET',
@@ -27,20 +27,24 @@ export const getAllTickets = async () => {
 
 export const getTicket = async (id) => {
   try {
+    const token = await AsyncStorage.getItem('app_auth_token');
     const response = await fetch(`${API_BASE}/ticket/${id}`, {
       method: 'GET',
-      headers: { 'Accept': 'application/json' }
+      headers: { 
+        'Accept': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : undefined
+      }
     });
     const data = await response.json();
     if (response.ok && data.success) return data.ticket;
-    throw new Error('Ticket non trovato');
+    return null; // Modificato per gestire meglio l'assenza dati
   } catch (e) {
     console.error('ticketService.getTicket', e);
     throw e;
   }
 };
 
-// Creazione Ticket con gestione Media separata (Architecture Compliant)
+// Creazione Ticket con gestione Media (Architecture Compliant)
 export const postTicket = async (ticketData, photos = []) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
@@ -59,9 +63,8 @@ export const postTicket = async (ticketData, photos = []) => {
 
     const data = await response.json();
     
+    // 2. Se creato, caricamento Media (se presenti)
     if (data.success && data.ticketId && photos.length > 0) {
-       // 2. Se il ticket è creato, carichiamo le foto (Media Service)
-       // Questo rispetta il diagramma di sequenza dell'Architettura
        await uploadTicketMedia(data.ticketId, photos, token);
     }
 
@@ -72,19 +75,19 @@ export const postTicket = async (ticketData, photos = []) => {
   }
 };
 
-// Funzione helper per il Media Service
+// Funzione helper per il Media Service (RIPRISTINATO TUO ENDPOINT)
 const uploadTicketMedia = async (ticketId, photos, token) => {
     try {
         const formData = new FormData();
         photos.forEach((photo, index) => {
             formData.append('files', {
                 uri: photo.uri,
-                type: 'image/jpeg', // o rileva il tipo dinamicamente
+                type: 'image/jpeg', // o detection dinamica
                 name: `ticket_${ticketId}_${index}.jpg`
             });
         });
         
-        // Endpoint Media Service 
+        // Endpoint Media Service originale
         await fetch(`${API_BASE}/media/${ticketId}`, {
             method: 'POST',
             headers: {
@@ -95,7 +98,6 @@ const uploadTicketMedia = async (ticketId, photos, token) => {
         });
     } catch (error) {
         console.error("Errore upload media:", error);
-        // Non blocchiamo il ritorno true della creazione ticket, ma logghiamo l'errore
     }
 }
 
@@ -103,9 +105,13 @@ const uploadTicketMedia = async (ticketId, photos, token) => {
 
 export const getAllReplies = async (idTicket) => {
   try {
+    const token = await AsyncStorage.getItem('app_auth_token');
     const response = await fetch(`${API_BASE}/ticket/${idTicket}/reply`, {
       method: 'GET',
-      headers: { 'Accept': 'application/json' }
+      headers: { 
+          'Accept': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : undefined
+      }
     });
     const data = await response.json();
     if (response.ok && data.success) return data.replies || [];
@@ -116,7 +122,7 @@ export const getAllReplies = async (idTicket) => {
   }
 };
 
-export const postReply = async (idTicket, reply) => {
+export const postReply = async (idTicket, replyData) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
@@ -128,7 +134,7 @@ export const postReply = async (idTicket, reply) => {
         'Accept': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify(reply)
+      body: JSON.stringify(replyData)
     });
     const data = await response.json();
     return data.success === true;
@@ -138,6 +144,7 @@ export const postReply = async (idTicket, reply) => {
   }
 };
 
+// Chiusura Ticket (RIPRISTINATO TUO ENDPOINT)
 export const closeTicket = async (idTicket) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
