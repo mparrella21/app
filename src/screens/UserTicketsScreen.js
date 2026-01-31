@@ -40,7 +40,7 @@ export default function UserTicketsScreen({ navigation }) {
   };
 
   const renderItem = ({ item }) => (
-    <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('TicketDetail', { ticket: item })}>
+    <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('TicketDetail', { id: item.id })}>
       <View style={styles.cardHeader}>
         <Text style={styles.category}>{item.category || item.categoria || 'Generico'}</Text>
         <View style={[styles.badge, { backgroundColor: getStatusColor(item.status || item.stato) }]}>

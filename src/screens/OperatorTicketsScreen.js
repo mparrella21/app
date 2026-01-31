@@ -107,7 +107,7 @@ export default function OperatorTicketsScreen({ navigation }) {
         <View style={styles.actionRow}>
             <TouchableOpacity 
                 style={styles.detailBtn} 
-                onPress={() => navigation.navigate('TicketDetail', { ticket: ticketData })}
+                onPress={() => navigation.navigate('TicketDetail', { id: ticketData.id })}
             >
                 <Text style={styles.detailText}>Dettagli</Text>
             </TouchableOpacity>

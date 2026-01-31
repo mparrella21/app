@@ -6,14 +6,16 @@ import { COLORS } from '../styles/global';
 import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus, sendFeedback } from '../services/ticketService';
 
 export default function TicketDetailScreen({ route, navigation }) {
-  // 1. Recupero dati iniziali
-  const { ticket: paramTicket, id } = route.params || {};
+  // 1. Recupero ID (Priorità all'ID passato, fallback sull'oggetto ticket se presente)
+  const { id, ticket: paramTicket } = route.params || {};
+  const ticketId = id || paramTicket?.id;
+
   const { user } = useAuth();
   
   // 2. Stato Locale
-  const [ticket, setTicket] = useState(paramTicket || null);
+  const [ticket, setTicket] = useState(null);
   const [replies, setReplies] = useState([]); 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
   
@@ -24,11 +26,9 @@ export default function TicketDetailScreen({ route, navigation }) {
   // 3. Helper per decodificare lo stato
   const getStatusLabel = (t) => {
       if (!t) return 'Sconosciuto';
-      
-      if (t.status && typeof t.status === 'string') return t.status;
-      if (t.stato && typeof t.stato === 'string') return t.stato;
-
       const sid = t.id_status || t.statusId;
+      if (t.status && typeof t.status === 'string') return t.status;
+      // Fallback su ID se stringa manca
       switch (sid) {
           case 1: return 'Aperto';
           case 2: return 'In Corso'; 
@@ -38,19 +38,13 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  const statusLabel = getStatusLabel(ticket);
-  const isResolved = statusLabel.toLowerCase() === 'risolto' || statusLabel.toLowerCase() === 'chiuso';
-  const isInProgress = statusLabel.toLowerCase() === 'in corso' || statusLabel.toLowerCase() === 'assegnato';
-
-  // 4. Caricamento Dati Completi
+  // 4. Caricamento Dati Completi (SEMPRE dal server per coerenza)
   const fetchData = async () => {
-      if (!ticket && !paramTicket) setLoading(true);
+      if (!ticketId) return;
+      setLoading(true);
       
       try {
-        const ticketId = id || ticket?.id || paramTicket?.id;
-        if (!ticketId) return;
-
-        // A. Scarica Dettagli Ticket
+        // A. Scarica Dettagli Ticket Freschi
         const freshTicket = await getTicket(ticketId);
         if (freshTicket) {
            setTicket(freshTicket);
@@ -58,6 +52,9 @@ export default function TicketDetailScreen({ route, navigation }) {
                setRating(freshTicket.rating);
                setRatingSubmitted(true);
            }
+        } else {
+            Alert.alert("Errore", "Impossibile recuperare i dettagli del ticket.");
+            navigation.goBack();
         }
 
         // B. Scarica Messaggi
@@ -73,13 +70,16 @@ export default function TicketDetailScreen({ route, navigation }) {
 
   useEffect(() => {
     fetchData();
-  }, [id]);
+  }, [ticketId]);
 
-  // 5. Logica Ruoli
+  // Logiche UI basate sul ticket scaricato
+  const statusLabel = ticket ? getStatusLabel(ticket) : '';
+  const isResolved = statusLabel.toLowerCase() === 'risolto' || statusLabel.toLowerCase() === 'chiuso';
+  const isInProgress = statusLabel.toLowerCase() === 'in corso' || statusLabel.toLowerCase() === 'assegnato';
   const isOperator = user?.role === 'operatore';
   const isCitizen = !user || user?.role === 'cittadino';
 
-  // 6. Azioni Operatore (RESO DINAMICO)
+  // 6. Azioni Operatore
   const handleStatusChange = async (newStatus, newStatusId) => {
     Alert.alert("Conferma", `Vuoi impostare lo stato a "${newStatus}"?`, [
         { text: "Annulla", style: "cancel" },
@@ -87,17 +87,16 @@ export default function TicketDetailScreen({ route, navigation }) {
             setActionLoading(true);
             let success = false;
 
-            // Se è la chiusura definitiva, usa l'endpoint specifico se preferito, oppure quello generico
             if (newStatus === 'Risolto') {
                 success = await closeTicket(ticket.id);
             } else {
-                // Per "In Corso" o altri stati
                 success = await updateTicketStatus(ticket.id, newStatus, newStatusId);
             }
 
             setActionLoading(false);
             if (success) {
-                setTicket(prev => ({ ...prev, status: newStatus, id_status: newStatusId }));
+                // Ricarica dati per vedere aggiornamento
+                fetchData();
                 Alert.alert("Successo", `Stato aggiornato a ${newStatus}.`);
             } else {
                 Alert.alert("Errore", "Impossibile aggiornare lo stato.");
@@ -150,20 +149,22 @@ export default function TicketDetailScreen({ route, navigation }) {
     ]);
   };
 
-  if (loading || !ticket) {
+  if (loading) {
       return (
         <View style={styles.center}>
             <ActivityIndicator color={COLORS.primary} size="large" />
-            <Text style={{marginTop:10, color:'#666'}}>Caricamento...</Text>
+            <Text style={{marginTop:10, color:'#666'}}>Caricamento Ticket...</Text>
         </View>
       );
   }
 
+  if (!ticket) return null;
+
   // Colori dinamici
   const getStatusColor = () => {
-     if (isResolved) return '#D1E7DD'; // Verde
-     if (isInProgress) return '#FFF3CD'; // Giallo
-     return '#F8D7DA'; // Rosso
+     if (isResolved) return '#D1E7DD'; 
+     if (isInProgress) return '#FFF3CD'; 
+     return '#F8D7DA'; 
   };
   
   const getStatusTextColor = () => {
@@ -216,7 +217,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
           <Text style={styles.desc}>{ticket.descrizione || ticket.description || ticket.desc || "Nessuna descrizione."}</Text>
 
-          {/* AREA OPERATORE: Ora completamente dinamica */}
+          {/* AREA OPERATORE */}
           {isOperator && (
             <View style={styles.operatorPanel}>
                 <Text style={styles.opTitle}>Pannello Operatore</Text>
@@ -224,7 +225,6 @@ export default function TicketDetailScreen({ route, navigation }) {
                     <ActivityIndicator color="#F59E0B" />
                 ) : (
                     <View style={styles.opButtons}>
-                        {/* Se è APERTO (o non risolto/non in corso), mostra "Prendi in carico" */}
                         {!isResolved && !isInProgress && (
                             <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#3B82F6', marginRight: 10}]} onPress={() => handleStatusChange('In Corso', 2)}>
                                 <Ionicons name="construct" size={18} color="white" />
@@ -232,7 +232,6 @@ export default function TicketDetailScreen({ route, navigation }) {
                             </TouchableOpacity>
                         )}
 
-                        {/* Se non è RISOLTO, mostra "Segna Risolto" */}
                         {!isResolved ? (
                             <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#10B981'}]} onPress={() => handleStatusChange('Risolto', 3)}>
                                 <Ionicons name="checkmark-circle" size={18} color="white" />

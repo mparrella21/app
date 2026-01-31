@@ -186,7 +186,7 @@ export default function HomeScreen({ navigation }) {
                 return (
                   <Marker 
                     key={t.id} coordinate={{ latitude: lat, longitude: lon }}
-                    onCalloutPress={() => navigation.navigate('TicketDetail', { ticket: t })}
+                    onCalloutPress={() => navigation.navigate('TicketDetail', { id: t.id })}
                   >
                     <View style={[styles.markerCircle, {backgroundColor: getStatusColor(t.status)}]}>
                       <Ionicons name="alert" size={16} color="white" />

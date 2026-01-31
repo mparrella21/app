@@ -3,7 +3,7 @@ import { useWindowDimensions } from 'react-native';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { COLORS } from '../styles/global';
 import ProfileScreen from './ProfileScreen';
-import CitizenTicketsScreen from './CitizenTicketsScreen';
+import UserTicketsScreen from './UserTicketsScreen'; // CORRETTO: Era CitizenTicketsScreen
 import OperatorTicketsScreen from './OperatorTicketsScreen';
 import ResponsibleTicketsScreen from './ResponsibleTicketsScreen';
 import { useAuth } from '../context/AuthContext';
@@ -18,7 +18,7 @@ export default function AreaPersonaleMain({ navigation }) {
   const renderContent = () => {
     switch(active) {
       case 'profile': return <ProfileScreen />;
-      case 'mytickets': return <CitizenTicketsScreen navigation={navigation} />;
+      case 'mytickets': return <UserTicketsScreen navigation={navigation} />; // CORRETTO
       case 'operator': return <OperatorTicketsScreen navigation={navigation} />;
       case 'responsible': return <ResponsibleTicketsScreen navigation={navigation} />;
       default: return <ProfileScreen />;
