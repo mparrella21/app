@@ -3,7 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // --- INTERVENTION SERVICE ---
 // Gestisce Assegnazioni, Rapporti di intervento e Feedback (Rating)
-// Rif: Architecture Document, Pag 5
+// Rif: Architecture Document, Pag 5 e Diagramma API Pag 12
+// NOTA ARCHITETTURALE: Tutti gli endpoint di questo servizio devono essere prefissati con /intervention
 
 // 1. ASSEGNAZIONI (Assignments)
 
@@ -11,8 +12,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export const getAssignments = async () => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
-    // Secondo l'architettura, chiamiamo l'Intervention Service
-    const response = await fetch(`${API_BASE}/assignment`, {
+    // CORRETTO: Aggiunto prefisso /intervention come da Architecture Doc
+    const response = await fetch(`${API_BASE}/intervention/assignment`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -22,8 +23,7 @@ export const getAssignments = async () => {
 
     const data = await response.json();
     if (response.ok && data.success) {
-        // L'endpoint dovrebbe restituire una lista di oggetti assignment
-        // che contengono il riferimento al ticket
+        // L'endpoint restituisce una lista di assegnazioni
         return data.assignments || [];
     }
     return [];
@@ -47,7 +47,8 @@ export const createAssignment = async (ticketId, operatorId, note = "") => {
       timestamp: new Date().toISOString()
     };
 
-    const response = await fetch(`${API_BASE}/assignment`, {
+    // CORRETTO: Aggiunto prefisso /intervention
+    const response = await fetch(`${API_BASE}/intervention/assignment`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -69,7 +70,8 @@ export const createAssignment = async (ticketId, operatorId, note = "") => {
 export const updateAssignmentStatus = async (assignmentId, status) => {
     try {
       const token = await AsyncStorage.getItem('app_auth_token');
-      const response = await fetch(`${API_BASE}/assignment/${assignmentId}`, {
+      // CORRETTO: Aggiunto prefisso /intervention
+      const response = await fetch(`${API_BASE}/intervention/assignment/${assignmentId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -91,7 +93,8 @@ export const updateAssignmentStatus = async (assignmentId, status) => {
 export const deleteAssignment = async (assignmentId) => {
     try {
       const token = await AsyncStorage.getItem('app_auth_token');
-      const response = await fetch(`${API_BASE}/assignment/${assignmentId}`, {
+      // CORRETTO: Aggiunto prefisso /intervention
+      const response = await fetch(`${API_BASE}/intervention/assignment/${assignmentId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -112,8 +115,8 @@ export const sendFeedback = async (ticketId, rating, comment = "") => {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
-    // Nota: L'endpoint è /rating come da architettura
-    const response = await fetch(`${API_BASE}/rating`, {
+    // Nota: L'endpoint è /intervention/rating come da architettura
+    const response = await fetch(`${API_BASE}/intervention/rating`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

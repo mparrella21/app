@@ -41,18 +41,6 @@ export const getUserTickets = async (userId) => {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!userId) return [];
 
-    // NOTA: Se il backend supporta il filtro server-side (es: /ticket?userId=XYZ), 
-    // scommentare la chiamata fetch specifica per efficienza.
-    /*
-    const response = await fetch(`${API_BASE}/ticket?userId=${userId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if(response.ok) {
-        const data = await response.json();
-        return data.tickets || [];
-    }
-    */
-
     // Fallback: Recupera tutti e filtra lato client (OK per volumi bassi)
     const allTickets = await getAllTickets();
 
@@ -82,7 +70,8 @@ export const getOperatorTickets = async (operatorId) => {
     
     // 1. Tenta di recuperare le assegnazioni dall'Assignment/Intervention Service
     try {
-        const assignResponse = await fetch(`${API_BASE}/assignment`, {
+        // CORRETTO: Aggiornato endpoint per puntare a /intervention/assignment come da Doc Architettura
+        const assignResponse = await fetch(`${API_BASE}/intervention/assignment`, {
             method: 'GET',
             headers: { 
                 'Accept': 'application/json',
@@ -211,8 +200,6 @@ export const postTicket = async (ticketData, photos = []) => {
     return false;
   }
 };
-
-// Nota: La funzione uploadTicketMedia è stata rimossa perché ora l'upload è gestito dentro postTicket
 
 // --- REPLIES & STATUS ---
 
