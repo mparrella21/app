@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getAllTickets } from '../services/ticketService';
+import { getAllTickets } from '../services/ticketService'; // Usa solo il servizio reale
 import { useAuth } from '../context/AuthContext';
-import { OFFLINE_MODE } from '../services/config';
-import { initMock, getAll as getMockAll } from '../services/mockTicketStore';
 
 const COLORS = { primary: '#0077B6', bg: '#F3F4F6', card: '#FFF', accent: '#C06E52' };
 
@@ -12,34 +10,44 @@ const CitizenHomeScreen = ({ navigation }) => {
   const { user } = useAuth();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // Aggiunto pull-to-refresh
   const [activeTab, setActiveTab] = useState('active'); // 'active' o 'history'
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        let data = [];
-        if (OFFLINE_MODE) {
-          await initMock();
-          data = await getMockAll();
-        } else {
-          data = await getAllTickets();
-        }
-        setTickets(data);
-      } catch (e) {
-        console.warn('CitizenHomeScreen.load', e);
-      }
-      setLoading(false);
-    };
+  const loadTickets = async () => {
+    try {
+      // NON usiamo più mockTicketStore. 
+      // Chiamiamo direttamente il backend.
+      const data = await getAllTickets();
+      setTickets(data);
+    } catch (e) {
+      console.warn('CitizenHomeScreen.load', e);
+      // Qui potresti mostrare un Alert se c'è errore di rete
+    }
+  };
 
-    // Ricarica ogni volta che la screen prende il focus (per aggiornamenti nuovi ticket)
-    const unsubscribe = navigation.addListener('focus', load);
+  useEffect(() => {
+    setLoading(true);
+    loadTickets().finally(() => setLoading(false));
+
+    // Ricarica quando la schermata torna in focus
+    const unsubscribe = navigation.addListener('focus', () => {
+       loadTickets();
+    });
     return unsubscribe;
   }, [navigation]);
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadTickets();
+    setRefreshing(false);
+  };
+
   // FILTRO LISTA: Attivi (Open/In Progress) vs Storico (Closed/Resolved)
   const filteredTickets = tickets.filter(t => {
-    const isClosed = t.status === 'Risolto' || t.status === 'Chiuso' || t.status === 'closed';
+    // Normalizziamo lo stato per evitare problemi con maiuscole/minuscole
+    const status = (t.status || '').toUpperCase();
+    const isClosed = status === 'RISOLTO' || status === 'CHIUSO' || status === 'CLOSED';
+    
     if (activeTab === 'active') return !isClosed;
     return isClosed;
   });
@@ -47,15 +55,16 @@ const CitizenHomeScreen = ({ navigation }) => {
   const renderTicket = ({ item }) => (
     <TouchableOpacity style={styles.ticketCard} onPress={() => navigation.navigate('TicketDetail', { id: item.id })}>
       <View style={styles.iconContainer}>
-        <Ionicons name={item.categoria === 'Verde' ? 'leaf' : 'construct'} size={24} color="#555" />
+        {/* Gestione sicura se categoria è null */}
+        <Ionicons name={(item.categoria || '').includes('Verde') ? 'leaf' : 'construct'} size={24} color="#555" />
       </View>
       <View style={{ flex: 1, marginLeft: 15 }}>
-        <Text style={styles.ticketTitle} numberOfLines={1}>{item.titolo || item.title}</Text>
-        <Text style={styles.ticketSub}>#{item.id} • {item.data || item.creation_date}</Text>
+        <Text style={styles.ticketTitle} numberOfLines={1}>{item.titolo || item.title || 'Segnalazione senza titolo'}</Text>
+        <Text style={styles.ticketSub}>#{item.id} • {item.data || item.creation_date || 'Data non disp.'}</Text>
         <Text style={{fontSize:12, color:'#777'}} numberOfLines={1}>{item.indirizzo || 'Nessun indirizzo'}</Text>
       </View>
-      <View style={[styles.statusBadge, { backgroundColor: item.status === 'Risolto' ? '#D1E7DD' : '#FFF3CD' }]}>
-        <Text style={{ color: item.status === 'Risolto' ? '#0F5132' : '#856404', fontWeight: 'bold', fontSize: 10 }}>
+      <View style={[styles.statusBadge, { backgroundColor: (item.status === 'Risolto' || item.status === 'CLOSED') ? '#D1E7DD' : '#FFF3CD' }]}>
+        <Text style={{ color: (item.status === 'Risolto' || item.status === 'CLOSED') ? '#0F5132' : '#856404', fontWeight: 'bold', fontSize: 10 }}>
           {(item.status || 'APERTO').toUpperCase()}
         </Text>
       </View>
@@ -72,6 +81,7 @@ const CitizenHomeScreen = ({ navigation }) => {
         </View>
         <TouchableOpacity style={styles.notifBtn} onPress={() => navigation.navigate('Notifications')}>
            <Ionicons name="notifications-outline" size={24} color="white" />
+           {/* Il pallino rosso potresti volerlo condizionale in base a vere notifiche */}
            <View style={styles.redDot} />
         </TouchableOpacity>
       </View>
@@ -102,6 +112,9 @@ const CitizenHomeScreen = ({ navigation }) => {
             keyExtractor={item => String(item.id)}
             renderItem={renderTicket}
             contentContainerStyle={{ paddingBottom: 80 }}
+            refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
+            }
             ListEmptyComponent={
               <View style={{alignItems:'center', marginTop:50}}>
                 <Ionicons name="folder-open-outline" size={48} color="#ccc" />
@@ -113,7 +126,7 @@ const CitizenHomeScreen = ({ navigation }) => {
       </View>
 
       {/* FAB */}
-      <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('Map')}>
+      <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('CreateTicket')}>
         <Ionicons name="add" size={32} color="white" />
       </TouchableOpacity>
     </View>
