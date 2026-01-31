@@ -81,7 +81,6 @@ export const getOperatorTickets = async (operatorId) => {
     let assignedTicketIds = [];
     
     // 1. Tenta di recuperare le assegnazioni dall'Assignment/Intervention Service
-    // Questo è il flusso corretto secondo l'architettura (Assignment Service è la fonte di verità)
     try {
         const assignResponse = await fetch(`${API_BASE}/assignment`, {
             method: 'GET',
@@ -112,7 +111,7 @@ export const getOperatorTickets = async (operatorId) => {
         // Criterio A: Il ticket è nella lista delle assegnazioni recuperate
         const isInAssignments = assignedTicketIds.includes(t.id);
         
-        // Criterio B (Fallback): Il ticket ha il campo operatore stampato dentro (backend legacy/semplificato)
+        // Criterio B (Fallback): Il ticket ha il campo operatore stampato dentro
         const isDirectlyAssigned = (t.operator_id === operatorId || t.assigned_to === operatorId);
         
         // Criterio C: Il ticket deve essere attivo
@@ -166,30 +165,46 @@ export const getCategories = async () => {
   }
 };
 
+/**
+ * Crea un nuovo ticket.
+ * MODIFICATO: Invia ticket e foto in un'unica chiamata multipart/form-data.
+ */
 export const postTicket = async (ticketData, photos = []) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
-    // 1. Crea il Ticket
+    const formData = new FormData();
+
+    // Aggiungi i campi testuali
+    Object.keys(ticketData).forEach(key => {
+        if (ticketData[key] !== null && ticketData[key] !== undefined) {
+            formData.append(key, String(ticketData[key]));
+        }
+    });
+
+    // Aggiungi le foto
+    photos.forEach((photo, index) => {
+        const fileName = photo.fileName || `ticket_img_${index}.jpg`;
+        formData.append('files', {
+            uri: photo.uri,
+            type: 'image/jpeg', 
+            name: fileName
+        });
+    });
+
+    // Unica chiamata POST verso il Backend
     const response = await fetch(`${API_BASE}/ticket`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${token}`,
+        // NON impostare 'Content-Type': 'multipart/form-data', lo fa fetch automaticamente
       },
-      body: JSON.stringify(ticketData)
+      body: formData
     });
 
     const data = await response.json();
-    const newTicketId = data.ticketId || (data.ticket && data.ticket.id);
-    
-    // 2. Se successo, carica le foto sul Media Service
-    if ((data.success || response.status === 201) && newTicketId && photos.length > 0) {
-       await uploadTicketMedia(newTicketId, photos, token);
-    }
-
     return data.success === true || response.status === 201;
   } catch (e) {
     console.error('ticketService.postTicket', e);
@@ -197,33 +212,7 @@ export const postTicket = async (ticketData, photos = []) => {
   }
 };
 
-const uploadTicketMedia = async (ticketId, photos, token) => {
-    try {
-        const formData = new FormData();
-        photos.forEach((photo, index) => {
-            // Estrazione nome file o generazione nome univoco
-            const fileName = photo.fileName || `ticket_${ticketId}_img_${index}.jpg`;
-            
-            formData.append('files', {
-                uri: photo.uri,
-                type: 'image/jpeg', 
-                name: fileName
-            });
-        });
-        
-        // Chiamata al Media Service (come da architettura)
-        await fetch(`${API_BASE}/media/${ticketId}`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'multipart/form-data',
-            },
-            body: formData
-        });
-    } catch (error) {
-        console.error("Errore upload media:", error);
-    }
-}
+// Nota: La funzione uploadTicketMedia è stata rimossa perché ora l'upload è gestito dentro postTicket
 
 // --- REPLIES & STATUS ---
 
@@ -282,7 +271,7 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
       },
       body: JSON.stringify({
         status: statusStr,
-        id_status: statusId // Opzionale, dipende dal backend
+        id_status: statusId 
       })
     });
 
@@ -299,7 +288,6 @@ export const closeTicket = async (idTicket) => {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
-    // Alcuni backend usano PUT /ticket/{id} con status CLOSED, altri endpoint dedicato
     const response = await fetch(`${API_BASE}/ticket/${idTicket}/close`, {
       method: 'POST',
       headers: {
@@ -313,7 +301,6 @@ export const closeTicket = async (idTicket) => {
     return data.success === true;
   } catch (e) {
     console.error('ticketService.closeTicket', e);
-    // Fallback: prova updateStatus standard se endpoint dedicato fallisce
     return await updateTicketStatus(idTicket, 'CLOSED', 3);
   }
 };

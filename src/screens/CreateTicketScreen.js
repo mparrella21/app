@@ -121,6 +121,7 @@ export default function CreateTicketScreen({ navigation, route }) {
     setIsSubmitting(true);
 
     // Architettura: Dati del ticket puliti (senza immagine Base64 dentro)
+    // UPDATE: Stato impostato a "Ricevuto" come da Requisiti UC-03
     const ticketData = {
       title: title,
       description: desc,
@@ -128,13 +129,13 @@ export default function CreateTicketScreen({ navigation, route }) {
       latitude: coords.lat,
       longitude: coords.lng,
       address: address,
-      status: 'OPEN', // Standardizziamo a OPEN per il backend
+      status: 'Ricevuto', // STATO CORRETTO
       timestamp: new Date().toISOString(),
     };
 
     try {
       // Passiamo ticketData E images separatamente al service
-      // Il service gestirà la doppia chiamata (Ticket Service + Media Service)
+      // Il service gestirà la chiamata unica multipart
       const success = await postTicket(ticketData, images);
       
       if (success) {
@@ -195,7 +196,6 @@ export default function CreateTicketScreen({ navigation, route }) {
             {categories.map((cat, index) => {
                // Gestione dinamica: supporta sia stringhe semplici che oggetti {id, label}
                const catLabel = typeof cat === 'object' ? cat.label : cat;
-               const catId = typeof cat === 'object' ? cat.id : cat;
                
                return (
                  <TouchableOpacity 

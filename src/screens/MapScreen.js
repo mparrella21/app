@@ -41,14 +41,18 @@ export default function MapScreen({ navigation }) {
         latitudeDelta: 0.05,
         longitudeDelta: 0.05
       });
+
+      // NEW: Carica il boundary per la posizione attuale dell'utente all'avvio
+      // per parità visiva con il sito (che mostra i confini), ma usando l'API backend.
+      checkCurrentLocationBoundary(loc.coords.latitude, loc.coords.longitude);
     })();
   }, []);
 
   useFocusEffect(
     React.useCallback(() => {
       fetchExistingTickets();
+      // Nota: Non resettiamo currentBoundary qui per mantenerlo visibile mentre ci si muove
       setNewMarker(null);
-      setCurrentBoundary(null);
     }, [])
   );
 
@@ -62,10 +66,24 @@ export default function MapScreen({ navigation }) {
       }
   };
 
+  // Funzione per mostrare i confini all'avvio senza piazzare pin
+  const checkCurrentLocationBoundary = async (lat, lon) => {
+    try {
+        const result = await searchTenantByCoordinates(lat, lon);
+        if (result && result.boundary) {
+            setCurrentBoundary(result.boundary);
+        }
+    } catch (e) {
+        console.log("Impossibile caricare boundary iniziale:", e);
+    }
+  };
+
   const validateZoneAndSetMarker = async (lat, lon) => {
     setValidatingZone(true);
     setNewMarker({ latitude: lat, longitude: lon });
     setAddress("Verifica zona in corso...");
+    
+    // Resettiamo il boundary per essere sicuri di mostrare quello del punto cliccato
     setCurrentBoundary(null); 
     setIsValidZone(false);
 
