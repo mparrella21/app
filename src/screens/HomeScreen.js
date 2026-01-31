@@ -1,31 +1,28 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Dimensions, Text, ScrollView, StatusBar, Alert, ActivityIndicator } from 'react-native';
 import MapView, { PROVIDER_DEFAULT, Marker, Geojson } from 'react-native-maps';
 import * as Location from 'expo-location'; 
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+
 import { useAuth } from '../context/AuthContext';
 import SearchBar from '../component/SearchBar';
 import { searchCity } from '../services/nominatim';
-
-// IMPORTA GEOJSON ITALIA (File Semplificato)
-import ItalyBoundary from '../assets/data/limits_IT_simplified.json'; 
-
-const { width, height } = Dimensions.get('window');
-
-// DATI MOCK 
-const MOCK_TICKETS = [
-  { id: 1, title: 'Buca pericolosa', category: 'Strade', description: 'Via Roma dissestata', lat: 40.682, lon: 14.768, status: 'Aperto', author: 'Giuseppe B.', date: '29/01/2026' }, 
-  { id: 2, title: 'Lampione rotto', category: 'Illuminazione', description: 'Buio totale', lat: 41.9028, lon: 12.4964, status: 'In Corso', author: 'Anna N.', date: '28/01/2026' }, 
-  { id: 3, title: 'Rifiuti abbandonati', category: 'Ambiente', description: 'Sacchetti in strada', lat: 45.4642, lon: 9.1900, status: 'Risolto', author: 'Luca S.', date: '27/01/2026' }, 
-];
+import { getAllTickets, getUserTickets } from '../services/ticketService'; // API Ticket Reali
+import { searchTenantByCoordinates } from '../services/tenantService'; // API Confini Dinamici
 
 export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth(); 
   const [menuVisible, setMenuVisible] = useState(false);
   const mapRef = useRef(null);
   
-  // Stato iniziale centrato sull'Italia
+  // STATO DATI
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(false);
+  
+  // STATO MAPPA & CONFINI
+  const [currentBoundary, setCurrentBoundary] = useState(null); // Confine dinamico
   const [region, setRegion] = useState({
       latitude: 41.8719,
       longitude: 12.5674,
@@ -33,7 +30,28 @@ export default function HomeScreen({ navigation }) {
       longitudeDelta: 6,
   });
 
-  // AL CARICAMENTO: CERCA LA POSIZIONE DELL'UTENTE
+  // 1. CARICAMENTO TICKET (Esegui ogni volta che lo schermo prende focus)
+  useFocusEffect(
+    useCallback(() => {
+      fetchTickets();
+    }, [user])
+  );
+
+  const fetchTickets = async () => {
+    setLoading(true);
+    try {
+        // Se sei operatore o responsabile potresti voler vedere tutti i ticket o quelli assegnati
+        // Per ora usiamo getAllTickets che restituisce la lista pubblica o filtrata dal backend
+        const data = await getAllTickets();
+        setTickets(data);
+    } catch (e) {
+        console.error("Errore fetch tickets home:", e);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  // 2. POSIZIONE INIZIALE UTENTE
   useEffect(() => {
     (async () => {
       try {
@@ -48,6 +66,9 @@ export default function HomeScreen({ navigation }) {
           };
           setRegion(userRegion);
           mapRef.current?.animateToRegion(userRegion, 1000);
+          
+          // Opzionale: Carica il confine del comune in cui si trova l'utente all'avvio
+          loadBoundaryForLocation(loc.coords.latitude, loc.coords.longitude);
         }
       } catch (e) {
         console.log("Impossibile recuperare posizione, uso default Italia");
@@ -55,6 +76,7 @@ export default function HomeScreen({ navigation }) {
     })();
   }, []);
 
+  // 3. LOGICA RICERCA E CONFINI DINAMICI
   const handleSearch = async (text) => {
     const result = await searchCity(text);
     if (result && mapRef.current) {
@@ -65,9 +87,25 @@ export default function HomeScreen({ navigation }) {
             longitudeDelta: 0.05,
         };
         mapRef.current.animateToRegion(newRegion, 1000); 
+        
+        // Carica dinamicamente il confine del comune cercato
+        loadBoundaryForLocation(result.lat, result.lon);
     } else {
         Alert.alert("Non trovato", "Luogo non trovato. Prova con una città o indirizzo.");
     }
+  };
+
+  const loadBoundaryForLocation = async (lat, lon) => {
+      try {
+          const result = await searchTenantByCoordinates(lat, lon);
+          if (result && result.boundary) {
+              setCurrentBoundary(result.boundary);
+          } else {
+              setCurrentBoundary(null); // Nessun comune gestito qui
+          }
+      } catch (e) {
+          console.error("Errore boundary:", e);
+      }
   };
 
   const handleZoom = (amount) => {
@@ -77,57 +115,85 @@ export default function HomeScreen({ navigation }) {
     });
   };
 
-  // --- DASHBOARD MANAGER ---
-  const renderManagerPanel = () => (
-    <View style={styles.rolePanel}>
+  // HELPER STATUS COLOR
+  const getStatusColor = (status) => {
+      const s = status ? status.toLowerCase() : '';
+      if (s === 'risolto' || s === 'chiuso') return '#4CAF50'; // Verde
+      if (s === 'in corso' || s === 'assegnato') return 'orange'; // Arancio
+      return '#D32F2F'; // Rosso (Aperto)
+  };
+
+  // --- DASHBOARD MANAGER (Dati Reali) ---
+  const renderManagerPanel = () => {
+    const openCount = tickets.filter(t => t.status === 'Aperto' || t.status === 'OPEN').length;
+    const progressCount = tickets.filter(t => t.status === 'In Corso' || t.status === 'WORKING').length;
+    const closedCount = tickets.filter(t => t.status === 'Risolto' || t.status === 'CLOSED' || t.status === 'Chiuso').length;
+
+    return (
+      <View style={styles.rolePanel}>
         <Text style={styles.panelTitle}>Dashboard Gestione</Text>
         <View style={styles.statGrid}>
             <View style={styles.statCard}>
-                <Text style={[styles.statNum, {color: '#D32F2F'}]}>{MOCK_TICKETS.filter(t => t.status === 'Aperto').length}</Text>
+                <Text style={[styles.statNum, {color: '#D32F2F'}]}>{openCount}</Text>
                 <Text style={styles.statLabel}>Aperti</Text>
             </View>
             <View style={styles.statCard}>
-                <Text style={[styles.statNum, {color: 'orange'}]}>{MOCK_TICKETS.filter(t => t.status === 'In Corso').length}</Text>
+                <Text style={[styles.statNum, {color: 'orange'}]}>{progressCount}</Text>
                 <Text style={styles.statLabel}>In Corso</Text>
             </View>
             <View style={styles.statCard}>
-                <Text style={[styles.statNum, {color: '#467599'}]}>{MOCK_TICKETS.filter(t => t.status === 'Risolto').length}</Text>
+                <Text style={[styles.statNum, {color: '#467599'}]}>{closedCount}</Text>
                 <Text style={styles.statLabel}>Risolti</Text>
             </View>
         </View>
-        <Text style={styles.subHeader}>Lista Segnalazioni (Demo)</Text>
-        <ScrollView style={{height: 120}}>
-            {MOCK_TICKETS.map(t => (
-                <TouchableOpacity key={t.id} style={styles.listItem} onPress={() => navigation.navigate('TicketDetail', {ticket: t})}>
-                    <View>
-                        <Text style={{fontWeight:'bold', color: '#1F2937'}}>{t.title}</Text>
-                        <Text style={{fontSize:11, color:'#666'}}>{t.category} - {t.author}</Text>
-                    </View>
-                    <Text style={{fontSize:10, color:'orange', fontWeight:'bold'}}>{t.status.toUpperCase()}</Text>
-                </TouchableOpacity>
-            ))}
-        </ScrollView>
-    </View>
-  );
+        <Text style={styles.subHeader}>Ultime Segnalazioni</Text>
+        {loading ? <ActivityIndicator color="#467599"/> : (
+            <ScrollView style={{height: 120}}>
+                {tickets.slice(0, 10).map(t => (
+                    <TouchableOpacity key={t.id} style={styles.listItem} onPress={() => navigation.navigate('TicketDetail', {ticket: t})}>
+                        <View style={{flex: 1}}>
+                            <Text style={{fontWeight:'bold', color: '#1F2937'}} numberOfLines={1}>{t.title || t.titolo}</Text>
+                            <Text style={{fontSize:11, color:'#666'}}>{t.category || t.categoria}</Text>
+                        </View>
+                        <Text style={{fontSize:10, color: getStatusColor(t.status), fontWeight:'bold'}}>
+                            {(t.status || 'APERTO').toUpperCase()}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
+            </ScrollView>
+        )}
+      </View>
+    );
+  };
 
-  // --- DASHBOARD OPERATORE ---
-  const renderOperatorPanel = () => (
-    <View style={styles.rolePanel}>
-        <Text style={styles.panelTitle}>I Miei Incarichi</Text>
-        <ScrollView>
-            {MOCK_TICKETS.map(t => (
-                <TouchableOpacity key={t.id} style={styles.taskItem} onPress={() => navigation.navigate('TicketDetail', {ticket: t})}>
-                    <Ionicons name="construct" size={24} color="#467599" />
-                    <View style={{marginLeft: 10, flex: 1}}>
-                        <Text style={{fontWeight:'bold', color: '#1F2937'}}>{t.title}</Text>
-                        <Text style={{fontSize:12, color:'#666'}}>Assegnato: {t.date}</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color="#ccc" />
-                </TouchableOpacity>
-            ))}
-        </ScrollView>
-    </View>
-  );
+  // --- DASHBOARD OPERATORE (Dati Reali) ---
+  // Nota: Idealmente dovremmo filtrare per "Assegnati a me". 
+  // Qui filtriamo per "In Corso" come esempio, oppure se l'API getAllTickets supporta filtri.
+  const renderOperatorPanel = () => {
+    // Filtro client-side veloce per mostrare qualcosa (migliorabile con endpoint dedicato)
+    const myTasks = tickets.filter(t => t.status === 'In Corso' || t.status === 'WORKING' || t.status === 'Assegnato');
+
+    return (
+      <View style={styles.rolePanel}>
+        <Text style={styles.panelTitle}>Ticket In Lavorazione</Text>
+        {loading ? <ActivityIndicator color="#467599"/> : (
+            <ScrollView>
+                {myTasks.length === 0 ? <Text style={{color:'#666'}}>Nessun ticket in corso.</Text> : null}
+                {myTasks.map(t => (
+                    <TouchableOpacity key={t.id} style={styles.taskItem} onPress={() => navigation.navigate('TicketDetail', {ticket: t})}>
+                        <Ionicons name="construct" size={24} color="#467599" />
+                        <View style={{marginLeft: 10, flex: 1}}>
+                            <Text style={{fontWeight:'bold', color: '#1F2937'}} numberOfLines={1}>{t.title || t.titolo}</Text>
+                            <Text style={{fontSize:12, color:'#666'}}>{t.address || t.indirizzo || 'Nessun indirizzo'}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color="#ccc" />
+                    </TouchableOpacity>
+                ))}
+            </ScrollView>
+        )}
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -147,6 +213,7 @@ export default function HomeScreen({ navigation }) {
                     onPress={() => navigation.navigate('Notifications')}
                 >
                     <Ionicons name="notifications-outline" size={24} color="white" />
+                    {/* Logica badge simulata - da collegare a notifiche reali */}
                     <View style={styles.badgeDot} />
                 </TouchableOpacity>
             )}
@@ -154,7 +221,7 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.userContainer}>
                 {user ? (
                     <TouchableOpacity style={styles.avatarBtn} onPress={() => setMenuVisible(!menuVisible)}>
-                        <Text style={styles.avatarText}>{user.name.charAt(0)}</Text>
+                        <Text style={styles.avatarText}>{user.name ? user.name.charAt(0).toUpperCase() : 'U'}</Text>
                     </TouchableOpacity>
                 ) : (
                     <TouchableOpacity style={styles.loginLinkBtn} onPress={() => navigation.navigate('AuthModal')}>
@@ -177,7 +244,7 @@ export default function HomeScreen({ navigation }) {
                     style={styles.menuItem} 
                     onPress={() => { 
                         setMenuVisible(false);
-                        navigation.navigate('Profile'); // O 'AreaPersonale' se preferisci
+                        navigation.navigate('Profile'); 
                     }}
                 >
                     <Ionicons name="person-circle-outline" size={20} color="#333" />
@@ -202,27 +269,35 @@ export default function HomeScreen({ navigation }) {
             showsUserLocation={true}
             rotateEnabled={false} 
           >
-            {/* Confini Italia Semplificati */}
-            {ItalyBoundary && (
+            {/* Confine Dinamico (mostrato solo se recuperato dalle API) */}
+            {currentBoundary && (
                 <Geojson 
-                    geojson={ItalyBoundary} 
+                    geojson={currentBoundary} 
                     strokeColor="#467599" 
-                    fillColor="rgba(70, 117, 153, 0.05)" 
+                    fillColor="rgba(70, 117, 153, 0.15)" 
                     strokeWidth={2} 
                 />
             )}
 
-            {MOCK_TICKETS.map(t => (
-              <Marker 
-                key={t.id} 
-                coordinate={{ latitude: t.lat, longitude: t.lon }}
-                onCalloutPress={() => navigation.navigate('TicketDetail', { ticket: t })}
-              >
-                <View style={[styles.markerCircle, {backgroundColor: t.status === 'Risolto' ? '#4CAF50' : '#D32F2F'}]}>
-                  <Ionicons name="alert" size={16} color="white" />
-                </View>
-              </Marker>
-            ))}
+            {/* Marker Ticket Reali */}
+            {tickets.map(t => {
+                // Assicuriamoci che lat e lon siano numeri
+                const lat = parseFloat(t.lat || t.latitude);
+                const lon = parseFloat(t.lon || t.longitude);
+                if (!lat || !lon) return null;
+
+                return (
+                  <Marker 
+                    key={t.id} 
+                    coordinate={{ latitude: lat, longitude: lon }}
+                    onCalloutPress={() => navigation.navigate('TicketDetail', { ticket: t })}
+                  >
+                    <View style={[styles.markerCircle, {backgroundColor: getStatusColor(t.status)}]}>
+                      <Ionicons name="alert" size={16} color="white" />
+                    </View>
+                  </Marker>
+                );
+            })}
           </MapView>
 
           {/* ZOOM CONTROLS */}
@@ -255,7 +330,6 @@ const styles = StyleSheet.create({
   searchContainer: { flex: 1, marginRight: 15 },
   userContainer: { justifyContent: 'center' }, 
   
-  // STILI PER LA NUOVA NOTIFICA
   notifBtn: { marginRight: 15, padding: 5, position: 'relative' },
   badgeDot: { position: 'absolute', top: 5, right: 5, width: 8, height: 8, borderRadius: 4, backgroundColor: '#C06E52', borderWidth: 1, borderColor: '#1F2937' },
 
@@ -290,8 +364,6 @@ const styles = StyleSheet.create({
   statNum: { fontSize: 20, fontWeight: 'bold' },
   statLabel: { fontSize: 10, color: '#666', textTransform: 'uppercase' },
   subHeader: { fontSize: 14, fontWeight: 'bold', color: '#666', marginBottom: 10 },
-  listItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee', flexDirection: 'row', justifyContent: 'space-between' },
+  listItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   taskItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  badge: { backgroundColor: '#E0F2F1', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
-  badgeText: { fontSize: 10, color: '#00695C', fontWeight: 'bold' }
 });

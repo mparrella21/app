@@ -6,15 +6,14 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
 import { postTicket } from '../services/ticketService';
+import { searchTenantByCoordinates } from '../services/tenantService'; // NUOVO SERVIZIO
 import { OFFLINE_MODE } from '../services/config';
 import { addTicket as addMockTicket } from '../services/mockTicketStore';
 import { useAuth } from '../context/AuthContext';
 import { getAddressFromCoordinates, searchCity } from '../services/nominatim';
 import SearchBar from '../component/SearchBar';
 
-// IMPORTA I CONFINI ITALIANI (File semplificato)
-// Assicurati che il file limits_IT_simplified.json sia presente in src/assets/data/
-import italianBoundaries from '../assets/data/limits_IT_simplified.json';
+// NOTA: Rimossa importazione statica dei confini italiani per usare API dinamica
 
 export default function MapScreen({ navigation }) {
   const mapRef = useRef(null);
@@ -22,6 +21,11 @@ export default function MapScreen({ navigation }) {
   const [marker, setMarker] = useState(null);
   const [address, setAddress] = useState('');
   
+  // Gestione Confini Dinamici
+  const [currentBoundary, setCurrentBoundary] = useState(null);
+  const [isValidZone, setIsValidZone] = useState(false);
+  const [validatingZone, setValidatingZone] = useState(false);
+
   // Form State
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -48,13 +52,45 @@ export default function MapScreen({ navigation }) {
     })();
   }, []);
 
+  // Logica validazione zona tramite API
+  const validateZoneAndSetMarker = async (lat, lon) => {
+    setValidatingZone(true);
+    setMarker({ latitude: lat, longitude: lon });
+    setAddress("Verifica zona in corso...");
+    setCurrentBoundary(null); // Pulisce il vecchio boundary
+    setIsValidZone(false);
+
+    try {
+        // 1. Cerca se il punto è in un Tenant gestito
+        const result = await searchTenantByCoordinates(lat, lon);
+
+        if (result && result.boundary) {
+            // Zona valida!
+            setIsValidZone(true);
+            setCurrentBoundary(result.boundary); // GeoJSON specifico del comune
+            
+            // 2. Ottieni indirizzo leggibile (opzionale, solo per UI)
+            const addr = await getAddressFromCoordinates(lat, lon);
+            setAddress(addr || "Posizione valida rilevata");
+
+        } else {
+            // Zona non gestita
+            setIsValidZone(false);
+            setAddress("Zona non coperta dal servizio");
+            Alert.alert("Attenzione", "Il punto selezionato non rientra in nessuno dei comuni gestiti dal sistema.");
+        }
+
+    } catch (error) {
+        console.error("Errore validazione zona:", error);
+        setAddress("Impossibile verificare la zona");
+    } finally {
+        setValidatingZone(false);
+    }
+  };
+
   const handleLongPress = async (e) => {
     const { latitude, longitude } = e.nativeEvent.coordinate;
-    setMarker({ latitude, longitude });
-    
-    // Reverse Geocoding
-    const addr = await getAddressFromCoordinates(latitude, longitude);
-    setAddress(addr);
+    await validateZoneAndSetMarker(latitude, longitude);
   };
 
   const handleSearchLocation = async (query) => {
@@ -68,13 +104,15 @@ export default function MapScreen({ navigation }) {
         };
         setRegion(newRegion);
         mapRef.current?.animateToRegion(newRegion, 1000);
+        
+        // Quando cerchi una città, verifica subito se è gestita
+        await validateZoneAndSetMarker(coords.lat, coords.lon);
     } else {
         Alert.alert("Non trovato", "Luogo non trovato.");
     }
   };
 
   const pickImage = async () => {
-    // FIX WARNING: Usa ImagePicker.MediaType.Images invece di MediaTypeOptions
     const res = await ImagePicker.launchImageLibraryAsync({ 
       mediaTypes: ImagePicker.MediaType.Images, 
       allowsMultipleSelection: false, 
@@ -101,8 +139,13 @@ export default function MapScreen({ navigation }) {
 
   const handleSubmit = async () => {
     if (!marker || !title) {
-      Alert.alert('Attenzione', 'Seleziona un punto sulla mappa (tieni premuto) e inserisci un titolo.');
+      Alert.alert('Attenzione', 'Seleziona un punto sulla mappa e inserisci un titolo.');
       return;
+    }
+
+    if (!OFFLINE_MODE && !isValidZone) {
+       Alert.alert('Zona non valida', 'Non puoi inviare segnalazioni fuori dai comuni gestiti.');
+       return;
     }
 
     setLoading(true);
@@ -123,7 +166,7 @@ export default function MapScreen({ navigation }) {
             const newT = await addMockTicket(payload);
             if (newT) {
                 Alert.alert('Successo', 'Segnalazione creata (Locale)');
-                setTitle(''); setDescription(''); setImages([]); setMarker(null);
+                resetForm();
             } else {
                 Alert.alert('Errore', 'Errore salvataggio locale');
             }
@@ -131,7 +174,7 @@ export default function MapScreen({ navigation }) {
             const success = await postTicket(payload);
             if (success) {
                 Alert.alert('Inviato', 'Segnalazione inviata al server');
-                setTitle(''); setDescription(''); setImages([]); setMarker(null);
+                resetForm();
             } else {
                 Alert.alert('Errore', 'Impossibile contattare il server');
             }
@@ -141,6 +184,16 @@ export default function MapScreen({ navigation }) {
     } finally {
         setLoading(false);
     }
+  };
+
+  const resetForm = () => {
+      setTitle(''); 
+      setDescription(''); 
+      setImages([]); 
+      setMarker(null);
+      setCurrentBoundary(null);
+      setAddress('');
+      setIsValidZone(false);
   };
 
   if (!region) return <View style={styles.loader}><ActivityIndicator size="large" color="#467599" /></View>;
@@ -160,24 +213,29 @@ export default function MapScreen({ navigation }) {
         showsUserLocation={true}
         provider={Platform.OS === 'android' ? 'google' : undefined}
       >
-        {/* Confini Italia */}
-        {italianBoundaries && (
+        {/* Disegna il confine del comune SOLO se trovato tramite API */}
+        {currentBoundary && (
             <Geojson 
-                geojson={italianBoundaries} 
-                strokeColor="#467599" 
-                fillColor="rgba(70, 117, 153, 0.1)" 
+                geojson={currentBoundary} 
+                strokeColor="#4CAF50" // Verde per indicare zona valida 
+                fillColor="rgba(76, 175, 80, 0.2)" 
                 strokeWidth={2}
             />
         )}
 
-        {marker && <Marker coordinate={marker} pinColor="#D32F2F" />}
+        {marker && <Marker coordinate={marker} pinColor={isValidZone ? "#D32F2F" : "#888"} />}
       </MapView>
 
       {/* Form Bottom Sheet */}
       <View style={styles.formCard}>
         <Text style={styles.formTitle}>Nuova Segnalazione</Text>
         
-        {address ? <Text style={styles.addressText}>{address}</Text> : null}
+        <View style={{flexDirection:'row', alignItems:'center', marginBottom:10}}>
+            {validatingZone && <ActivityIndicator size="small" color="#467599" style={{marginRight:5}}/>}
+            <Text style={[styles.addressText, !isValidZone && {color:'orange'}]}>
+                {address || "Tieni premuto sulla mappa per selezionare"}
+            </Text>
+        </View>
 
         <TextInput 
             style={styles.input} 
@@ -217,7 +275,12 @@ export default function MapScreen({ navigation }) {
           </ScrollView>
         )}
 
-        <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} disabled={loading}>
+        {/* Bottone disabilitato se la zona non è valida o sta caricando */}
+        <TouchableOpacity 
+            style={[styles.submitBtn, (!isValidZone || loading) ? {backgroundColor:'#aaa'} : {}]} 
+            onPress={handleSubmit} 
+            disabled={loading || (!isValidZone && !OFFLINE_MODE)}
+        >
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>INVIA SEGNALAZIONE</Text>}
         </TouchableOpacity>
       </View>
@@ -238,7 +301,7 @@ const styles = StyleSheet.create({
     padding: 20, elevation: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5
   },
   formTitle: { fontSize: 16, fontWeight: 'bold', color: '#1F2937', marginBottom: 10 },
-  addressText: { fontSize: 12, color: '#666', marginBottom: 10, fontStyle: 'italic' },
+  addressText: { fontSize: 12, color: '#666', fontStyle: 'italic', flex: 1 },
   input: { 
     backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', 
     borderRadius: 8, padding: 10, marginBottom: 10, fontSize: 14 
