@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView, Modal, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-// Aggiunto getCategories agli import
 import { getAllTickets, closeTicket, getCategories } from '../services/ticketService';
 import { getOperators } from '../services/userService'; 
 import { assignTicketToOperator } from '../services/interventionService';
@@ -15,12 +14,16 @@ export default function ResponsibleTicketsScreen({ navigation }) {
   
   // Filtri
   const [filterStatus, setFilterStatus] = useState('Tutti'); 
-  const [filterCategory, setFilterCategory] = useState('Tutte'); // Nuovo filtro categoria
+  const [filterCategory, setFilterCategory] = useState('Tutte');
+  const [filterTime, setFilterTime] = useState('Tutto'); // FIX: Nuovo filtro temporale (IF-3.1)
   
   // Dati di supporto
   const [operators, setOperators] = useState([]);
-  const [categories, setCategories] = useState(['Tutte']); // Lista categorie caricata
+  const [categories, setCategories] = useState(['Tutte']);
   const [loading, setLoading] = useState(true);
+  
+  // Statistiche (IF-3.7)
+  const [stats, setStats] = useState({ total: 0, open: 0, closed: 0 });
 
   // Stati Modale Assegnazione
   const [modalVisible, setModalVisible] = useState(false);
@@ -32,16 +35,16 @@ export default function ResponsibleTicketsScreen({ navigation }) {
       // 1. Carica Ticket
       let t = await getAllTickets();
       setAllTickets(t);
+      calculateStats(t); // Calcolo Stats iniziali
       
-      // 2. Carica Operatori (per l'assegnazione)
+      // 2. Carica Operatori
       if (!OFFLINE_MODE) {
           const ops = await getOperators();
           setOperators(ops);
       }
 
-      // 3. Carica Categorie (Per i filtri)
+      // 3. Carica Categorie
       const cats = await getCategories();
-      // Normalizza le categorie: se sono oggetti {id, label} prendi label, altrimenti la stringa
       const catList = cats.map(c => (typeof c === 'object' ? c.label : c));
       setCategories(['Tutte', ...catList]);
 
@@ -56,35 +59,58 @@ export default function ResponsibleTicketsScreen({ navigation }) {
     loadData();
   }, []);
 
-  // Logica di Filtro Combinata (Stato AND Categoria)
+  // FIX: Dashboard Statistiche (IF-3.7)
+  const calculateStats = (tickets) => {
+      const total = tickets.length;
+      const open = tickets.filter(t => ['OPEN', 'APERTO', 'RICEVUTO'].includes((t.status||'').toUpperCase())).length;
+      const closed = tickets.filter(t => ['CLOSED', 'RISOLTO', 'CHIUSO'].includes((t.status||'').toUpperCase())).length;
+      setStats({ total, open, closed });
+  };
+
+  // Logica di Filtro Combinata (Stato AND Categoria AND Tempo)
   useEffect(() => {
     let result = allTickets;
 
     // 1. Filtro per Stato
     if (filterStatus !== 'Tutti') {
       let targetStatus = filterStatus;
-      if (filterStatus === 'Aperti') targetStatus = 'OPEN'; // Mapping se backend usa OPEN
-      
-      // Controllo case-insensitive per robustezza
+      if (filterStatus === 'Aperti') targetStatus = 'OPEN';
       result = result.filter(t => {
          const s = (t.status || '').toUpperCase();
-         return s === targetStatus.toUpperCase() || s === filterStatus.toUpperCase();
+         // Mappatura semplificata per UI
+         if (filterStatus === 'Aperti') return ['OPEN', 'APERTO', 'RICEVUTO'].includes(s);
+         if (filterStatus === 'Risolti') return ['CLOSED', 'RISOLTO', 'CHIUSO'].includes(s);
+         if (filterStatus === 'In Corso') return ['WORKING', 'IN CORSO', 'ASSEGNATO'].includes(s);
+         return s === targetStatus.toUpperCase();
       });
     }
 
     // 2. Filtro per Categoria
     if (filterCategory !== 'Tutte') {
       result = result.filter(t => {
-         // Gestione robusta: category potrebbe essere null o diversa
          const c = t.category || t.categoria || '';
          return c.toLowerCase() === filterCategory.toLowerCase();
       });
     }
 
-    setFilteredTickets(result);
-  }, [filterStatus, filterCategory, allTickets]);
+    // 3. FIX: Filtro per Periodo Temporale (IF-3.1)
+    if (filterTime !== 'Tutto') {
+        const now = new Date();
+        result = result.filter(t => {
+            const tDate = new Date(t.creation_date || t.timestamp || t.date);
+            const diffTime = Math.abs(now - tDate);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            
+            if (filterTime === 'Oggi') return diffDays <= 1;
+            if (filterTime === 'Settimana') return diffDays <= 7;
+            if (filterTime === 'Mese') return diffDays <= 30;
+            return true;
+        });
+    }
 
-  // Gestione Assegnazione
+    setFilteredTickets(result);
+  }, [filterStatus, filterCategory, filterTime, allTickets]);
+
   const openAssignModal = (ticket) => {
     setSelectedTicket(ticket);
     setModalVisible(true);
@@ -96,7 +122,7 @@ export default function ResponsibleTicketsScreen({ navigation }) {
       if (success) {
           Alert.alert("Successo", "Intervento assegnato!");
           setModalVisible(false);
-          loadData(); // Ricarica stato
+          loadData();
       } else {
           Alert.alert("Errore", "Assegnazione fallita.");
       }
@@ -112,7 +138,6 @@ export default function ResponsibleTicketsScreen({ navigation }) {
     }
   };
 
-  // Componente Tab per i Filtri (Riutilizzabile)
   const FilterTab = ({ label, selected, onSelect }) => (
     <TouchableOpacity 
       style={[styles.filterTab, selected === label && styles.activeFilterTab]} 
@@ -132,10 +157,25 @@ export default function ResponsibleTicketsScreen({ navigation }) {
           <Ionicons name="reload" size={20} color={COLORS.primary} />
         </TouchableOpacity>
       </View>
+
+      {/* FIX: Mini Dashboard Statistiche (IF-3.7) */}
+      <View style={styles.statsContainer}>
+          <View style={styles.statBox}>
+              <Text style={styles.statNumber}>{stats.total}</Text>
+              <Text style={styles.statLabel}>Totali</Text>
+          </View>
+          <View style={[styles.statBox, {borderLeftWidth:1, borderRightWidth:1, borderColor:'#eee'}]}>
+              <Text style={[styles.statNumber, {color: COLORS.primary}]}>{stats.open}</Text>
+              <Text style={styles.statLabel}>Aperti</Text>
+          </View>
+          <View style={styles.statBox}>
+              <Text style={[styles.statNumber, {color: 'green'}]}>{stats.closed}</Text>
+              <Text style={styles.statLabel}>Risolti</Text>
+          </View>
+      </View>
       
       {/* Area Filtri */}
       <View style={styles.filtersWrapper}>
-        {/* Riga 1: Stato */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollFilters}>
           <FilterTab label="Tutti" selected={filterStatus} onSelect={setFilterStatus} />
           <FilterTab label="Aperti" selected={filterStatus} onSelect={setFilterStatus} /> 
@@ -143,10 +183,16 @@ export default function ResponsibleTicketsScreen({ navigation }) {
           <FilterTab label="Risolti" selected={filterStatus} onSelect={setFilterStatus} />
         </ScrollView>
 
-        {/* Riga 2: Categorie */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.scrollFilters, {marginTop: 8}]}>
           {categories.map((cat, index) => (
              <FilterTab key={index} label={cat} selected={filterCategory} onSelect={setFilterCategory} />
+          ))}
+        </ScrollView>
+
+        {/* FIX: Filtro Temporale (IF-3.1) */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.scrollFilters, {marginTop: 8}]}>
+          {['Tutto', 'Oggi', 'Settimana', 'Mese'].map((t, index) => (
+             <FilterTab key={index} label={t} selected={filterTime} onSelect={setFilterTime} />
           ))}
         </ScrollView>
       </View>
@@ -168,7 +214,7 @@ export default function ResponsibleTicketsScreen({ navigation }) {
                     </View>
                 </View>
                 <View style={{flexDirection:'row', justifyContent:'space-between', marginTop: 4}}>
-                    <Text style={styles.itemSub}>{item.creation_date || item.timestamp}</Text>
+                    <Text style={styles.itemSub}>{new Date(item.creation_date || item.timestamp).toLocaleDateString()}</Text>
                     <Text style={[styles.itemSub, {fontWeight:'bold', color: COLORS.primary}]}>
                         {item.category || 'N/A'}
                     </Text>
@@ -177,14 +223,12 @@ export default function ResponsibleTicketsScreen({ navigation }) {
                 </TouchableOpacity>
                 
                 <View style={styles.actionRow}>
-                    {/* Tasto Assegna solo se è Aperti/OPEN o Ricevuto */}
                     {(['OPEN', 'APERTO', 'RICEVUTO'].includes((item.status||'').toUpperCase())) && (
                         <TouchableOpacity style={[styles.btnSmall, {backgroundColor: '#007BFF', marginRight: 8}]} onPress={() => openAssignModal(item)}>
                             <Text style={styles.btnTextSmall}>Assegna</Text>
                         </TouchableOpacity>
                     )}
                     
-                    {/* Tasto Chiudi se non è già Risolto/Chiuso */}
                     {!['RISOLTO', 'CHIUSO', 'CLOSED'].includes((item.status||'').toUpperCase()) && (
                     <TouchableOpacity style={[styles.btnSmall, {backgroundColor: COLORS.primary}]} onPress={() => handleClose(item.id)}>
                         <Text style={styles.btnTextSmall}>Chiudi</Text>
@@ -235,9 +279,9 @@ export default function ResponsibleTicketsScreen({ navigation }) {
 const getStatusColor = (s) => {
   if(!s) return '#999';
   const status = s.toUpperCase();
-  if(status === 'RISOLTO' || status === 'CHIUSO' || status === 'CLOSED') return '#4CAF50'; // Verde
-  if(status === 'IN CORSO' || status === 'WORKING' || status === 'ASSEGNATO') return '#F59E0B'; // Arancio
-  return '#D32F2F'; // Rosso (Aperto/Open)
+  if(status === 'RISOLTO' || status === 'CHIUSO' || status === 'CLOSED') return '#4CAF50'; 
+  if(status === 'IN CORSO' || status === 'WORKING' || status === 'ASSEGNATO') return '#F59E0B'; 
+  return '#D32F2F'; 
 };
 
 const styles = StyleSheet.create({
@@ -245,6 +289,12 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: 12},
   title:{fontSize:20,fontWeight:'800',color:COLORS.primary || '#D32F2F'},
   
+  // Stili Dashboard Statistiche
+  statsContainer: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 15, elevation: 2 },
+  statBox: { flex: 1, alignItems: 'center' },
+  statNumber: { fontSize: 22, fontWeight: 'bold', color: '#333' },
+  statLabel: { fontSize: 12, color: '#666', textTransform: 'uppercase' },
+
   filtersWrapper: { marginBottom: 15 },
   scrollFilters: { height: 40 },
   filterTab: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#E0E0E0', marginRight: 8, justifyContent:'center' },
@@ -264,7 +314,6 @@ const styles = StyleSheet.create({
   btnSmall: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 6},
   btnTextSmall: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
 
-  // Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { width: '90%', backgroundColor: '#fff', borderRadius: 16, padding: 20, elevation: 10 },
   modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 5, color: '#333' },

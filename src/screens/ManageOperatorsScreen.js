@@ -3,22 +3,24 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, TextInput, A
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../styles/global';
 import { getOperators, createOperator } from '../services/userService';
-
-// Categorie disponibili (Mockup o da backend)
-const CATEGORIES = ["Strade", "Verde Pubblico", "Illuminazione", "Rifiuti", "Edifici", "Idrico"];
+import { getCategories } from '../services/ticketService'; // FIX: Importazione servizio categorie
 
 export default function ManageOperatorsScreen({ navigation }) {
   const [operators, setOperators] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // Dati dinamici dal backend
+  const [categories, setCategories] = useState([]); 
+  const [loadingCats, setLoadingCats] = useState(false);
+
   // Stati Form
   const [newOpName, setNewOpName] = useState('');
   const [newOpSurname, setNewOpSurname] = useState('');
   const [newOpEmail, setNewOpEmail] = useState('');
   const [newOpPassword, setNewOpPassword] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState(''); // AGGIUNTA
+  const [selectedCategory, setSelectedCategory] = useState('');
   const [isAdding, setIsAdding] = useState(false);
-  const [catModalVisible, setCatModalVisible] = useState(false); // AGGIUNTA
+  const [catModalVisible, setCatModalVisible] = useState(false);
 
   const fetchOperators = async () => {
     setLoading(true);
@@ -27,8 +29,25 @@ export default function ManageOperatorsScreen({ navigation }) {
     setLoading(false);
   };
 
+  // FIX: Caricamento categorie dal backend per coerenza (IF-3.5)
+  const fetchCategories = async () => {
+      setLoadingCats(true);
+      try {
+          const cats = await getCategories();
+          // Normalizza array: supporta array di stringhe o oggetti {id, label}
+          const normalized = cats.map(c => (typeof c === 'object' ? c.label : c));
+          setCategories(normalized);
+      } catch (e) {
+          console.error("Errore fetch categorie operatori", e);
+          Alert.alert("Errore", "Impossibile caricare le categorie.");
+      } finally {
+          setLoadingCats(false);
+      }
+  };
+
   useEffect(() => {
     fetchOperators();
+    fetchCategories();
   }, []);
 
   const handleAddOperator = async () => {
@@ -94,7 +113,7 @@ export default function ManageOperatorsScreen({ navigation }) {
           <TextInput placeholder="Email" style={styles.input} autoCapitalize="none" keyboardType="email-address" value={newOpEmail} onChangeText={setNewOpEmail} />
           <TextInput placeholder="Password Provvisoria" style={styles.input} secureTextEntry value={newOpPassword} onChangeText={setNewOpPassword} />
           
-          {/* SELETTORE CATEGORIA */}
+          {/* SELETTORE CATEGORIA DINAMICO */}
           <TouchableOpacity style={styles.catSelector} onPress={() => setCatModalVisible(true)}>
              <Text style={{color: selectedCategory ? '#333' : '#999'}}>
                  {selectedCategory || "Seleziona Categoria..."}
@@ -125,13 +144,18 @@ export default function ManageOperatorsScreen({ navigation }) {
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
                   <Text style={styles.modalTitle}>Scegli Categoria</Text>
-                  <ScrollView>
-                      {CATEGORIES.map(cat => (
-                          <TouchableOpacity key={cat} style={styles.catOption} onPress={() => { setSelectedCategory(cat); setCatModalVisible(false); }}>
-                              <Text style={styles.catOptionText}>{cat}</Text>
-                          </TouchableOpacity>
-                      ))}
-                  </ScrollView>
+                  {loadingCats ? (
+                      <ActivityIndicator color={COLORS.primary} />
+                  ) : (
+                    <ScrollView>
+                        {categories.map((cat, index) => (
+                            <TouchableOpacity key={index} style={styles.catOption} onPress={() => { setSelectedCategory(cat); setCatModalVisible(false); }}>
+                                <Text style={styles.catOptionText}>{cat}</Text>
+                            </TouchableOpacity>
+                        ))}
+                        {categories.length === 0 && <Text style={{padding:10, fontStyle:'italic'}}>Nessuna categoria disponibile.</Text>}
+                    </ScrollView>
+                  )}
                   <TouchableOpacity style={styles.modalClose} onPress={() => setCatModalVisible(false)}>
                       <Text style={{color: 'red'}}>Annulla</Text>
                   </TouchableOpacity>
