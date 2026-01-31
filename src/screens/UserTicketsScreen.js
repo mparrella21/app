@@ -1,27 +1,62 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-
-// Dati Mock (Simulano i ticket del cittadino loggato)
-const MY_TICKETS = [
-  { id: 1, title: 'Buca pericolosa', category: 'Strade', description: 'Via Roma dissestata', lat: 40.682, lon: 14.768, status: 'Aperto', author: 'Giuseppe Bianchi', date: '29/01/2026' },
-  { id: 4, title: 'Segnaletica divelta', category: 'Segnaletica', description: 'Stop caduto a terra', lat: 40.680, lon: 14.772, status: 'Risolto', author: 'Giuseppe Bianchi', date: '15/01/2026' },
-];
+import { useAuth } from '../context/AuthContext'; 
+import { getUserTickets } from '../services/ticketService'; // Importiamo il servizio reale
 
 export default function UserTicketsScreen({ navigation }) {
+  const { user } = useAuth(); // Recuperiamo l'utente loggato
+  const [myTickets, setMyTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Funzione per caricare i ticket
+  const loadTickets = async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      // Chiama il servizio che filtra già per user.id
+      const tickets = await getUserTickets(user.id);
+      setMyTickets(tickets);
+    } catch (error) {
+      console.error("Errore caricamento ticket personali:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Ricarica i dati ogni volta che la schermata ottiene il focus
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadTickets();
+    });
+    return unsubscribe;
+  }, [navigation, user]);
+
+  const getStatusColor = (status) => {
+    // Normalizzazione stringhe per gestire maiuscole/minuscole o ID numerici se necessario
+    const s = status ? String(status).toLowerCase() : '';
+    
+    if (s === 'aperto' || s === 'open') return '#D32F2F'; // Rosso
+    if (s === 'in corso' || s === 'in_progress' || s === 'assegnato') return '#F59E0B'; // Arancio
+    if (s === 'risolto' || s === 'resolved' || s === 'chiuso') return '#4CAF50'; // Verde
+    return '#999';
+  };
 
   const renderItem = ({ item }) => (
+    // Passiamo l'intero oggetto 'item' alla schermata di dettaglio
     <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('TicketDetail', { ticket: item })}>
       <View style={styles.cardHeader}>
-        <Text style={styles.category}>{item.category}</Text>
-        <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.badgeText}>{item.status}</Text>
+        <Text style={styles.category}>{item.category || item.categoria || 'Generico'}</Text>
+        <View style={[styles.badge, { backgroundColor: getStatusColor(item.status || item.stato) }]}>
+          <Text style={styles.badgeText}>{(item.status || item.stato || 'Aperto').toUpperCase()}</Text>
         </View>
       </View>
       
-      <Text style={styles.title}>{item.title}</Text>
-      <Text style={styles.date}>Segnalato il {item.date}</Text>
+      <Text style={styles.title}>{item.title || item.titolo}</Text>
+      <Text style={styles.date}>
+        Segnalato il {item.date ? new Date(item.date).toLocaleDateString() : (item.creation_date || 'N/D')}
+      </Text>
       
       <View style={styles.divider} />
       
@@ -31,15 +66,6 @@ export default function UserTicketsScreen({ navigation }) {
       </View>
     </TouchableOpacity>
   );
-
-  const getStatusColor = (status) => {
-    switch(status) {
-      case 'Aperto': return '#D32F2F'; // Rosso
-      case 'In Corso': return '#F59E0B'; // Arancio
-      case 'Risolto': return '#4CAF50'; // Verde
-      default: return '#999';
-    }
-  };
 
   return (
     <View style={styles.container}>
@@ -57,18 +83,27 @@ export default function UserTicketsScreen({ navigation }) {
       </SafeAreaView>
 
       {/* LISTA TICKET */}
-      <FlatList
-        data={MY_TICKETS}
-        renderItem={renderItem}
-        keyExtractor={item => item.id.toString()}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="document-text-outline" size={50} color="#ccc" />
-            <Text style={styles.emptyText}>Non hai ancora inviato segnalazioni.</Text>
-          </View>
-        }
-      />
+      {loading ? (
+        <View style={{flex:1, justifyContent:'center', alignItems:'center'}}>
+            <ActivityIndicator size="large" color="#467599" />
+            <Text style={{marginTop:10, color:'#666'}}>Caricamento...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={myTickets}
+          renderItem={renderItem}
+          keyExtractor={item => item.id ? item.id.toString() : Math.random().toString()}
+          contentContainerStyle={styles.listContent}
+          refreshing={loading}
+          onRefresh={loadTickets} // Pull to refresh
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="document-text-outline" size={50} color="#ccc" />
+              <Text style={styles.emptyText}>Non hai ancora inviato segnalazioni.</Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }
