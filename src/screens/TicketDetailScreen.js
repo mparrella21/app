@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
-import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus } from '../services/ticketService';
+// Aggiunti deleteTicket e assignTicket ai servizi importati
+import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus, deleteTicket, assignTicket } from '../services/ticketService';
 import { sendFeedback } from '../services/interventionService';
+// Assumiamo che esista una funzione per prendere gli operatori del comune (presente in userService o tenantService)
+import { getOperatorsByTenant } from '../services/userService'; 
 
 export default function TicketDetailScreen({ route, navigation }) {
   // 1. Recupero ID
@@ -24,18 +27,22 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [rating, setRating] = useState(0); 
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
-  // REPORT DI INTERVENTO (Modale per IF-3.10)
+  // REPORT DI INTERVENTO (Modale per IF-3.10 - Operatore)
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [interventionReport, setInterventionReport] = useState('');
 
+  // ASSEGNAZIONE (Modale per IF-3.6 - Responsabile)
+  const [assignModalVisible, setAssignModalVisible] = useState(false);
+  const [operators, setOperators] = useState([]);
+  const [loadingOperators, setLoadingOperators] = useState(false);
+
   // 3. Helper per decodificare lo stato
-  // [FIX] IF-2.4 / IF-3.8: Adeguamento terminologia "In Lavorazione" come da Requisiti
   const getStatusLabel = (t) => {
       if (!t) return 'Sconosciuto';
       const sid = t.id_status || t.statusId;
       if (t.status && typeof t.status === 'string') return t.status;
       switch (sid) {
-          case 1: return 'Ricevuto'; // O 'Aperto' se il backend usa quello, ma Req dice Ricevuto
+          case 1: return 'Ricevuto'; 
           case 2: return 'In Lavorazione'; 
           case 3: return 'Risolto'; 
           case 4: return 'Chiuso';
@@ -77,20 +84,21 @@ export default function TicketDetailScreen({ route, navigation }) {
 
   const statusLabel = ticket ? getStatusLabel(ticket) : '';
   const isResolved = statusLabel.toLowerCase() === 'risolto' || statusLabel.toLowerCase() === 'chiuso';
-  // [FIX] Coerenza check con nuova label
   const isInProgress = statusLabel.toLowerCase() === 'in lavorazione' || statusLabel.toLowerCase() === 'assegnato' || statusLabel.toLowerCase() === 'in corso';
+  
+  // Ruoli
   const isOperator = user?.role === 'operatore';
   const isCitizen = !user || user?.role === 'cittadino';
+  // [FIX] Aggiunto controllo per il Responsabile
+  const isManager = user?.role === 'responsabile' || user?.role === 'maintenance_manager'; 
 
-  // 6. Azioni Operatore
+  // --- AZIONI OPERATORE ---
   const handleStatusChange = async (newStatus, newStatusId) => {
-    // Se l'operatore vuole risolvere, richiediamo il rapporto (IF-3.10)
     if (newStatus === 'Risolto') {
         setReportModalVisible(true);
         return;
     }
 
-    // Altrimenti cambio stato normale (es. In Lavorazione)
     Alert.alert("Conferma", `Vuoi impostare lo stato a "${newStatus}"?`, [
         { text: "Annulla", style: "cancel" },
         { text: "Conferma", onPress: async () => {
@@ -112,7 +120,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // Funzione per Gestire Chiusura con Rapporto
   const handleSubmitReportAndClose = async () => {
       if (!interventionReport.trim()) {
           Alert.alert("Attenzione", "Il rapporto di intervento è obbligatorio per chiudere il ticket.");
@@ -123,15 +130,12 @@ export default function TicketDetailScreen({ route, navigation }) {
       setActionLoading(true);
 
       try {
-          // 1. Invia il rapporto come messaggio dell'operatore (o su endpoint dedicato se esistente)
-          // Architetturalmente corretto: InterventionReply eredita da TicketReply
           await postReply(ticket.id, {
               text: `[RAPPORTO INTERVENTO UFFICIALE]: ${interventionReport}`,
               author: user?.name || 'Operatore',
               date: new Date().toISOString()
           });
 
-          // 2. Chiudi il ticket (o setta Risolto)
           const closeSuccess = await closeTicket(ticket.id);
 
           if (closeSuccess) {
@@ -149,7 +153,65 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // 7. Invio Messaggio
+  // --- AZIONI RESPONSABILE (MANAGER) ---
+  
+  // Apertura modale assegnazione
+  const openAssignModal = async () => {
+      setAssignModalVisible(true);
+      if (operators.length === 0) {
+          setLoadingOperators(true);
+          try {
+              // Recupera operatori del comune (Tenant)
+              const ops = await getOperatorsByTenant(); 
+              setOperators(ops || []);
+          } catch (e) {
+              Alert.alert("Errore", "Impossibile caricare gli operatori.");
+          } finally {
+              setLoadingOperators(false);
+          }
+      }
+  };
+
+  // Esegue assegnazione
+  const handleAssignOperator = async (operatorId) => {
+      setAssignModalVisible(false);
+      setActionLoading(true);
+      try {
+          // Chiama il servizio per assegnare (IF-3.6)
+          const success = await assignTicket(ticket.id, operatorId);
+          if (success) {
+              Alert.alert("Assegnato", "Il ticket è stato assegnato all'operatore.");
+              fetchData(); // Ricarica per vedere stato aggiornato (es. 'In Lavorazione' o 'Assegnato')
+          } else {
+              Alert.alert("Errore", "Assegnazione fallita.");
+          }
+      } catch (error) {
+          console.error(error);
+          Alert.alert("Errore", "Si è verificato un problema.");
+      } finally {
+          setActionLoading(false);
+      }
+  };
+
+  // Eliminazione Ticket (IF-3.3)
+  const handleDeleteTicket = () => {
+      Alert.alert("Elimina Ticket", "Sei sicuro di voler eliminare definitivamente questo ticket? L'operazione è irreversibile.", [
+          { text: "Annulla", style: "cancel" },
+          { text: "Elimina", style: 'destructive', onPress: async () => {
+              setActionLoading(true);
+              const success = await deleteTicket(ticket.id);
+              setActionLoading(false);
+              if (success) {
+                  Alert.alert("Eliminato", "Ticket rimosso correttamente.");
+                  navigation.goBack();
+              } else {
+                  Alert.alert("Errore", "Impossibile eliminare il ticket.");
+              }
+          }}
+      ]);
+  };
+
+  // --- AZIONI COMUNI (MESSAGGI / RATING) ---
   const handleSendComment = async () => {
     if(!newComment.trim()) return;
     
@@ -171,7 +233,6 @@ export default function TicketDetailScreen({ route, navigation }) {
     }
   };
 
-  // 8. Gestione Rating
   const handleRating = async (stars) => {
     if(ratingSubmitted) return;
 
@@ -180,7 +241,6 @@ export default function TicketDetailScreen({ route, navigation }) {
         { text: "Invia", onPress: async () => {
             setRating(stars);
             setActionLoading(true);
-            // [FIX] Utilizzo service corretto (Intervention)
             const success = await sendFeedback(ticket.id, stars);
             setActionLoading(false);
             
@@ -258,12 +318,10 @@ export default function TicketDetailScreen({ route, navigation }) {
              <Ionicons name="location-outline" size={14} /> {ticket.indirizzo || ticket.address || 'Posizione non disponibile'}
           </Text>
 
-          {/* [FIX] IF-3.2: Visualizzazione Dati Autore e Data */}
           <View style={styles.metaInfo}>
             <Text style={styles.metaText}>
                 <Ionicons name="calendar-outline" size={12} /> {ticket.creation_date || ticket.timestamp ? new Date(ticket.creation_date || ticket.timestamp).toLocaleDateString() : 'Data N/D'}
             </Text>
-            {/* Se disponibile il nome autore lo mostriamo, altrimenti l'ID */}
             <Text style={styles.metaText}>
                 <Ionicons name="person-outline" size={12} /> {ticket.author_name || ticket.id_creator_user || 'Utente'}
             </Text>
@@ -280,7 +338,6 @@ export default function TicketDetailScreen({ route, navigation }) {
                     <ActivityIndicator color="#F59E0B" />
                 ) : (
                     <View style={styles.opButtons}>
-                        {/* [FIX] IF-3.8: Uso terminologia "In Lavorazione" */}
                         {!isResolved && !isInProgress && (
                             <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#3B82F6', marginRight: 10}]} onPress={() => handleStatusChange('In Lavorazione', 2)}>
                                 <Ionicons name="construct" size={18} color="white" />
@@ -298,6 +355,31 @@ export default function TicketDetailScreen({ route, navigation }) {
                                 <Ionicons name="lock-closed" size={14}/> Ticket Chiuso
                             </Text>
                         )}
+                    </View>
+                )}
+            </View>
+          )}
+
+          {/* AREA RESPONSABILE (IF-3.6, IF-3.3) */}
+          {isManager && (
+            <View style={styles.operatorPanel}>
+                <Text style={[styles.opTitle, {color: '#B91C1C'}]}>Pannello Responsabile</Text>
+                {actionLoading ? (
+                    <ActivityIndicator color="#B91C1C" />
+                ) : (
+                    <View style={styles.opButtons}>
+                        {/* Assegnazione solo se non è già risolto */}
+                        {!isResolved && (
+                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#6366F1', marginRight: 10}]} onPress={openAssignModal}>
+                                <Ionicons name="person-add" size={18} color="white" />
+                                <Text style={styles.opBtnText}>ASSEGNA</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#EF4444'}]} onPress={handleDeleteTicket}>
+                            <Ionicons name="trash" size={18} color="white" />
+                            <Text style={styles.opBtnText}>ELIMINA</Text>
+                        </TouchableOpacity>
                     </View>
                 )}
             </View>
@@ -363,7 +445,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       )}
 
-      {/* MODALE RAPPORTO INTERVENTO (IF-3.10) */}
+      {/* MODALE RAPPORTO INTERVENTO (Operatore) */}
       <Modal
           animationType="slide"
           transparent={true}
@@ -396,6 +478,42 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       </Modal>
 
+      {/* MODALE ASSEGNAZIONE (Responsabile) */}
+      <Modal
+          animationType="fade"
+          transparent={true}
+          visible={assignModalVisible}
+          onRequestClose={() => setAssignModalVisible(false)}
+      >
+          <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, {maxHeight: '80%'}]}>
+                  <Text style={styles.modalTitle}>Assegna a Operatore</Text>
+                  <Text style={styles.modalSub}>Seleziona un operatore dalla lista:</Text>
+                  
+                  {loadingOperators ? (
+                      <ActivityIndicator size="large" color={COLORS.primary} style={{margin: 20}} />
+                  ) : operators.length === 0 ? (
+                      <Text style={{textAlign:'center', margin:20, color:'#666'}}>Nessun operatore disponibile.</Text>
+                  ) : (
+                      <FlatList 
+                          data={operators}
+                          keyExtractor={(item) => item.id.toString()}
+                          renderItem={({item}) => (
+                              <TouchableOpacity style={styles.operatorItem} onPress={() => handleAssignOperator(item.id)}>
+                                  <Ionicons name="person" size={20} color="#555" />
+                                  <Text style={styles.operatorName}>{item.name || item.cognome + ' ' + item.nome}</Text>
+                              </TouchableOpacity>
+                          )}
+                      />
+                  )}
+
+                  <TouchableOpacity style={[styles.modalBtn, {backgroundColor: '#ccc', marginTop:15, alignSelf:'flex-end'}]} onPress={() => setAssignModalVisible(false)}>
+                      <Text style={styles.modalBtnText}>Annulla</Text>
+                  </TouchableOpacity>
+              </View>
+          </View>
+      </Modal>
+
     </KeyboardAvoidingView>
   );
 }
@@ -417,7 +535,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: 'bold', color: '#1D2D44', marginBottom: 5 },
   address: { color: '#666', marginBottom: 10, fontSize: 14 },
   
-  // Stili aggiunti per Meta Info (Data e Autore)
   metaInfo: { flexDirection: 'row', marginBottom: 20, borderBottomWidth:1, borderBottomColor:'#eee', paddingBottom:10 },
   metaText: { fontSize: 12, color: '#888', marginRight: 15 },
 
@@ -453,5 +570,9 @@ const styles = StyleSheet.create({
   modalInput: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 10, height: 100, textAlignVertical: 'top', marginBottom: 20 },
   modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
   modalBtn: { paddingVertical: 10, paddingHorizontal: 15, borderRadius: 6 },
-  modalBtnText: { color: 'white', fontWeight: 'bold' }
+  modalBtnText: { color: 'white', fontWeight: 'bold' },
+  
+  // Stili lista operatori
+  operatorItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#eee', flexDirection: 'row', alignItems: 'center' },
+  operatorName: { marginLeft: 10, fontSize: 16, color: '#333' }
 });
