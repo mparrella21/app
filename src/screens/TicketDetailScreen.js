@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker'; // Aggiunto per IF-3.9 (Foto Report)
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
-// Aggiunti deleteTicket e assignTicket ai servizi importati
-import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus, deleteTicket, assignTicket } from '../services/ticketService';
+
+// Assicurati di aggiungere 'updateTicketDetails' nel tuo ticketService.js
+import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus, deleteTicket, assignTicket, updateTicketDetails } from '../services/ticketService';
 import { sendFeedback } from '../services/interventionService';
-// Assumiamo che esista una funzione per prendere gli operatori del comune (presente in userService o tenantService)
 import { getOperatorsByTenant } from '../services/userService'; 
 
 export default function TicketDetailScreen({ route, navigation }) {
@@ -27,14 +28,20 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [rating, setRating] = useState(0); 
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
-  // REPORT DI INTERVENTO (Modale per IF-3.10 - Operatore)
+  // REPORT DI INTERVENTO (Modale per IF-3.10 / IF-3.9 - Operatore)
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [interventionReport, setInterventionReport] = useState('');
+  const [reportImage, setReportImage] = useState(null); // Aggiunto per foto report
 
-  // ASSEGNAZIONE (Modale per IF-3.6 - Responsabile)
+  // ASSEGNAZIONE E MODIFICA (Responsabile IF-3.6, IF-3.3)
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [operators, setOperators] = useState([]);
   const [loadingOperators, setLoadingOperators] = useState(false);
+  
+  // STATO MODIFICA TICKET (IF-3.3 Responsabile)
+  const [isEditingTicket, setIsEditingTicket] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDesc, setEditDesc] = useState('');
 
   // 3. Helper per decodificare lo stato
   const getStatusLabel = (t) => {
@@ -59,6 +66,10 @@ export default function TicketDetailScreen({ route, navigation }) {
         const freshTicket = await getTicket(ticketId);
         if (freshTicket) {
            setTicket(freshTicket);
+           // Inizializza campi modifica
+           setEditTitle(freshTicket.titolo || freshTicket.title);
+           setEditDesc(freshTicket.descrizione || freshTicket.description || freshTicket.desc);
+
            if(freshTicket.rating) {
                setRating(freshTicket.rating);
                setRatingSubmitted(true);
@@ -89,7 +100,6 @@ export default function TicketDetailScreen({ route, navigation }) {
   // Ruoli
   const isOperator = user?.role === 'operatore';
   const isCitizen = !user || user?.role === 'cittadino';
-  // [FIX] Aggiunto controllo per il Responsabile
   const isManager = user?.role === 'responsabile' || user?.role === 'maintenance_manager'; 
 
   // --- AZIONI OPERATORE ---
@@ -120,9 +130,22 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
+  // Funzione per scegliere foto report (IF-3.9)
+  const pickReportImage = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.5,
+    });
+    if (!result.canceled) {
+        setReportImage(result.assets[0]);
+    }
+  };
+
   const handleSubmitReportAndClose = async () => {
       if (!interventionReport.trim()) {
-          Alert.alert("Attenzione", "Il rapporto di intervento è obbligatorio per chiudere il ticket.");
+          Alert.alert("Attenzione", "Il rapporto di intervento testuale è obbligatorio.");
           return;
       }
 
@@ -130,16 +153,25 @@ export default function TicketDetailScreen({ route, navigation }) {
       setActionLoading(true);
 
       try {
-          await postReply(ticket.id, {
-              text: `[RAPPORTO INTERVENTO UFFICIALE]: ${interventionReport}`,
+          // 1. Invio del Rapporto come "Reply" speciale (IF-3.9)
+          // Nota: Se il backend supporta immagini nelle reply, si dovrebbe passare reportImage qui.
+          // Qui assumiamo un flusso standard multipart se presente, o solo testo + riferimento.
+          const replyData = {
+              text: `[RAPPORTO INTERVENTO]: ${interventionReport} ${reportImage ? '(FOTO ALLEGATA)' : ''}`,
               author: user?.name || 'Operatore',
-              date: new Date().toISOString()
-          });
+              date: new Date().toISOString(),
+              isReport: true // Flag per il backend se gestito
+          };
 
+          // Chiamata per inviare il messaggio (e l'immagine se il service postReply lo supporta)
+          await postReply(ticket.id, replyData, reportImage ? [reportImage] : []);
+
+          // 2. Chiusura Ticket
           const closeSuccess = await closeTicket(ticket.id);
 
           if (closeSuccess) {
               setInterventionReport('');
+              setReportImage(null);
               fetchData();
               Alert.alert("Ticket Chiuso", "L'intervento è stato registrato e il ticket è stato chiuso.");
           } else {
@@ -155,13 +187,55 @@ export default function TicketDetailScreen({ route, navigation }) {
 
   // --- AZIONI RESPONSABILE (MANAGER) ---
   
+  // IF-3.3: Correzione Dati Ticket
+  const toggleEditMode = () => {
+      if (isEditingTicket) {
+          // Annulla modifica
+          setEditTitle(ticket.titolo || ticket.title);
+          setEditDesc(ticket.descrizione || ticket.description || ticket.desc);
+          setIsEditingTicket(false);
+      } else {
+          setIsEditingTicket(true);
+      }
+  };
+
+  const handleSaveTicketDetails = async () => {
+      if (!editTitle.trim() || !editDesc.trim()) {
+          Alert.alert("Errore", "Titolo e descrizione non possono essere vuoti.");
+          return;
+      }
+
+      setActionLoading(true);
+      try {
+          // Chiamata al servizio (da implementare in ticketService.js se manca)
+          // Payload: { title: editTitle, description: editDesc, ... }
+          const success = await updateTicketDetails(ticket.id, {
+              title: editTitle,
+              description: editDesc,
+              // category: ticket.category // Si potrebbe aggiungere anche la categoria
+          });
+
+          if (success) {
+              Alert.alert("Successo", "Dati ticket aggiornati.");
+              setIsEditingTicket(false);
+              fetchData();
+          } else {
+              Alert.alert("Errore", "Aggiornamento fallito.");
+          }
+      } catch (e) {
+          console.error(e);
+          Alert.alert("Errore", "Errore di connessione.");
+      } finally {
+          setActionLoading(false);
+      }
+  };
+  
   // Apertura modale assegnazione
   const openAssignModal = async () => {
       setAssignModalVisible(true);
       if (operators.length === 0) {
           setLoadingOperators(true);
           try {
-              // Recupera operatori del comune (Tenant)
               const ops = await getOperatorsByTenant(); 
               setOperators(ops || []);
           } catch (e) {
@@ -172,16 +246,14 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // Esegue assegnazione
   const handleAssignOperator = async (operatorId) => {
       setAssignModalVisible(false);
       setActionLoading(true);
       try {
-          // Chiama il servizio per assegnare (IF-3.6)
           const success = await assignTicket(ticket.id, operatorId);
           if (success) {
               Alert.alert("Assegnato", "Il ticket è stato assegnato all'operatore.");
-              fetchData(); // Ricarica per vedere stato aggiornato (es. 'In Lavorazione' o 'Assegnato')
+              fetchData(); 
           } else {
               Alert.alert("Errore", "Assegnazione fallita.");
           }
@@ -193,7 +265,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // Eliminazione Ticket (IF-3.3)
   const handleDeleteTicket = () => {
       Alert.alert("Elimina Ticket", "Sei sicuro di voler eliminare definitivamente questo ticket? L'operazione è irreversibile.", [
           { text: "Annulla", style: "cancel" },
@@ -313,22 +384,51 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           </View>
 
-          <Text style={styles.title}>{ticket.titolo || ticket.title}</Text>
-          <Text style={styles.address}>
-             <Ionicons name="location-outline" size={14} /> {ticket.indirizzo || ticket.address || 'Posizione non disponibile'}
-          </Text>
+          {/* EDIT MODE per Responsabile (IF-3.3) */}
+          {isEditingTicket ? (
+              <View style={styles.editContainer}>
+                  <Text style={styles.labelInput}>Modifica Titolo:</Text>
+                  <TextInput 
+                      style={styles.editInput} 
+                      value={editTitle} 
+                      onChangeText={setEditTitle} 
+                  />
+                  <Text style={styles.labelInput}>Modifica Descrizione:</Text>
+                  <TextInput 
+                      style={[styles.editInput, {height: 80, textAlignVertical:'top'}]} 
+                      multiline
+                      value={editDesc} 
+                      onChangeText={setEditDesc} 
+                  />
+                  <View style={{flexDirection:'row', gap:10, marginTop:5}}>
+                      <TouchableOpacity style={[styles.opBtn, {backgroundColor:'#ccc'}]} onPress={toggleEditMode}>
+                          <Text style={{color:'black'}}>Annulla</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.opBtn, {backgroundColor:'#10B981'}]} onPress={handleSaveTicketDetails}>
+                          <Text style={{color:'white', fontWeight:'bold'}}>Salva</Text>
+                      </TouchableOpacity>
+                  </View>
+              </View>
+          ) : (
+              <>
+                <Text style={styles.title}>{ticket.titolo || ticket.title}</Text>
+                <Text style={styles.address}>
+                    <Ionicons name="location-outline" size={14} /> {ticket.indirizzo || ticket.address || 'Posizione non disponibile'}
+                </Text>
 
-          <View style={styles.metaInfo}>
-            <Text style={styles.metaText}>
-                <Ionicons name="calendar-outline" size={12} /> {ticket.creation_date || ticket.timestamp ? new Date(ticket.creation_date || ticket.timestamp).toLocaleDateString() : 'Data N/D'}
-            </Text>
-            <Text style={styles.metaText}>
-                <Ionicons name="person-outline" size={12} /> {ticket.author_name || ticket.id_creator_user || 'Utente'}
-            </Text>
-          </View>
+                <View style={styles.metaInfo}>
+                    <Text style={styles.metaText}>
+                        <Ionicons name="calendar-outline" size={12} /> {ticket.creation_date || ticket.timestamp ? new Date(ticket.creation_date || ticket.timestamp).toLocaleDateString() : 'Data N/D'}
+                    </Text>
+                    <Text style={styles.metaText}>
+                        <Ionicons name="person-outline" size={12} /> {ticket.author_name || ticket.id_creator_user || 'Utente'}
+                    </Text>
+                </View>
 
-          <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
-          <Text style={styles.desc}>{ticket.descrizione || ticket.description || ticket.desc || "Nessuna descrizione."}</Text>
+                <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
+                <Text style={styles.desc}>{ticket.descrizione || ticket.description || ticket.desc || "Nessuna descrizione."}</Text>
+              </>
+          )}
 
           {/* AREA OPERATORE */}
           {isOperator && (
@@ -367,19 +467,28 @@ export default function TicketDetailScreen({ route, navigation }) {
                 {actionLoading ? (
                     <ActivityIndicator color="#B91C1C" />
                 ) : (
-                    <View style={styles.opButtons}>
-                        {/* Assegnazione solo se non è già risolto */}
-                        {!isResolved && (
-                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#6366F1', marginRight: 10}]} onPress={openAssignModal}>
-                                <Ionicons name="person-add" size={18} color="white" />
-                                <Text style={styles.opBtnText}>ASSEGNA</Text>
-                            </TouchableOpacity>
-                        )}
+                    <View style={{gap: 10}}>
+                        <View style={styles.opButtons}>
+                            {!isResolved && (
+                                <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#6366F1', marginRight: 10}]} onPress={openAssignModal}>
+                                    <Ionicons name="person-add" size={18} color="white" />
+                                    <Text style={styles.opBtnText}>ASSEGNA</Text>
+                                </TouchableOpacity>
+                            )}
 
-                        <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#EF4444'}]} onPress={handleDeleteTicket}>
-                            <Ionicons name="trash" size={18} color="white" />
-                            <Text style={styles.opBtnText}>ELIMINA</Text>
-                        </TouchableOpacity>
+                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#EF4444'}]} onPress={handleDeleteTicket}>
+                                <Ionicons name="trash" size={18} color="white" />
+                                <Text style={styles.opBtnText}>ELIMINA</Text>
+                            </TouchableOpacity>
+                        </View>
+                        
+                        {/* Tasto Modifica Dati (IF-3.3) */}
+                        {!isEditingTicket && !isResolved && (
+                             <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#F59E0B'}]} onPress={toggleEditMode}>
+                                 <Ionicons name="create" size={18} color="white" />
+                                 <Text style={styles.opBtnText}>MODIFICA DATI</Text>
+                             </TouchableOpacity>
+                        )}
                     </View>
                 )}
             </View>
@@ -423,6 +532,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                         {r.user_name || r.author || (r.id_user === user?.id ? 'Tu' : 'Utente')}
                     </Text>
                     <Text style={styles.msgText}>{r.text || r.messaggio || r.body}</Text>
+                    {/* Se il messaggio è un report e ha un'immagine associata, qui si potrebbe visualizzare */}
                     <Text style={styles.msgDate}>{r.date ? new Date(r.date).toLocaleDateString() : ''}</Text>
                 </View>
               ))
@@ -455,7 +565,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
                   <Text style={styles.modalTitle}>Rapporto di Intervento</Text>
-                  <Text style={styles.modalSub}>Descrivi le operazioni effettuate prima di chiudere il ticket.</Text>
+                  <Text style={styles.modalSub}>Descrivi le operazioni effettuate ed allega una foto (opzionale).</Text>
                   
                   <TextInput 
                       style={styles.modalInput}
@@ -465,6 +575,21 @@ export default function TicketDetailScreen({ route, navigation }) {
                       value={interventionReport}
                       onChangeText={setInterventionReport}
                   />
+
+                  {/* SEZIONE FOTO REPORT (IF-3.9) */}
+                  <TouchableOpacity style={styles.reportPhotoBtn} onPress={pickReportImage}>
+                      {reportImage ? (
+                          <View style={{flexDirection:'row', alignItems:'center'}}>
+                              <Ionicons name="image" size={20} color="#10B981" />
+                              <Text style={{marginLeft:10, color:'#333'}}>Foto allegata</Text>
+                          </View>
+                      ) : (
+                          <View style={{flexDirection:'row', alignItems:'center'}}>
+                              <Ionicons name="camera-outline" size={20} color="#555" />
+                              <Text style={{marginLeft:10, color:'#555'}}>Allega Foto (Opzionale)</Text>
+                          </View>
+                      )}
+                  </TouchableOpacity>
 
                   <View style={styles.modalButtons}>
                       <TouchableOpacity style={[styles.modalBtn, {backgroundColor: '#ccc'}]} onPress={() => setReportModalVisible(false)}>
@@ -541,6 +666,11 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 14, fontWeight: 'bold', color: '#999', marginBottom: 10, marginTop: 10, letterSpacing: 1 },
   desc: { fontSize: 16, color: '#333', lineHeight: 24 },
 
+  // Edit Mode Styles
+  editContainer: { marginBottom: 15, backgroundColor: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#ddd' },
+  labelInput: { fontSize: 12, fontWeight: 'bold', color: '#666', marginBottom: 5 },
+  editInput: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 8, fontSize: 14, marginBottom: 10 },
+
   operatorPanel: { marginTop: 20, padding: 15, backgroundColor: '#FFF7E6', borderRadius: 10, borderWidth: 1, borderColor: '#FFE0B2' },
   opTitle: { fontWeight: 'bold', color: '#B45309', marginBottom: 10, textTransform: 'uppercase', fontSize: 12 },
   opButtons: { flexDirection: 'row', justifyContent: 'space-between', gap: 5 },
@@ -567,7 +697,11 @@ const styles = StyleSheet.create({
   modalContent: { width: '90%', backgroundColor: 'white', borderRadius: 12, padding: 20, elevation: 5 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 5 },
   modalSub: { fontSize: 12, color: '#666', marginBottom: 15 },
-  modalInput: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 10, height: 100, textAlignVertical: 'top', marginBottom: 20 },
+  modalInput: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 10, height: 100, textAlignVertical: 'top', marginBottom: 15 },
+  
+  // Stili Foto Report
+  reportPhotoBtn: { flexDirection: 'row', alignItems:'center', justifyContent:'center', padding: 10, backgroundColor:'#F3F4F6', borderRadius: 8, marginBottom: 20, borderWidth: 1, borderColor: '#E5E7EB', borderStyle: 'dashed' },
+
   modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
   modalBtn: { paddingVertical: 10, paddingHorizontal: 15, borderRadius: 6 },
   modalBtnText: { color: 'white', fontWeight: 'bold' },
