@@ -3,7 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView, Modal, 
 import { Ionicons } from '@expo/vector-icons';
 import { getAllTickets, closeTicket, getCategories } from '../services/ticketService';
 import { getOperators } from '../services/userService'; 
-import { assignTicketToOperator } from '../services/interventionService';
+import { createAssignment } from '../services/interventionService';
 import { COLORS } from '../styles/global';
 import { OFFLINE_MODE } from '../services/config';
 import EmptyState from '../component/EmptyState';
@@ -118,7 +118,8 @@ export default function ResponsibleTicketsScreen({ navigation }) {
 
   const handleAssign = async (operatorId) => {
       if (!selectedTicket) return;
-      const success = await assignTicketToOperator(selectedTicket.id, operatorId);
+      // [FIX] Nome funzione aggiornato (createAssignment)
+      const success = await createAssignment(selectedTicket.id, operatorId);
       if (success) {
           Alert.alert("Successo", "Intervento assegnato!");
           setModalVisible(false);

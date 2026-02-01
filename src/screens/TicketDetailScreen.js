@@ -3,7 +3,8 @@ import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet,
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
-import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus, sendFeedback } from '../services/ticketService';
+import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus } from '../services/ticketService';
+import { sendFeedback } from '../services/interventionService';
 
 export default function TicketDetailScreen({ route, navigation }) {
   // 1. Recupero ID
@@ -176,6 +177,7 @@ export default function TicketDetailScreen({ route, navigation }) {
         { text: "Invia", onPress: async () => {
             setRating(stars);
             setActionLoading(true);
+            // [FIX] Utilizzo service corretto (Intervention)
             const success = await sendFeedback(ticket.id, stars);
             setActionLoading(false);
             
