@@ -1,12 +1,21 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { COLORS } from '../styles/global'; 
+import { updateUserProfile } from '../services/userService';
 
 export default function ProfileScreen({ navigation }) {
-  const { user, logout } = useAuth();
+  const { user, logout, setUser } = useAuth(); // setUser serve per aggiornare lo stato locale dopo la modifica
+  
+  // Stati per la modalità modifica
+  const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Campi form
+  const [editName, setEditName] = useState(user ? user.name : '');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const handleLogout = () => {
     Alert.alert(
@@ -18,11 +27,7 @@ export default function ProfileScreen({ navigation }) {
                 text: "Esci", 
                 style: "destructive", 
                 onPress: () => {
-                    // 1. Esegui il logout logico
                     logout();
-                    
-                    // 2. Resetta la navigazione verso la HOME (dove c'è il login)
-                    // Non usare 'Auth' perché quella rotta non esiste nello stack principale
                     setTimeout(() => {
                         navigation.reset({
                             index: 0,
@@ -35,6 +40,57 @@ export default function ProfileScreen({ navigation }) {
     );
   };
 
+  const toggleEdit = () => {
+    if (!isEditing) {
+        // Entra in modalità modifica: resetta i campi ai valori attuali
+        setEditName(user.name);
+        setNewPassword('');
+        setConfirmPassword('');
+    }
+    setIsEditing(!isEditing);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!editName.trim()) {
+        Alert.alert("Errore", "Il nome non può essere vuoto.");
+        return;
+    }
+    if (newPassword && newPassword !== confirmPassword) {
+        Alert.alert("Errore", "Le password non coincidono.");
+        return;
+    }
+    if (newPassword && newPassword.length < 6) {
+        Alert.alert("Errore", "La password deve essere di almeno 6 caratteri.");
+        return;
+    }
+
+    setIsLoading(true);
+
+    // Prepariamo i dati da inviare
+    const payload = {
+        name: editName,
+        // Invia la password solo se l'utente ha scritto qualcosa, altrimenti undefined/null
+        password: newPassword ? newPassword : undefined 
+    };
+
+    // Assumiamo che user.id sia disponibile nell'oggetto user del contesto
+    const result = await updateUserProfile(user.id, payload);
+
+    setIsLoading(false);
+
+    if (result.success) {
+        Alert.alert("Successo", "Profilo aggiornato correttamente.");
+        
+        // Aggiorna il contesto locale (senza dover rifare il login)
+        // Manteniamo i dati vecchi e sovrascriviamo solo il nome aggiornato
+        setUser({ ...user, name: editName });
+        
+        setIsEditing(false);
+    } else {
+        Alert.alert("Errore", result.message || "Impossibile aggiornare il profilo.");
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -45,7 +101,13 @@ export default function ProfileScreen({ navigation }) {
                 <Ionicons name="arrow-back" size={24} color="white" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Area Personale</Text>
-            <View style={{width: 24}} /> 
+            
+            {/* Tasto Modifica / Annulla */}
+            <TouchableOpacity onPress={toggleEdit}>
+                <Text style={{color: 'white', fontWeight: 'bold'}}>
+                    {isEditing ? 'ANNULLA' : 'MODIFICA'}
+                </Text>
+            </TouchableOpacity>
         </View>
       </SafeAreaView>
 
@@ -58,66 +120,123 @@ export default function ProfileScreen({ navigation }) {
                     {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                 </Text>
             </View>
-            <Text style={styles.userName}>{user.name}</Text>
+
+            {/* Visualizzazione vs Modifica Nome */}
+            {isEditing ? (
+                <View style={styles.editContainer}>
+                    <Text style={styles.labelInput}>Nome e Cognome</Text>
+                    <TextInput 
+                        style={styles.input}
+                        value={editName}
+                        onChangeText={setEditName}
+                        placeholder="Nome e Cognome"
+                    />
+                </View>
+            ) : (
+                <Text style={styles.userName}>{user.name}</Text>
+            )}
+
             <Text style={styles.userRole}>
                 {user.role ? user.role.toUpperCase() : 'OSPITE'}
             </Text>
+
+            {/* Sezione Cambio Password (solo in modifica) */}
+            {isEditing && (
+                <View style={[styles.editContainer, {marginTop: 15, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 15}]}>
+                    <Text style={[styles.labelInput, {marginBottom: 10, color: '#F59E0B'}]}>Cambio Password (Opzionale)</Text>
+                    
+                    <TextInput 
+                        style={styles.input}
+                        value={newPassword}
+                        onChangeText={setNewPassword}
+                        placeholder="Nuova Password"
+                        secureTextEntry
+                    />
+                    <TextInput 
+                        style={styles.input}
+                        value={confirmPassword}
+                        onChangeText={setConfirmPassword}
+                        placeholder="Conferma Password"
+                        secureTextEntry
+                    />
+                </View>
+            )}
+
+            {/* Tasto Salva */}
+            {isEditing && (
+                <TouchableOpacity 
+                    style={styles.saveBtn} 
+                    onPress={handleSaveProfile}
+                    disabled={isLoading}
+                >
+                    {isLoading ? (
+                        <ActivityIndicator color="white" />
+                    ) : (
+                        <Text style={styles.saveBtnText}>SALVA MODIFICHE</Text>
+                    )}
+                </TouchableOpacity>
+            )}
         </View>
 
-        {/* --- MENU CITTADINO --- */}
-        {user.role === 'cittadino' && (
-            <View style={styles.menuGroup}>
-                <Text style={styles.menuTitle}>Le tue attività</Text>
-                {/* FIX: Naviga verso UserTickets, non di nuovo verso Profile */}
-                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('UserTickets')}>
-                    <View style={[styles.iconBox, { backgroundColor: '#467599' }]}>
-                        <Ionicons name="list" size={24} color="white" />
-                    </View>
-                    <Text style={styles.actionText}>Le mie segnalazioni</Text>
-                    <Ionicons name="chevron-forward" size={24} color="#ccc" />
-                </TouchableOpacity>
-            </View>
+        {/* --- MENU (Visibili solo se NON si è in modifica per pulizia, o sempre visibili) --- */}
+        {!isEditing && (
+        <>
+            {/* --- MENU CITTADINO --- */}
+            {user.role === 'cittadino' && (
+                <View style={styles.menuGroup}>
+                    <Text style={styles.menuTitle}>Le tue attività</Text>
+                    <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('UserTickets')}>
+                        <View style={[styles.iconBox, { backgroundColor: '#467599' }]}>
+                            <Ionicons name="list" size={24} color="white" />
+                        </View>
+                        <Text style={styles.actionText}>Le mie segnalazioni</Text>
+                        <Ionicons name="chevron-forward" size={24} color="#ccc" />
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* --- MENU OPERATORE --- */}
+            {user.role === 'operatore' && (
+                <View style={styles.menuGroup}>
+                    <Text style={styles.menuTitle}>Gestione Operativa</Text>
+                    <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('OperatorTickets')}>
+                        <View style={[styles.iconBox, { backgroundColor: '#F59E0B' }]}>
+                            <Ionicons name="construct" size={24} color="white" />
+                        </View>
+                        <Text style={styles.actionText}>Ticket Assegnati</Text>
+                        <Ionicons name="chevron-forward" size={24} color="#ccc" />
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* --- MENU RESPONSABILE --- */}
+            {(user.role === 'responsabile' || user.role === 'admin') && (
+                <View style={styles.menuGroup}>
+                    <Text style={styles.menuTitle}>Amministrazione</Text>
+                    <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('ResponsibleTickets')}>
+                        <View style={[styles.iconBox, { backgroundColor: '#10B981' }]}>
+                            <Ionicons name="folder-open" size={24} color="white" />
+                        </View>
+                        <Text style={styles.actionText}>Gestione Ticket Comune</Text>
+                        <Ionicons name="chevron-forward" size={24} color="#ccc" />
+                    </TouchableOpacity>
+
+                    <View style={styles.divider} />
+
+                    <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('ManageOperators')}>
+                        <View style={[styles.iconBox, { backgroundColor: '#6366F1' }]}>
+                            <Ionicons name="people" size={24} color="white" />
+                        </View>
+                        <Text style={styles.actionText}>Gestione Operatori</Text>
+                        <Ionicons name="chevron-forward" size={24} color="#ccc" />
+                    </TouchableOpacity>
+                </View>
+            )}
+        </>
         )}
 
-        {/* --- MENU OPERATORE --- */}
-        {user.role === 'operatore' && (
-            <View style={styles.menuGroup}>
-                <Text style={styles.menuTitle}>Gestione Operativa</Text>
-                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('OperatorTickets')}>
-                    <View style={[styles.iconBox, { backgroundColor: '#F59E0B' }]}>
-                        <Ionicons name="construct" size={24} color="white" />
-                    </View>
-                    <Text style={styles.actionText}>Ticket Assegnati</Text>
-                    <Ionicons name="chevron-forward" size={24} color="#ccc" />
-                </TouchableOpacity>
-            </View>
-        )}
-
-        {/* --- MENU RESPONSABILE --- */}
-        {(user.role === 'responsabile' || user.role === 'admin') && (
-            <View style={styles.menuGroup}>
-                <Text style={styles.menuTitle}>Amministrazione</Text>
-                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('ResponsibleTickets')}>
-                    <View style={[styles.iconBox, { backgroundColor: '#10B981' }]}>
-                        <Ionicons name="folder-open" size={24} color="white" />
-                    </View>
-                    <Text style={styles.actionText}>Gestione Ticket Comune</Text>
-                    <Ionicons name="chevron-forward" size={24} color="#ccc" />
-                </TouchableOpacity>
-
-                <View style={styles.divider} />
-
-                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('ManageOperators')}>
-                    <View style={[styles.iconBox, { backgroundColor: '#6366F1' }]}>
-                        <Ionicons name="people" size={24} color="white" />
-                    </View>
-                    <Text style={styles.actionText}>Gestione Operatori</Text>
-                    <Ionicons name="chevron-forward" size={24} color="#ccc" />
-                </TouchableOpacity>
-            </View>
-        )}
-
-        {/* DETTAGLI ACCOUNT */}
+        {/* DETTAGLI ACCOUNT (Sola lettura) */}
+        {!isEditing && (
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dettagli Account</Text>
             <View style={styles.infoRow}>
@@ -136,6 +255,7 @@ export default function ProfileScreen({ navigation }) {
                 </View>
             </View>
         </View>
+        )}
 
         {/* LOGOUT */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
@@ -159,6 +279,13 @@ const styles = StyleSheet.create({
   avatarText: { color: 'white', fontSize: 28, fontWeight: 'bold' },
   userName: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
   userRole: { fontSize: 11, color: '#666', marginTop: 2, letterSpacing: 1 },
+
+  // Stili per Modifica
+  editContainer: { width: '100%', marginTop: 10 },
+  labelInput: { fontSize: 12, color: '#666', marginBottom: 5, fontWeight: 'bold' },
+  input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 10, marginBottom: 10, fontSize: 16 },
+  saveBtn: { backgroundColor: '#1F2937', padding: 12, borderRadius: 8, width: '100%', alignItems: 'center', marginTop: 10 },
+  saveBtnText: { color: 'white', fontWeight: 'bold' },
 
   menuGroup: { marginBottom: 20 },
   menuTitle: { fontSize: 14, fontWeight: 'bold', color: '#6B7280', marginBottom: 8, marginLeft: 5, textTransform: 'uppercase' },
