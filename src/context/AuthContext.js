@@ -45,17 +45,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loginWithGoogle = async (idToken) => {
-    const result = await loginService.loginWithGoogle(idToken);
-    if (result.token && result.user) {
-      await AsyncStorage.setItem('app_auth_token', result.token);
-      await AsyncStorage.setItem('app_user', JSON.stringify(result.user));
-      setUser(result.user);
-      return { success: true };
-    }
-    return { success: false, error: result.error || 'Google login failed' };
-  };
-
   const logout = async () => {
     await AsyncStorage.removeItem('app_auth_token');
     await AsyncStorage.removeItem('app_user');
@@ -63,7 +52,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, loginWithGoogle, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
