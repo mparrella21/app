@@ -48,7 +48,7 @@ export const createOperator = async (operatorData) => {
   }
 };
 
-// Aggiorna un operatore specifico (Lato Responsabile)
+// Aggiorna un operatore specifico (Lato Responsabile - UC-12)
 export const updateOperator = async (id, operatorData) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
@@ -69,14 +69,31 @@ export const updateOperator = async (id, operatorData) => {
   }
 };
 
-// NUOVO: Aggiorna il profilo dell'utente loggato (Self-service)
+// Elimina un operatore (Lato Responsabile)
+export const deleteUser = async (id) => {
+  try {
+    const token = await AsyncStorage.getItem('app_auth_token');
+    const response = await fetch(`${API_BASE}/user/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    const data = await response.json();
+    return data.success === true;
+  } catch (e) {
+    console.error('userService.deleteUser', e);
+    return false;
+  }
+};
+
+// Aggiorna il profilo dell'utente loggato (Self-service)
 export const updateUserProfile = async (id, userData) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
-    // Si assume che l'endpoint PUT /user/{id} permetta all'utente di modificare se stesso
-    // se il token corrisponde all'ID, oppure che esista un endpoint /user/me
     const response = await fetch(`${API_BASE}/user/${id}`, {
       method: 'PUT',
       headers: {
