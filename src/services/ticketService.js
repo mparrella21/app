@@ -53,6 +53,7 @@ export const getOperatorTickets = async (operatorId) => {
     let assignedTicketIds = [];
     
     // 1. Tenta di recuperare le assegnazioni dall'Assignment/Intervention Service
+    // Coerente con Architecture Doc: Endpoint Intervention Service
     try {
         const assignResponse = await fetch(`${API_BASE}/intervention/assignment`, {
             method: 'GET',
@@ -188,7 +189,6 @@ export const getAllReplies = async (idTicket) => {
 
 /**
  * Invia una risposta o un rapporto di intervento.
- * FIX: Ora supporta l'upload di file (es. foto rapporto intervento IF-3.9)
  */
 export const postReply = async (idTicket, replyData, files = []) => {
   try {
@@ -202,15 +202,12 @@ export const postReply = async (idTicket, replyData, files = []) => {
     };
 
     if (files && files.length > 0) {
-        // Usa FormData per multipart se ci sono file
         const formData = new FormData();
         
-        // Aggiunge i campi dati
         Object.keys(replyData).forEach(key => {
             formData.append(key, String(replyData[key]));
         });
 
-        // Aggiunge i file
         files.forEach((file, index) => {
              const fileName = file.fileName || `reply_img_${index}.jpg`;
              formData.append('files', {
@@ -221,9 +218,7 @@ export const postReply = async (idTicket, replyData, files = []) => {
         });
 
         body = formData;
-        // Non settare Content-Type, fetch lo fa in automatico per multipart
     } else {
-        // JSON standard se solo testo
         headers['Content-Type'] = 'application/json';
         body = JSON.stringify(replyData);
     }
@@ -241,6 +236,8 @@ export const postReply = async (idTicket, replyData, files = []) => {
     return false;
   }
 };
+
+// --- UPDATE & MANAGEMENT (Operatori / Responsabili) ---
 
 export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
   try {
@@ -266,6 +263,71 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
     console.error('ticketService.updateTicketStatus', e);
     return false;
   }
+};
+
+// [NUOVO] Per Responsabili (IF-3.3): Modifica dettagli ticket (titolo/descrizione)
+export const updateTicketDetails = async (ticketId, updates) => {
+    try {
+        const token = await AsyncStorage.getItem('app_auth_token');
+        const response = await fetch(`${API_BASE}/ticket/${ticketId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(updates)
+        });
+        const data = await response.json();
+        return data.success === true;
+    } catch (e) {
+        console.error('ticketService.updateTicketDetails', e);
+        return false;
+    }
+};
+
+// [NUOVO] Per Responsabili (IF-3.6): Assegnazione Ticket
+// Coerente con Architecture Doc: Endpoint Intervention Service
+export const assignTicket = async (ticketId, operatorId) => {
+    try {
+      const token = await AsyncStorage.getItem('app_auth_token');
+      const response = await fetch(`${API_BASE}/intervention/assignment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ticket_id: ticketId,
+          operator_id: operatorId
+        })
+      });
+      const data = await response.json();
+      return data.success === true;
+    } catch (e) {
+      console.error('ticketService.assignTicket', e);
+      return false;
+    }
+};
+
+// [NUOVO] Per Responsabili (IF-3.3): Eliminazione Ticket
+export const deleteTicket = async (ticketId) => {
+    try {
+        const token = await AsyncStorage.getItem('app_auth_token');
+        const response = await fetch(`${API_BASE}/ticket/${ticketId}`, {
+            method: 'DELETE',
+            headers: {
+                'Accept': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        const data = await response.json();
+        return data.success === true;
+    } catch (e) {
+        console.error('ticketService.deleteTicket', e);
+        return false;
+    }
 };
 
 export const closeTicket = async (idTicket) => {
