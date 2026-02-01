@@ -1,12 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert, ScrollView } from 'react-native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { GOOGLE_CLIENT_ID_EXPO, GOOGLE_CLIENT_ID_ANDROID, GOOGLE_CLIENT_ID_IOS } from '../services/config';
+
+WebBrowser.maybeCompleteAuthSession();
 
 const { width } = Dimensions.get('window');
 
 export default function AuthModal({ navigation }) {
   const { login } = useAuth(); // Prende la funzione dal Context
+  const { loginWithGoogle } = useAuth();
   const [activeTab, setActiveTab] = useState('login'); 
   
   // Login State
@@ -53,10 +59,39 @@ export default function AuthModal({ navigation }) {
     }
   };
 
-  const handleGoogleLogin = () => {
-      // Per il progetto universitario, se non hai implementato il Google Sign-in nativo su mobile,
-      // puoi lasciare un alert o simulare un login cittadino standard.
-      Alert.alert("Google Login", "Funzionalità non ancora attiva su mobile.");
+  // Configure Google AuthRequest
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: GOOGLE_CLIENT_ID_EXPO || undefined,
+    androidClientId: GOOGLE_CLIENT_ID_ANDROID || undefined,
+    iosClientId: GOOGLE_CLIENT_ID_IOS || undefined,
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params || {};
+      if (id_token) {
+        (async () => {
+          const res = await loginWithGoogle(id_token);
+          if (res.success) {
+            navigation.goBack();
+          } else {
+            Alert.alert('Errore', res.error || 'Google login fallito');
+          }
+        })();
+      }
+    } else if (response?.type === 'error') {
+      Alert.alert('Google Login', 'Autenticazione annullata o fallita.');
+    }
+  }, [response]);
+
+  const handleGoogleLogin = async () => {
+    try {
+      // promptAsync opens the browser or native flow
+      await promptAsync();
+    } catch (e) {
+      console.error('Google login error', e);
+      Alert.alert('Errore', 'Impossibile avviare Google Sign-in');
+    }
   };
 
   return (
