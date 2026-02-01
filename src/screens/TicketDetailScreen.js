@@ -29,16 +29,17 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [interventionReport, setInterventionReport] = useState('');
 
   // 3. Helper per decodificare lo stato
+  // [FIX] IF-2.4 / IF-3.8: Adeguamento terminologia "In Lavorazione" come da Requisiti
   const getStatusLabel = (t) => {
       if (!t) return 'Sconosciuto';
       const sid = t.id_status || t.statusId;
       if (t.status && typeof t.status === 'string') return t.status;
       switch (sid) {
-          case 1: return 'Aperto';
-          case 2: return 'In Corso'; 
+          case 1: return 'Ricevuto'; // O 'Aperto' se il backend usa quello, ma Req dice Ricevuto
+          case 2: return 'In Lavorazione'; 
           case 3: return 'Risolto'; 
           case 4: return 'Chiuso';
-          default: return 'Aperto';
+          default: return 'Ricevuto';
       }
   };
 
@@ -76,7 +77,8 @@ export default function TicketDetailScreen({ route, navigation }) {
 
   const statusLabel = ticket ? getStatusLabel(ticket) : '';
   const isResolved = statusLabel.toLowerCase() === 'risolto' || statusLabel.toLowerCase() === 'chiuso';
-  const isInProgress = statusLabel.toLowerCase() === 'in corso' || statusLabel.toLowerCase() === 'assegnato';
+  // [FIX] Coerenza check con nuova label
+  const isInProgress = statusLabel.toLowerCase() === 'in lavorazione' || statusLabel.toLowerCase() === 'assegnato' || statusLabel.toLowerCase() === 'in corso';
   const isOperator = user?.role === 'operatore';
   const isCitizen = !user || user?.role === 'cittadino';
 
@@ -88,7 +90,7 @@ export default function TicketDetailScreen({ route, navigation }) {
         return;
     }
 
-    // Altrimenti cambio stato normale (es. In Corso)
+    // Altrimenti cambio stato normale (es. In Lavorazione)
     Alert.alert("Conferma", `Vuoi impostare lo stato a "${newStatus}"?`, [
         { text: "Annulla", style: "cancel" },
         { text: "Conferma", onPress: async () => {
@@ -122,13 +124,14 @@ export default function TicketDetailScreen({ route, navigation }) {
 
       try {
           // 1. Invia il rapporto come messaggio dell'operatore (o su endpoint dedicato se esistente)
+          // Architetturalmente corretto: InterventionReply eredita da TicketReply
           await postReply(ticket.id, {
               text: `[RAPPORTO INTERVENTO UFFICIALE]: ${interventionReport}`,
               author: user?.name || 'Operatore',
               date: new Date().toISOString()
           });
 
-          // 2. Chiudi il ticket
+          // 2. Chiudi il ticket (o setta Risolto)
           const closeSuccess = await closeTicket(ticket.id);
 
           if (closeSuccess) {
@@ -255,6 +258,17 @@ export default function TicketDetailScreen({ route, navigation }) {
              <Ionicons name="location-outline" size={14} /> {ticket.indirizzo || ticket.address || 'Posizione non disponibile'}
           </Text>
 
+          {/* [FIX] IF-3.2: Visualizzazione Dati Autore e Data */}
+          <View style={styles.metaInfo}>
+            <Text style={styles.metaText}>
+                <Ionicons name="calendar-outline" size={12} /> {ticket.creation_date || ticket.timestamp ? new Date(ticket.creation_date || ticket.timestamp).toLocaleDateString() : 'Data N/D'}
+            </Text>
+            {/* Se disponibile il nome autore lo mostriamo, altrimenti l'ID */}
+            <Text style={styles.metaText}>
+                <Ionicons name="person-outline" size={12} /> {ticket.author_name || ticket.id_creator_user || 'Utente'}
+            </Text>
+          </View>
+
           <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
           <Text style={styles.desc}>{ticket.descrizione || ticket.description || ticket.desc || "Nessuna descrizione."}</Text>
 
@@ -266,8 +280,9 @@ export default function TicketDetailScreen({ route, navigation }) {
                     <ActivityIndicator color="#F59E0B" />
                 ) : (
                     <View style={styles.opButtons}>
+                        {/* [FIX] IF-3.8: Uso terminologia "In Lavorazione" */}
                         {!isResolved && !isInProgress && (
-                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#3B82F6', marginRight: 10}]} onPress={() => handleStatusChange('In Corso', 2)}>
+                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#3B82F6', marginRight: 10}]} onPress={() => handleStatusChange('In Lavorazione', 2)}>
                                 <Ionicons name="construct" size={18} color="white" />
                                 <Text style={styles.opBtnText}>PRENDI IN CARICO</Text>
                             </TouchableOpacity>
@@ -400,8 +415,13 @@ const styles = StyleSheet.create({
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4 },
   
   title: { fontSize: 22, fontWeight: 'bold', color: '#1D2D44', marginBottom: 5 },
-  address: { color: '#666', marginBottom: 20, fontSize: 14 },
-  sectionTitle: { fontSize: 14, fontWeight: 'bold', color: '#999', marginBottom: 10, marginTop: 20, letterSpacing: 1 },
+  address: { color: '#666', marginBottom: 10, fontSize: 14 },
+  
+  // Stili aggiunti per Meta Info (Data e Autore)
+  metaInfo: { flexDirection: 'row', marginBottom: 20, borderBottomWidth:1, borderBottomColor:'#eee', paddingBottom:10 },
+  metaText: { fontSize: 12, color: '#888', marginRight: 15 },
+
+  sectionTitle: { fontSize: 14, fontWeight: 'bold', color: '#999', marginBottom: 10, marginTop: 10, letterSpacing: 1 },
   desc: { fontSize: 16, color: '#333', lineHeight: 24 },
 
   operatorPanel: { marginTop: 20, padding: 15, backgroundColor: '#FFF7E6', borderRadius: 10, borderWidth: 1, borderColor: '#FFE0B2' },
