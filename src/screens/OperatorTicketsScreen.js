@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,24 +6,18 @@ import { useFocusEffect } from '@react-navigation/native';
 
 // Services
 import { updateTicketStatus } from '../services/ticketService';
-import { getMyInterventions } from '../services/interventionService'; // Usa Intervention Service per recuperare i task
+import { getAssignments, updateAssignmentStatus } from '../services/interventionService'; 
 import { COLORS } from '../styles/global';
 
 export default function OperatorTicketsScreen({ navigation }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('todo'); // 'todo' (Da fare), 'working' (In corso), 'done' (Completati)
+  const [filter, setFilter] = useState('todo'); // 'todo', 'working', 'done'
 
   const loadTasks = async () => {
     setLoading(true);
     try {
-      // Recupera le assegnazioni dall'Intervention Service (rispetta architettura)
-      const data = await getMyInterventions();
-      
-      // Mappiamo i dati se necessario. Assumiamo che l'API ritorni un array di oggetti 
-      // che contengono sia i dati dell'assegnazione che i dettagli del ticket (o l'oggetto ticket annidato)
-      // Se l'API intervention ritorna solo ID, bisognerebbe fare fetch dei dettagli. 
-      // Assumiamo qui che ritorni oggetti "arricchiti" o compatibili.
+      const data = await getAssignments();
       setTasks(data);
     } catch (e) {
       console.error("Errore caricamento task operatore:", e);
@@ -39,7 +33,11 @@ export default function OperatorTicketsScreen({ navigation }) {
   );
 
   // Gestione "Prendi in Carico"
-  const handleTakeCharge = async (ticket) => {
+  const handleTakeCharge = async (item) => {
+    // item rappresenta l'oggetto assegnazione che contiene il ticket
+    const ticketId = item.ticketId || item.ticket?.id || item.id; 
+    const assignmentId = item.id; // L'ID dell'assegnazione è fondamentale per l'Intervention Service
+
     Alert.alert(
       "Presa in carico",
       "Vuoi confermare l'inizio dei lavori per questo ticket?",
@@ -48,13 +46,29 @@ export default function OperatorTicketsScreen({ navigation }) {
         { 
           text: "Conferma", 
           onPress: async () => {
-            // Aggiorna stato su Ticket Service
-            const success = await updateTicketStatus(ticket.id, 'In Corso', 2); // 2 = ID ipotetico stato "In Corso"
-            if (success) {
-              loadTasks();
-              Alert.alert("Successo", "Ticket preso in carico.");
-            } else {
-              Alert.alert("Errore", "Impossibile aggiornare lo stato.");
+            setLoading(true);
+            try {
+                // 1. Aggiorna lo stato del TICKET (Ticket Service)
+                const ticketSuccess = await updateTicketStatus(ticketId, 'In Corso', 2);
+                
+                // 2. Aggiorna lo stato dell'ASSEGNAZIONE (Intervention Service)
+                let assignmentSuccess = true;
+                if (assignmentId) {
+                    assignmentSuccess = await updateAssignmentStatus(assignmentId, 'In Corso');
+                }
+
+                if (ticketSuccess && assignmentSuccess) {
+                    Alert.alert("Successo", "Ticket preso in carico correttamente.");
+                    loadTasks(); 
+                } else {
+                    Alert.alert("Attenzione", "Stato aggiornato parzialmente. Verifica la connessione.");
+                    loadTasks();
+                }
+            } catch (error) {
+                console.error(error);
+                Alert.alert("Errore", "Si è verificato un problema durante l'operazione.");
+            } finally {
+                setLoading(false);
             }
           }
         }
@@ -63,69 +77,73 @@ export default function OperatorTicketsScreen({ navigation }) {
   };
 
   // Gestione "Risolvi"
-  const handleResolve = (ticket) => {
-    // Naviga al dettaglio per compilare report o caricare foto prima di chiudere
-    // Oppure gestione diretta qui se semplice
-    navigation.navigate('TicketDetail', { ticket: ticket, mode: 'operator_resolve' });
+  const handleResolve = (ticketData) => {
+    // Passiamo i dati del ticket alla schermata di dettaglio per la chiusura
+    navigation.navigate('TicketDetail', { ticket: ticketData });
   };
 
   // Filtro logico frontend
   const getFilteredTasks = () => {
-    return tasks.filter(t => {
-      // Normalizzazione stato
-      const status = (t.status || t.ticket?.status || '').toLowerCase();
+    return tasks.filter(item => {
+      // Normalizzazione: supporta sia struttura piatta che annidata
+      const ticketStatus = (item.ticket?.status || item.status || '').toLowerCase();
       
       if (filter === 'todo') {
-        // Assegnato, Ricevuto, o Open (ma assegnato a me)
-        return status === 'assegnato' || status === 'ricevuto' || status === 'open';
+        // Ticket assegnati ma non ancora in lavorazione
+        return ticketStatus === 'assegnato' || ticketStatus === 'ricevuto' || ticketStatus === 'open' || ticketStatus === 'aperto';
       }
       if (filter === 'working') {
-        return status === 'in corso' || status === 'working' || status === 'in_progress';
+        return ticketStatus === 'in corso' || ticketStatus === 'working' || ticketStatus === 'in_progress';
       }
       if (filter === 'done') {
-        return status === 'risolto' || status === 'chiuso' || status === 'closed';
+        return ticketStatus === 'risolto' || ticketStatus === 'chiuso' || ticketStatus === 'closed';
       }
       return true;
     });
   };
 
   const renderItem = ({ item }) => {
-    // Supporto struttura piatta o annidata (dipende dal backend intervention)
-    const ticketData = item.ticket || item; 
+    // Estrazione dati ticket dall'oggetto assegnazione
+    const ticketData = item.ticket ? item.ticket : item; 
+    
+    if (!ticketData) return null;
+
     const status = (ticketData.status || '').toLowerCase();
     
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-            <Text style={styles.categoryBadge}>{ticketData.category || 'Manutenzione'}</Text>
-            <Text style={styles.date}>{new Date(ticketData.creation_date || Date.now()).toLocaleDateString()}</Text>
+            <Text style={styles.categoryBadge}>{ticketData.categoria || ticketData.category || 'Manutenzione'}</Text>
+            <Text style={styles.date}>{ticketData.creation_date ? new Date(ticketData.creation_date).toLocaleDateString() : 'Data N/D'}</Text>
         </View>
         
-        <Text style={styles.title}>{ticketData.title || ticketData.titolo}</Text>
-        <Text style={styles.address} numberOfLines={1}>{ticketData.address || ticketData.indirizzo || 'Vedi mappa'}</Text>
+        <Text style={styles.title}>{ticketData.titolo || ticketData.title || 'Senza Titolo'}</Text>
+        <Text style={styles.address} numberOfLines={1}>
+            <Ionicons name="location-outline" size={14} /> {ticketData.indirizzo || ticketData.address || 'Posizione non disponibile'}
+        </Text>
 
         <View style={styles.actionRow}>
             <TouchableOpacity 
                 style={styles.detailBtn} 
-                onPress={() => navigation.navigate('TicketDetail', { id: ticketData.id })}
+                onPress={() => navigation.navigate('TicketDetail', { id: ticketData.id, ticket: ticketData })}
             >
                 <Text style={styles.detailText}>Dettagli</Text>
             </TouchableOpacity>
 
             {/* Logica Bottoni Azione */}
-            {(status === 'assegnato' || status === 'ricevuto' || status === 'open') && (
-                <TouchableOpacity style={styles.primaryBtn} onPress={() => handleTakeCharge(ticketData)}>
+            {filter === 'todo' && (
+                <TouchableOpacity style={styles.primaryBtn} onPress={() => handleTakeCharge(item)}>
                     <Text style={styles.btnText}>Prendi in Carico</Text>
                 </TouchableOpacity>
             )}
 
-            {(status === 'in corso' || status === 'working') && (
+            {filter === 'working' && (
                 <TouchableOpacity style={styles.successBtn} onPress={() => handleResolve(ticketData)}>
                     <Text style={styles.btnText}>Risolvi</Text>
                 </TouchableOpacity>
             )}
             
-            {(status === 'risolto' || status === 'chiuso') && (
+            {filter === 'done' && (
                 <View style={styles.completedLabel}>
                     <Ionicons name="checkmark-circle" size={20} color="green" />
                     <Text style={{color:'green', marginLeft:5, fontWeight:'bold'}}>Completato</Text>
@@ -161,9 +179,9 @@ export default function OperatorTicketsScreen({ navigation }) {
       ) : (
         <FlatList 
             data={getFilteredTasks()} 
-            keyExtractor={i => String(i.id || Math.random())} 
+            keyExtractor={(item, index) => String(item.id || index)} 
             renderItem={renderItem}
-            contentContainerStyle={{padding: 16}}
+            contentContainerStyle={{padding: 16, paddingBottom: 100}}
             refreshControl={<RefreshControl refreshing={loading} onRefresh={loadTasks}/>}
             ListEmptyComponent={
                 <View style={{alignItems:'center', marginTop: 50}}>
@@ -190,7 +208,7 @@ const styles = StyleSheet.create({
 
   card: { backgroundColor: 'white', borderRadius: 10, padding: 15, marginBottom: 15, elevation: 2 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  categoryBadge: { fontSize: 10, backgroundColor: '#E0F2F1', color: '#00695C', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, fontWeight:'bold', textTransform:'uppercase' },
+  categoryBadge: { fontSize: 10, backgroundColor: '#E0F2F1', color: '#00695C', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, fontWeight:'bold', textTransform:'uppercase', overflow: 'hidden' },
   date: { fontSize: 12, color: '#999' },
   title: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 },
   address: { fontSize: 13, color: '#666', marginBottom: 15 },
