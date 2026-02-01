@@ -15,7 +15,7 @@ export default function ResponsibleTicketsScreen({ navigation }) {
   // Filtri
   const [filterStatus, setFilterStatus] = useState('Tutti'); 
   const [filterCategory, setFilterCategory] = useState('Tutte');
-  const [filterTime, setFilterTime] = useState('Tutto'); // FIX: Nuovo filtro temporale (IF-3.1)
+  const [filterTime, setFilterTime] = useState('Tutto'); // IF-3.1
   
   // Dati di supporto
   const [operators, setOperators] = useState([]);
@@ -23,7 +23,12 @@ export default function ResponsibleTicketsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   
   // Statistiche (IF-3.7)
-  const [stats, setStats] = useState({ total: 0, open: 0, closed: 0 });
+  const [stats, setStats] = useState({ 
+      total: 0, 
+      open: 0, 
+      closed: 0, 
+      avgResolutionDays: 0 // Aggiunto per IF-3.7
+  });
 
   // Stati Modale Assegnazione
   const [modalVisible, setModalVisible] = useState(false);
@@ -35,7 +40,7 @@ export default function ResponsibleTicketsScreen({ navigation }) {
       // 1. Carica Ticket
       let t = await getAllTickets();
       setAllTickets(t);
-      calculateStats(t); // Calcolo Stats iniziali
+      calculateStats(t); // Calcolo Stats complete
       
       // 2. Carica Operatori
       if (!OFFLINE_MODE) {
@@ -59,12 +64,35 @@ export default function ResponsibleTicketsScreen({ navigation }) {
     loadData();
   }, []);
 
-  // FIX: Dashboard Statistiche (IF-3.7)
+  // FIX: Dashboard Statistiche (IF-3.7) - Calcolo Tempo Medio
   const calculateStats = (tickets) => {
       const total = tickets.length;
       const open = tickets.filter(t => ['OPEN', 'APERTO', 'RICEVUTO'].includes((t.status||'').toUpperCase())).length;
-      const closed = tickets.filter(t => ['CLOSED', 'RISOLTO', 'CHIUSO'].includes((t.status||'').toUpperCase())).length;
-      setStats({ total, open, closed });
+      
+      const closedTickets = tickets.filter(t => ['CLOSED', 'RISOLTO', 'CHIUSO'].includes((t.status||'').toUpperCase()));
+      const closed = closedTickets.length;
+
+      // Calcolo Tempo Medio Risoluzione (Giorni)
+      let totalResolutionTime = 0;
+      let countWithDates = 0;
+
+      closedTickets.forEach(t => {
+          // Nota: Si assume che il backend aggiorni 'updated_at' o fornisca 'closed_at' alla chiusura.
+          // In mancanza, usiamo l'ultima data disponibile o ignoriamo se mancano dati.
+          const start = new Date(t.creation_date || t.timestamp);
+          const end = t.closed_at ? new Date(t.closed_at) : (t.updated_at ? new Date(t.updated_at) : new Date());
+          
+          if (!isNaN(start) && !isNaN(end) && end > start) {
+              const diffTime = Math.abs(end - start);
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+              totalResolutionTime += diffDays;
+              countWithDates++;
+          }
+      });
+
+      const avgResolutionDays = countWithDates > 0 ? (totalResolutionTime / countWithDates).toFixed(1) : 0;
+
+      setStats({ total, open, closed, avgResolutionDays });
   };
 
   // Logica di Filtro Combinata (Stato AND Categoria AND Tempo)
@@ -93,7 +121,7 @@ export default function ResponsibleTicketsScreen({ navigation }) {
       });
     }
 
-    // 3. FIX: Filtro per Periodo Temporale (IF-3.1)
+    // 3. Filtro per Periodo Temporale (IF-3.1)
     if (filterTime !== 'Tutto') {
         const now = new Date();
         result = result.filter(t => {
@@ -118,7 +146,7 @@ export default function ResponsibleTicketsScreen({ navigation }) {
 
   const handleAssign = async (operatorId) => {
       if (!selectedTicket) return;
-      // [FIX] Nome funzione aggiornato (createAssignment)
+      // Assegnazione tramite Intervention Service (coerente con Architettura)
       const success = await createAssignment(selectedTicket.id, operatorId);
       if (success) {
           Alert.alert("Successo", "Intervento assegnato!");
@@ -159,19 +187,24 @@ export default function ResponsibleTicketsScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* FIX: Mini Dashboard Statistiche (IF-3.7) */}
+      {/* DASHBOARD STATISTICHE (IF-3.7 & Project Assignment p.6) */}
       <View style={styles.statsContainer}>
           <View style={styles.statBox}>
               <Text style={styles.statNumber}>{stats.total}</Text>
               <Text style={styles.statLabel}>Totali</Text>
           </View>
-          <View style={[styles.statBox, {borderLeftWidth:1, borderRightWidth:1, borderColor:'#eee'}]}>
+          <View style={[styles.statBox, styles.statBorder]}>
               <Text style={[styles.statNumber, {color: COLORS.primary}]}>{stats.open}</Text>
               <Text style={styles.statLabel}>Aperti</Text>
           </View>
-          <View style={styles.statBox}>
+          <View style={[styles.statBox, styles.statBorder]}>
               <Text style={[styles.statNumber, {color: 'green'}]}>{stats.closed}</Text>
               <Text style={styles.statLabel}>Risolti</Text>
+          </View>
+          {/* Nuovo Box Tempo Medio */}
+          <View style={styles.statBox}>
+              <Text style={[styles.statNumber, {color: '#F59E0B'}]}>{stats.avgResolutionDays}g</Text>
+              <Text style={styles.statLabel}>T. Medio</Text>
           </View>
       </View>
       
@@ -190,7 +223,6 @@ export default function ResponsibleTicketsScreen({ navigation }) {
           ))}
         </ScrollView>
 
-        {/* FIX: Filtro Temporale (IF-3.1) */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.scrollFilters, {marginTop: 8}]}>
           {['Tutto', 'Oggi', 'Settimana', 'Mese'].map((t, index) => (
              <FilterTab key={index} label={t} selected={filterTime} onSelect={setFilterTime} />
@@ -261,6 +293,8 @@ export default function ResponsibleTicketsScreen({ navigation }) {
                             <View style={{marginLeft: 12}}>
                                 <Text style={styles.operatorName}>{item.name} {item.surname}</Text>
                                 <Text style={styles.operatorRole}>{item.role || 'Operatore'}</Text>
+                                {/* IF-3.5: Visualizziamo la categoria dell'operatore per aiutare l'assegnazione */}
+                                <Text style={styles.operatorCat}>{item.category || 'Generico'}</Text>
                             </View>
                             <Ionicons name="chevron-forward" size={20} color="#ccc" style={{marginLeft:'auto'}} />
                         </TouchableOpacity>
@@ -291,10 +325,11 @@ const styles = StyleSheet.create({
   title:{fontSize:20,fontWeight:'800',color:COLORS.primary || '#D32F2F'},
   
   // Stili Dashboard Statistiche
-  statsContainer: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 15, elevation: 2 },
-  statBox: { flex: 1, alignItems: 'center' },
-  statNumber: { fontSize: 22, fontWeight: 'bold', color: '#333' },
-  statLabel: { fontSize: 12, color: '#666', textTransform: 'uppercase' },
+  statsContainer: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 12, padding: 10, marginBottom: 15, elevation: 2 },
+  statBox: { flex: 1, alignItems: 'center', justifyContent:'center' },
+  statBorder: { borderRightWidth:1, borderColor:'#eee' },
+  statNumber: { fontSize: 18, fontWeight: 'bold', color: '#333' },
+  statLabel: { fontSize: 10, color: '#666', textTransform: 'uppercase', textAlign:'center', marginTop:2 },
 
   filtersWrapper: { marginBottom: 15 },
   scrollFilters: { height: 40 },
@@ -321,5 +356,6 @@ const styles = StyleSheet.create({
   operatorItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   operatorName: { fontSize: 16, color: '#333', fontWeight:'600' },
   operatorRole: { fontSize: 12, color: '#888' },
+  operatorCat: { fontSize: 11, color: '#007BFF', fontStyle:'italic' },
   closeModalBtn: { marginTop: 20, alignSelf: 'center', padding: 10 }
 });
