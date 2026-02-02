@@ -8,7 +8,6 @@ import { COLORS } from '../styles/global';
 import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus, deleteTicket, assignTicket, updateTicketDetails } from '../services/ticketService';
 import { sendFeedback } from '../services/interventionService';
 import { getOperatorsByTenant } from '../services/userService'; 
-// Importiamo il servizio per risolvere l'indirizzo
 import { getAddressFromCoordinates } from '../services/nominatim';
 
 export default function TicketDetailScreen({ route, navigation }) {
@@ -66,7 +65,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       try {
         const freshTicket = await getTicket(ticketId);
         if (freshTicket) {
-           // Se abbiamo lat/lon ma non l'indirizzo, lo recuperiamo al volo
            if ((!freshTicket.indirizzo && !freshTicket.address) && freshTicket.lat && freshTicket.lon) {
                try {
                    const resolvedAddress = await getAddressFromCoordinates(freshTicket.lat, freshTicket.lon);
@@ -162,10 +160,10 @@ export default function TicketDetailScreen({ route, navigation }) {
       setActionLoading(true);
 
       try {
-          // Invio Rapporto come Reply speciale (uso campo 'body')
+          // *** CORREZIONE: Specifichiamo type: 'REPORT' ***
           const replyData = {
               body: `[RAPPORTO INTERVENTO]: ${interventionReport}`,
-              author: user?.name || 'Operatore',
+              type: 'REPORT'
           };
 
           await postReply(ticket.id, replyData, reportImage ? [reportImage] : []);
@@ -277,7 +275,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       ]);
   };
 
-  // Funzione per aprire la mappa esterna
   const openMap = () => {
       if(ticket.lat && ticket.lon) {
           const url = Platform.select({
@@ -295,10 +292,11 @@ export default function TicketDetailScreen({ route, navigation }) {
     if(!newComment.trim()) return;
     
     setActionLoading(true);
-    // Usa 'body' come richiesto dall'API TXT
+    
+    // *** CORREZIONE: Specifichiamo type: 'USER' ***
     const replyData = {
         body: newComment, 
-        author: user?.name || 'Utente'
+        type: 'USER'
     };
 
     const success = await postReply(ticket.id, replyData);

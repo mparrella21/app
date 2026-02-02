@@ -2,12 +2,12 @@ import { API_BASE } from './config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authenticatedFetch } from './authService';
 
+
 export const getAllTickets = async () => {
   try {
     const response = await authenticatedFetch(`${API_BASE}/ticket`, { method: 'GET' });
     if (!response.ok) throw new Error(`Status: ${response.status}`);
     const data = await response.json();
-    // Gestione della risposta che potrebbe essere un array diretto o un oggetto { tickets: [...] }
     if (data.success && Array.isArray(data.tickets)) return data.tickets;
     if (Array.isArray(data)) return data; 
     return [];
@@ -20,7 +20,6 @@ export const getAllTickets = async () => {
 export const getUserTickets = async (userId) => {
   try {
     const allTickets = await getAllTickets();
-    // Filtro lato client basato sull'ID utente
     const myTickets = allTickets.filter(t => 
         t.user === userId || 
         t.id_creator_user === userId || 
@@ -37,32 +36,22 @@ export const getOperatorTickets = async (operatorId) => {
   try {
     if (!operatorId) return [];
     let assignedTicketIds = [];
-    
     try {
-        // Recupera le assegnazioni da /api/intervention/assignment
         const assignResponse = await authenticatedFetch(`${API_BASE}/intervention/assignment`, { method: 'GET' });
         if (assignResponse.ok) {
             const assignData = await assignResponse.json();
             const assignments = assignData.assignments || assignData || [];
-            
-            // Filtra le assegnazioni per l'operatore corrente
-            assignedTicketIds = assignments
-                .filter(a => a.id_user === operatorId)
-                .map(a => a.id_ticket);
+            assignedTicketIds = assignments.filter(a => a.id_user === operatorId).map(a => a.id_ticket);
         }
     } catch (assignError) {
         console.warn("Impossibile recuperare assegnazioni", assignError);
     }
-
     const allTickets = await getAllTickets();
-    
-    // Filtra i ticket: devono essere assegnati e NON chiusi (id_status != 3)
     const myTasks = allTickets.filter(t => {
         const isInAssignments = assignedTicketIds.includes(t.id);
-        const isActive = (t.id_status !== 3); // 3 = Risolto/Chiuso
+        const isActive = (t.id_status !== 3); 
         return isInAssignments && isActive;
     });
-
     return myTasks; 
   } catch (e) {
     console.error('ticketService.getOperatorTickets', e);
@@ -96,17 +85,15 @@ export const getCategories = async () => {
 
 export const postTicket = async (ticketData, photos = []) => {
   try {
-    // Recupera utente corrente
     const userStr = await AsyncStorage.getItem('app_user');
     const userObj = userStr ? JSON.parse(userStr) : {};
     
-    // Costruzione payload secondo specifiche api.txt
     const finalPayload = {
         title: ticketData.title || ticketData.descrizione,
-        id_status: 1, // 1 = Ricevuto/Nuovo
+        id_status: 1, 
         lat: parseFloat(ticketData.lat),
         lon: parseFloat(ticketData.lon),
-        categories: ticketData.categories || [], // Array di interi (es: [1, 3])
+        categories: ticketData.categories || [], 
         user: userObj.id 
     };
 
@@ -114,7 +101,6 @@ export const postTicket = async (ticketData, photos = []) => {
       method: 'POST',
       body: JSON.stringify(finalPayload)
     });
-
     return response.ok;
   } catch (e) {
     console.error('ticketService.postTicket', e);
@@ -136,22 +122,35 @@ export const getAllReplies = async (idTicket) => {
   }
 };
 
+// *** MODIFICATO QUI ***
 export const postReply = async (idTicket, replyData, files = []) => {
   try {
-    // API TXT: La reply si aspetta un corpo ("body").
-    // replyData arriva dalla UI come { text: "...", author: "..." } o simile.
-    
+    // 1. Recuperiamo l'utente corrente per avere l'ID
+    const userStr = await AsyncStorage.getItem('app_user');
+    const userObj = userStr ? JSON.parse(userStr) : {};
+
+    if (!userObj.id) {
+        console.error("Errore postReply: User ID non trovato in storage");
+        return false;
+    }
+
+    // 2. Costruiamo il payload come richiesto: body, type, user
     const payload = {
-        body: replyData.text || replyData.body, // Mappa text in body
-        date: new Date().toISOString(),
-        // Alcuni backend potrebbero volere l'id_creator_user o l'id_ticket nel body,
-        // ma solitamente l'id_ticket è nell'URL.
+        body: replyData.body || replyData.text, // testo del messaggio
+        type: replyData.type || 'USER',         // 'USER' (default) o 'REPORT'
+        user: userObj.id                        // UUID dell'utente
     };
+
+    console.log("Invio Reply Payload:", payload); // Debug
 
     const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply`, {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+
+    if (!response.ok) {
+        console.error("Errore risposta API Reply:", response.status);
+    }
 
     return response.ok;
   } catch (e) {
@@ -164,26 +163,18 @@ export const postReply = async (idTicket, replyData, files = []) => {
 
 export const updateTicketDetails = async (idTicket, details) => {
     try {
-        // Recupera prima il ticket attuale per non sovrascrivere altri campi
         const currentTicket = await getTicket(idTicket);
         if (!currentTicket) return false;
 
         const updatedBody = {
-            ...currentTicket, // Mantiene lat, lon, status, user
+            ...currentTicket, 
             title: details.title || currentTicket.title,
-            // Il campo descrizione nel backend potrebbe non esistere separatamente o essere parte del titolo/body
-            // Se esiste un campo 'description' lo aggiorniamo, altrimenti usiamo titolo.
-            // In base al TXT il POST usa 'title', quindi lavoriamo su quello.
         };
-
-        // Se l'API supporta description separata, aggiungila qui.
-        // Esempio: updatedBody.description = details.description;
 
         const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}`, {
             method: 'PUT',
             body: JSON.stringify(updatedBody)
         });
-
         return response.ok;
     } catch (e) {
         console.error('ticketService.updateTicketDetails', e);
@@ -193,7 +184,6 @@ export const updateTicketDetails = async (idTicket, details) => {
 
 export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
   try {
-    // PUT EDIT TICKET richiede tutto l'oggetto
     const currentTicket = await getTicket(idTicket);
     if (!currentTicket) return false;
 
@@ -202,14 +192,13 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
         categories: currentTicket.categories ? currentTicket.categories.map(c => c.id) : [],
         lat: currentTicket.lat,
         lon: currentTicket.lon,
-        id_status: statusId // Aggiorniamo ID status (es. 2 = In lavorazione, 3 = Risolto)
+        id_status: statusId 
     };
 
     const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}`, {
       method: 'PUT',
       body: JSON.stringify(updatedBody)
     });
-
     return response.ok;
   } catch (e) {
     console.error('ticketService.updateTicketStatus', e);
@@ -219,7 +208,6 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
 
 export const assignTicket = async (ticketId, operatorId) => {
     try {
-      // POST NEW ASSIGNMENT
       const response = await authenticatedFetch(`${API_BASE}/intervention/assignment`, {
         method: 'POST',
         body: JSON.stringify({
@@ -247,5 +235,5 @@ export const deleteTicket = async (ticketId) => {
 };
 
 export const closeTicket = async (idTicket) => {
-  return await updateTicketStatus(idTicket, 'CLOSED', 3); // 3 = Risolto
+  return await updateTicketStatus(idTicket, 'CLOSED', 3); 
 };
