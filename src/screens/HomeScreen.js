@@ -24,6 +24,23 @@ export default function HomeScreen({ navigation }) {
       latitudeDelta: 6, longitudeDelta: 6,
   });
 
+  // --- HELPER PER I RUOLI (FIX SICUREZZA E NUMERI) ---
+  // Gestisce sia stringhe ("cittadino") che numeri (1, 2, 3)
+  const getNormalizedRole = () => {
+      if (!user || !user.role) return '';
+      const r = String(user.role).toLowerCase();
+      
+      // MAPPATURA NUMERI -> RUOLI (Se il tuo DB usa ID)
+      if (r === '1') return 'cittadino';
+      if (r === '2') return 'operatore';
+      if (r === '3') return 'responsabile'; // o admin
+      if (r === '4') return 'admin';
+      
+      return r; // Ritorna la stringa originale se non è un numero mappato
+  };
+
+  const currentRole = getNormalizedRole();
+
   // Carica i ticket pubblici per la mappa
   useFocusEffect(
     useCallback(() => {
@@ -135,18 +152,19 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.dropdownMenu}>
                 <View style={styles.dropdownHeader}>
                     <Text style={styles.userName}>{user.name}</Text>
-                    <Text style={styles.userRole}>{user.role.toUpperCase()}</Text>
+                    {/* FIX: Usiamo String() per evitare crash su numeri e mostriamo il ruolo normalizzato */}
+                    <Text style={styles.userRole}>{currentRole.toUpperCase()}</Text>
                 </View>
                 <View style={styles.divider}/>
                 
-                {/* Link dinamici in base al ruolo per tornare alla dashboard principale */}
-                {user.role === 'cittadino' && (
+                {/* Link dinamici in base al ruolo (User ID 1 = Cittadino, ecc.) */}
+                {currentRole === 'cittadino' && (
                   <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('CitizenHome'); }}> 
                       <Ionicons name="home" size={20} color="#333" />
                       <Text style={styles.menuText}>Home Cittadino</Text>
                   </TouchableOpacity>
                 )}
-                {user.role === 'operatore' && (
+                {currentRole === 'operatore' && (
                   <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('OperatorHome'); }}> 
                       <Ionicons name="construct" size={20} color="#333" />
                       <Text style={styles.menuText}>Dashboard Operatore</Text>
@@ -203,7 +221,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           
           {/* Per utenti non loggati o cittadini, mostriamo il FAB per segnalare rapidamente */}
-          {(!user || user.role === 'cittadino') && (
+          {(!user || currentRole === 'cittadino') && (
             <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate(user ? 'CreateTicket' : 'AuthModal')}>
                 <Ionicons name="add" size={32} color="white" />
             </TouchableOpacity>

@@ -71,17 +71,25 @@ const CitizenHomeScreen = ({ navigation }) => {
     </TouchableOpacity>
   );
 
-  return (
+return (
     <View style={styles.container}>
-      {/* Header Custom Integrato */}
+      {/* Header Modificato */}
       <View style={styles.header}>
-        <View>
+        
+        {/* 1. Tasto Indietro Aggiunto */}
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
+            <Ionicons name="arrow-back" size={24} color="white" />
+        </TouchableOpacity>
+
+        {/* 2. Testo di Benvenuto (ora dentro un container flex per allinearsi alla freccia) */}
+        <View style={{ flex: 1 }}>
           <Text style={styles.welcomeText}>Ciao, {user?.name?.split(' ')[0] || 'Cittadino'}! 👋</Text>
           <Text style={styles.subText}>Ecco la situazione nel tuo comune.</Text>
         </View>
+
+        {/* 3. Tasto Notifiche (resta uguale) */}
         <TouchableOpacity style={styles.notifBtn} onPress={() => navigation.navigate('Notifications')}>
            <Ionicons name="notifications-outline" size={24} color="white" />
-           {/* Il pallino rosso potresti volerlo condizionale in base a vere notifiche */}
            <View style={styles.redDot} />
         </TouchableOpacity>
       </View>

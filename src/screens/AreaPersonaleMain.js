@@ -3,7 +3,7 @@ import { useWindowDimensions } from 'react-native';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { COLORS } from '../styles/global';
 import ProfileScreen from './ProfileScreen';
-import UserTicketsScreen from './UserTicketsScreen'; // CORRETTO: Era CitizenTicketsScreen
+import UserTicketsScreen from './UserTicketsScreen'; 
 import OperatorTicketsScreen from './OperatorTicketsScreen';
 import ResponsibleTicketsScreen from './ResponsibleTicketsScreen';
 import { useAuth } from '../context/AuthContext';
@@ -15,10 +15,22 @@ export default function AreaPersonaleMain({ navigation }) {
   const { width } = useWindowDimensions();
   const isMobile = width < 700;
 
+  // --- FIX RUOLI: Normalizza il ruolo ---
+  const getNormalizedRole = () => {
+    if (!user || !user.role) return '';
+    const r = String(user.role).toLowerCase();
+    if (r === '1') return 'cittadino';
+    if (r === '2') return 'operatore';
+    if (r === '3' || r === '4') return 'responsabile'; 
+    return r;
+  };
+  const currentRole = getNormalizedRole();
+  // -------------------------------------
+
   const renderContent = () => {
     switch(active) {
       case 'profile': return <ProfileScreen />;
-      case 'mytickets': return <UserTicketsScreen navigation={navigation} />; // CORRETTO
+      case 'mytickets': return <UserTicketsScreen navigation={navigation} />;
       case 'operator': return <OperatorTicketsScreen navigation={navigation} />;
       case 'responsible': return <ResponsibleTicketsScreen navigation={navigation} />;
       default: return <ProfileScreen />;
@@ -41,14 +53,14 @@ export default function AreaPersonaleMain({ navigation }) {
               <Text style={[styles.tabText, active==='mytickets' && styles.tabTextActive]}>Le mie segnalazioni</Text>
             </TouchableOpacity>
 
-            { (user?.role || '').toLowerCase() === 'operatore' && (
+            { currentRole === 'operatore' && (
               <TouchableOpacity style={[styles.tabPill, active==='operator' && styles.tabActive]} onPress={() => setActive('operator')}>
                 <Ionicons name="hammer" size={16} color={active==='operator'? '#fff' : '#234'} />
                 <Text style={[styles.tabText, active==='operator' && styles.tabTextActive]}>Operatori</Text>
               </TouchableOpacity>
             )}
 
-            { (user?.role || '').toLowerCase() === 'responsabile' && (
+            { currentRole === 'responsabile' && (
               <TouchableOpacity style={[styles.tabPill, active==='responsible' && styles.tabActive]} onPress={() => setActive('responsible')}>
                 <Ionicons name="people" size={16} color={active==='responsible'? '#fff' : '#234'} />
                 <Text style={[styles.tabText, active==='responsible' && styles.tabTextActive]}>Responsabili</Text>
@@ -78,21 +90,21 @@ export default function AreaPersonaleMain({ navigation }) {
             <Text style={[styles.navText, active === 'profile' && styles.activeText]}>Profilo</Text>
           </TouchableOpacity>
 
-          { (user?.role || '').toLowerCase() === 'cittadino' && (
+          { currentRole === 'cittadino' && (
             <TouchableOpacity style={[styles.navLink, active === 'mytickets' && styles.active]} onPress={() => setActive('mytickets')}>
               <Ionicons name="list" size={18} color={active === 'mytickets' ? '#fff' : '#ccc'} />
               <Text style={[styles.navText, active === 'mytickets' && styles.activeText]}>Le mie segnalazioni</Text>
             </TouchableOpacity>
           )}
 
-          { (user?.role || '').toLowerCase() === 'operatore' && (
+          { currentRole === 'operatore' && (
             <TouchableOpacity style={[styles.navLink, active === 'operator' && styles.active]} onPress={() => setActive('operator')}>
               <Ionicons name="hammer" size={18} color={active === 'operator' ? '#fff' : '#ccc'} />
               <Text style={[styles.navText, active === 'operator' && styles.activeText]}>Gestione Ticket (Operatori)</Text>
             </TouchableOpacity>
           )}
 
-          { (user?.role || '').toLowerCase() === 'responsabile' && (
+          { currentRole === 'responsabile' && (
             <TouchableOpacity style={[styles.navLink, active === 'responsible' && styles.active]} onPress={() => setActive('responsible')}>
               <Ionicons name="people" size={18} color={active === 'responsible' ? '#fff' : '#ccc'} />
               <Text style={[styles.navText, active === 'responsible' && styles.activeText]}>Gestione operatori / ticket (Responsabili)</Text>
@@ -112,7 +124,7 @@ export default function AreaPersonaleMain({ navigation }) {
         <View style={styles.topbar}>
           <Text style={styles.topTitle}>Area Personale</Text>
           <View style={styles.roleWrap}>
-            <Text style={styles.roleBadge}>{user?.role || 'Cittadino'}</Text>
+            <Text style={styles.roleBadge}>{currentRole ? currentRole.toUpperCase() : 'OSPITE'}</Text>
           </View>
         </View>
 

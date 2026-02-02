@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { updateUserProfile } from '../services/userService';
 
 export default function ProfileScreen({ navigation }) {
-  const { user, logout, setUser } = useAuth(); // setUser serve per aggiornare lo stato locale dopo la modifica
+  const { user, logout, setUser } = useAuth(); 
   
   // Stati per la modalità modifica
   const [isEditing, setIsEditing] = useState(false);
@@ -16,6 +16,18 @@ export default function ProfileScreen({ navigation }) {
   const [editName, setEditName] = useState(user ? user.name : '');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
+  // --- FIX RUOLI: Normalizza il ruolo (gestisce numeri e stringhe) ---
+  const getNormalizedRole = () => {
+    if (!user || !user.role) return '';
+    const r = String(user.role).toLowerCase();
+    if (r === '1') return 'cittadino';
+    if (r === '2') return 'operatore';
+    if (r === '3' || r === '4') return 'responsabile'; // 3=Resp, 4=Admin
+    return r;
+  };
+  const currentRole = getNormalizedRole();
+  // -----------------------------------------------------------------
 
   const handleLogout = () => {
     Alert.alert(
@@ -42,7 +54,6 @@ export default function ProfileScreen({ navigation }) {
 
   const toggleEdit = () => {
     if (!isEditing) {
-        // Entra in modalità modifica: resetta i campi ai valori attuali
         setEditName(user.name);
         setNewPassword('');
         setConfirmPassword('');
@@ -66,25 +77,18 @@ export default function ProfileScreen({ navigation }) {
 
     setIsLoading(true);
 
-    // Prepariamo i dati da inviare
     const payload = {
         name: editName,
-        // Invia la password solo se l'utente ha scritto qualcosa, altrimenti undefined/null
         password: newPassword ? newPassword : undefined 
     };
 
-    // Assumiamo che user.id sia disponibile nell'oggetto user del contesto
     const result = await updateUserProfile(user.id, payload);
 
     setIsLoading(false);
 
     if (result.success) {
         Alert.alert("Successo", "Profilo aggiornato correttamente.");
-        
-        // Aggiorna il contesto locale (senza dover rifare il login)
-        // Manteniamo i dati vecchi e sovrascriviamo solo il nome aggiornato
         setUser({ ...user, name: editName });
-        
         setIsEditing(false);
     } else {
         Alert.alert("Errore", result.message || "Impossibile aggiornare il profilo.");
@@ -102,7 +106,6 @@ export default function ProfileScreen({ navigation }) {
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Area Personale</Text>
             
-            {/* Tasto Modifica / Annulla */}
             <TouchableOpacity onPress={toggleEdit}>
                 <Text style={{color: 'white', fontWeight: 'bold'}}>
                     {isEditing ? 'ANNULLA' : 'MODIFICA'}
@@ -121,7 +124,6 @@ export default function ProfileScreen({ navigation }) {
                 </Text>
             </View>
 
-            {/* Visualizzazione vs Modifica Nome */}
             {isEditing ? (
                 <View style={styles.editContainer}>
                     <Text style={styles.labelInput}>Nome e Cognome</Text>
@@ -136,15 +138,14 @@ export default function ProfileScreen({ navigation }) {
                 <Text style={styles.userName}>{user.name}</Text>
             )}
 
+            {/* FIX: Mostriamo il ruolo normalizzato in maiuscolo */}
             <Text style={styles.userRole}>
-                {user.role ? user.role.toUpperCase() : 'OSPITE'}
+                {currentRole ? currentRole.toUpperCase() : 'OSPITE'}
             </Text>
 
-            {/* Sezione Cambio Password (solo in modifica) */}
             {isEditing && (
                 <View style={[styles.editContainer, {marginTop: 15, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 15}]}>
                     <Text style={[styles.labelInput, {marginBottom: 10, color: '#F59E0B'}]}>Cambio Password (Opzionale)</Text>
-                    
                     <TextInput 
                         style={styles.input}
                         value={newPassword}
@@ -162,7 +163,6 @@ export default function ProfileScreen({ navigation }) {
                 </View>
             )}
 
-            {/* Tasto Salva */}
             {isEditing && (
                 <TouchableOpacity 
                     style={styles.saveBtn} 
@@ -178,11 +178,11 @@ export default function ProfileScreen({ navigation }) {
             )}
         </View>
 
-        {/* --- MENU (Visibili solo se NON si è in modifica per pulizia, o sempre visibili) --- */}
+        {/* --- MENU (Visibili solo se NON si è in modifica) --- */}
         {!isEditing && (
         <>
             {/* --- MENU CITTADINO --- */}
-            {user.role === 'cittadino' && (
+            {currentRole === 'cittadino' && (
                 <View style={styles.menuGroup}>
                     <Text style={styles.menuTitle}>Le tue attività</Text>
                     <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('UserTickets')}>
@@ -196,7 +196,7 @@ export default function ProfileScreen({ navigation }) {
             )}
 
             {/* --- MENU OPERATORE --- */}
-            {user.role === 'operatore' && (
+            {currentRole === 'operatore' && (
                 <View style={styles.menuGroup}>
                     <Text style={styles.menuTitle}>Gestione Operativa</Text>
                     <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('OperatorTickets')}>
@@ -210,7 +210,7 @@ export default function ProfileScreen({ navigation }) {
             )}
 
             {/* --- MENU RESPONSABILE --- */}
-            {(user.role === 'responsabile' || user.role === 'admin') && (
+            {(currentRole === 'responsabile' || currentRole === 'admin') && (
                 <View style={styles.menuGroup}>
                     <Text style={styles.menuTitle}>Amministrazione</Text>
                     <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('ResponsibleTickets')}>
@@ -235,7 +235,7 @@ export default function ProfileScreen({ navigation }) {
         </>
         )}
 
-        {/* DETTAGLI ACCOUNT (Sola lettura) */}
+        {/* DETTAGLI ACCOUNT */}
         {!isEditing && (
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dettagli Account</Text>
@@ -257,7 +257,6 @@ export default function ProfileScreen({ navigation }) {
         </View>
         )}
 
-        {/* LOGOUT */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
             <Text style={styles.logoutText}>ESCI</Text>
         </TouchableOpacity>
@@ -273,27 +272,21 @@ const styles = StyleSheet.create({
   headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: 'white' },
   scroll: { padding: 20 },
-  
   profileCard: { backgroundColor: 'white', borderRadius: 15, padding: 20, alignItems: 'center', marginBottom: 20, elevation: 2 },
   avatarCircle: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#1F2937', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
   avatarText: { color: 'white', fontSize: 28, fontWeight: 'bold' },
   userName: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
   userRole: { fontSize: 11, color: '#666', marginTop: 2, letterSpacing: 1 },
-
-  // Stili per Modifica
   editContainer: { width: '100%', marginTop: 10 },
   labelInput: { fontSize: 12, color: '#666', marginBottom: 5, fontWeight: 'bold' },
   input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 10, marginBottom: 10, fontSize: 16 },
   saveBtn: { backgroundColor: '#1F2937', padding: 12, borderRadius: 8, width: '100%', alignItems: 'center', marginTop: 10 },
   saveBtnText: { color: 'white', fontWeight: 'bold' },
-
   menuGroup: { marginBottom: 20 },
   menuTitle: { fontSize: 14, fontWeight: 'bold', color: '#6B7280', marginBottom: 8, marginLeft: 5, textTransform: 'uppercase' },
-  
   actionBtn: { backgroundColor: 'white', borderRadius: 12, padding: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 1 },
   iconBox: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   actionText: { fontSize: 16, fontWeight: '600', color: '#1F2937', flex: 1 },
-
   section: { backgroundColor: 'white', borderRadius: 15, padding: 20, marginBottom: 20, elevation: 1 },
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#1F2937', marginBottom: 15 },
   infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5 },
@@ -301,7 +294,6 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, color: '#999' },
   value: { fontSize: 15, color: '#333', fontWeight: '500' },
   divider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 10 },
-  
   logoutBtn: { backgroundColor: '#ffebee', padding: 15, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#ffcdd2', marginTop: 10, marginBottom: 30 },
   logoutText: { color: '#d32f2f', fontWeight: 'bold', fontSize: 16 }
 });
