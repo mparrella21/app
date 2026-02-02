@@ -7,16 +7,6 @@ import * as Location from 'expo-location';
 import { postTicket, getCategories } from '../services/ticketService'; 
 import { useAuth } from '../context/AuthContext';
 
-// Mappatura manuale ID <-> Label (perché il backend vuole ID interi)
-// Assumiamo questi ID in base all'esempio Postman [1,3,5]
-const CATEGORY_MAP = [
-    { id: 1, label: 'Buca stradale' },
-    { id: 2, label: 'Illuminazione guasta' },
-    { id: 3, label: 'Rifiuti abbandonati' },
-    { id: 4, label: 'Verde pubblico' },
-    { id: 5, label: 'Altro' }
-];
-
 export default function CreateTicketScreen({ navigation, route }) {
   const { user } = useAuth();
 
@@ -26,9 +16,9 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   
-  // Categorie
+  // Categorie dinamiche (Sostituisce CATEGORY_MAP statica)
   const [categories, setCategories] = useState([]);
-  const [selectedCatId, setSelectedCatId] = useState(null); // Salviamo l'ID, non la stringa
+  const [selectedCatId, setSelectedCatId] = useState(null);
   const [loadingCats, setLoadingCats] = useState(false);
 
   const [coords, setCoords] = useState({ lat: initialLat, lng: initialLng });
@@ -54,14 +44,27 @@ export default function CreateTicketScreen({ navigation, route }) {
       })();
     }
 
-    // B. Caricamento Categorie
+    // B. Caricamento Categorie da API
     loadCategories();
   }, [initialLat, initialLng]);
 
   const loadCategories = async () => {
-      // Usiamo la mappa statica per garantire di avere gli ID corretti per il backend
-      setCategories(CATEGORY_MAP);
-      setSelectedCatId(CATEGORY_MAP[0].id);
+      setLoadingCats(true);
+      try {
+          const apiCats = await getCategories();
+          // L'API ritorna oggetti {id, label}
+          if (Array.isArray(apiCats) && apiCats.length > 0) {
+              setCategories(apiCats);
+              setSelectedCatId(apiCats[0].id); // Seleziona la prima di default
+          } else {
+              // Fallback se il server non risponde, per non bloccare l'UI
+              Alert.alert("Attenzione", "Impossibile caricare le categorie dal server.");
+          }
+      } catch (e) {
+          console.error("Errore caricamento categorie", e);
+      } finally {
+          setLoadingCats(false);
+      }
   };
 
   const fetchAddress = async (lat, lon) => {
@@ -101,7 +104,6 @@ export default function CreateTicketScreen({ navigation, route }) {
     });
     if (!result.canceled) {
         setImages([result.assets[0]]);
-        // AVVISO UTENTE: Foto disabilitate temporaneamente
         Alert.alert("Info", "Al momento il server non supporta il caricamento foto. La foto non verrà inviata.");
     } 
   };
@@ -113,19 +115,17 @@ export default function CreateTicketScreen({ navigation, route }) {
 
     setIsSubmitting(true);
 
-    // [FIX] Struttura JSON ESATTA richiesta da Postman
     const ticketData = {
       title: title,
-      // description: desc, // Se Postman non la vuole, commentala, ma di solito serve
+      descrizione: desc, // Campo aggiunto rispetto alla versione precedente
       id_status: 1,      // 1 = Ricevuto/Aperto
       lat: coords.lat,
-      lon: coords.lng,   // Postman usa 'lon'
-      categories: [selectedCatId], // ARRAY di interi, es. [1]
-      user: user?.id     // Chiave 'user', non 'id_creator_user'
+      lon: coords.lng,
+      categories: [selectedCatId], 
+      user: user?.id
     };
 
     try {
-      // Passiamo ticketData. Le immagini le passiamo ma il service le ignorerà per ora.
       const success = await postTicket(ticketData, images);
       
       if (success) {
@@ -179,6 +179,7 @@ export default function CreateTicketScreen({ navigation, route }) {
 
           <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
             <Text style={styles.label}>CATEGORIA</Text>
+            {loadingCats && <ActivityIndicator size="small" color="#1D2D44"/>}
           </View>
           
           <View style={styles.chipsRow}>

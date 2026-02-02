@@ -17,7 +17,7 @@ import {
     assignTicket, 
     updateTicketDetails 
 } from '../services/ticketService';
-import { sendFeedback } from '../services/interventionService';
+import { sendFeedback, getRating } from '../services/interventionService';
 import { getOperatorsByTenant } from '../services/userService'; 
 import { getAddressFromCoordinates } from '../services/nominatim';
 
@@ -94,10 +94,17 @@ export default function TicketDetailScreen({ route, navigation }) {
            setEditTitle(freshTicket.titolo || freshTicket.title);
            setEditDesc(freshTicket.descrizione || freshTicket.description || freshTicket.desc);
 
-           if(freshTicket.rating) {
-               setRating(freshTicket.rating);
-               setRatingSubmitted(true);
+           // NUOVO: Recupera Rating se esiste
+           try {
+               const fetchedRating = await getRating(ticketId);
+               if (fetchedRating && fetchedRating.vote) {
+                   setRating(fetchedRating.vote);
+                   setRatingSubmitted(true);
+               }
+           } catch (e) {
+               console.log("Errore rating fetch", e);
            }
+
         } else {
             Alert.alert("Errore", "Impossibile recuperare i dettagli del ticket.");
             navigation.goBack();

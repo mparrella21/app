@@ -1,23 +1,50 @@
 import { API_BASE } from './config';
 import { authenticatedFetch } from './authService';
+import { getOperatorCategories, getOperatorMappings } from './interventionService';
 
-// Recupera tutti gli operatori incrociando GET /api/operator e GET /api/user
+// Recupera tutti gli operatori e arricchisce i dati con la loro categoria
 export const getOperators = async () => {
   try {
-    // 1. Prendi gli ID degli operatori
+    // 1. Prendi gli ID degli operatori (GET /api/operator)
     const opResponse = await authenticatedFetch(`${API_BASE}/operator`, { method: 'GET' });
     if (!opResponse.ok) return [];
-    const operatorIds = await opResponse.json(); // Array di UUID ["id1", "id2"]
+    const operatorIds = await opResponse.json(); // Array di UUID
 
     if (!Array.isArray(operatorIds) || operatorIds.length === 0) return [];
 
-    // 2. Prendi TUTTI gli utenti
+    // 2. Prendi TUTTI gli utenti (GET /api/user)
     const usersResponse = await authenticatedFetch(`${API_BASE}/user`, { method: 'GET' });
     if (!usersResponse.ok) return [];
     const allUsers = await usersResponse.json(); 
 
     // 3. Filtra solo quelli che sono nella lista operatori
-    const operators = allUsers.filter(u => operatorIds.includes(u.id));
+    let operators = allUsers.filter(u => operatorIds.includes(u.id));
+
+    // 4. (NUOVO) Recupera Categorie e Mappature per arricchire l'oggetto operatore
+    try {
+        const [categories, mappings] = await Promise.all([
+            getOperatorCategories(),
+            getOperatorMappings()
+        ]);
+
+        if (Array.isArray(categories) && Array.isArray(mappings)) {
+            operators = operators.map(op => {
+                // Trova la mappatura per questo utente
+                // Nota: L'API restituisce un array di oggetti {id_user, id_operator_category...}
+                const userMap = mappings.find(m => m.id_user === op.id);
+                if (userMap) {
+                    const cat = categories.find(c => String(c.id) === String(userMap.id_operator_category));
+                    if (cat) {
+                        return { ...op, category: cat.label, category_id: cat.id };
+                    }
+                }
+                return { ...op, category: 'Non assegnato' };
+            });
+        }
+    } catch (enrichError) {
+        console.warn("Impossibile arricchire dati operatori con categorie", enrichError);
+    }
+
     return operators;
   } catch (e) {
     console.error('userService.getOperators', e);
@@ -34,7 +61,7 @@ export const createOperator = async (operatorData) => {
     const userPayload = {
         name: operatorData.name,
         surname: operatorData.surname,
-        birth_date: operatorData.birth_date || "2000-01-01", // Default se manca
+        birth_date: operatorData.birth_date || "2000-01-01", 
         phonenumber: operatorData.phonenumber || operatorData.phoneNumber
     };
 
@@ -48,19 +75,16 @@ export const createOperator = async (operatorData) => {
         return false;
     }
 
-    // Per ottenere l'ID del nuovo utente, dobbiamo cercarlo nella lista utenti
-    // (poiché la POST /api/user spesso non restituisce l'ID creato nel body in alcune implementazioni, 
-    // ma se lo fa, usiamo quello).
+    // Recupero ID
     let newUserId = null;
     const createdData = await createResp.json();
     
     if (createdData && createdData.id) {
         newUserId = createdData.id;
     } else {
-        // Fallback: Cerchiamo l'utente appena creato tramite GET ALL
+        // Fallback: Cerchiamo l'utente appena creato
         const usersResp = await authenticatedFetch(`${API_BASE}/user`, { method: 'GET' });
         const users = await usersResp.json();
-        // Cerchiamo per numero di telefono (univoco si spera) o nome/cognome
         const found = users.find(u => 
             u.phonenumber === userPayload.phonenumber && 
             u.surname === userPayload.surname
@@ -68,14 +92,9 @@ export const createOperator = async (operatorData) => {
         if (found) newUserId = found.id;
     }
 
-    if (!newUserId) {
-        console.error("Impossibile recuperare ID nuovo utente");
-        return false;
-    }
+    if (!newUserId) return false;
 
     // PASSO 2: Promuovere a Operatore (POST SET OPERATOR)
-    // Endpoint: http://192.168.72.107:32413/api/operator
-    // Body: { "id": "uuid" }
     const setOpResp = await authenticatedFetch(`${API_BASE}/operator`, {
         method: 'POST',
         body: JSON.stringify({ id: newUserId })
@@ -104,10 +123,7 @@ export const updateOperator = async (id, operatorData) => {
 
 export const deleteUser = async (id) => {
   try {
-    // Se è un operatore, dovremmo prima fare UNSET OPERATOR (DEL /api/operator/{id})
-    // Poi eliminare l'utente. Proviamo a fare entrambi.
-    
-    // 1. Tenta rimozione ruolo operatore (non bloccante se fallisce/non esiste)
+    // 1. Tenta rimozione ruolo operatore
     await authenticatedFetch(`${API_BASE}/operator/${id}`, { method: 'DELETE' });
 
     // 2. Elimina utente fisico
