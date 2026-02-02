@@ -31,7 +31,6 @@ export const getAllTickets = async () => {
 
 export const getUserTickets = async (userId) => {
   try {
-    // Fallback: Recupera tutti e filtra lato client
     const allTickets = await getAllTickets();
     const myTickets = allTickets.filter(t => 
         t.id_creator_user === userId || 
@@ -52,8 +51,7 @@ export const getOperatorTickets = async (operatorId) => {
 
     let assignedTicketIds = [];
     
-    // 1. Tenta di recuperare le assegnazioni dall'Assignment/Intervention Service
-    // Coerente con Architecture Doc: Endpoint Intervention Service
+    // 1. Tenta di recuperare le assegnazioni dall'Intervention Service
     try {
         const assignResponse = await fetch(`${API_BASE}/intervention/assignment`, {
             method: 'GET',
@@ -79,6 +77,8 @@ export const getOperatorTickets = async (operatorId) => {
     const myTasks = allTickets.filter(t => {
         const isInAssignments = assignedTicketIds.includes(t.id);
         const isDirectlyAssigned = (t.operator_id === operatorId || t.assigned_to === operatorId);
+        // Filtra via i ticket chiusi se necessario, o mostrali come storico
+        // Qui mostriamo solo quelli attivi per "Le mie attività"
         const isActive = (t.status !== 'CLOSED' && t.status !== 'Risolto' && t.status !== 'CHIUSO'); 
         return (isInAssignments || isDirectlyAssigned) && isActive;
     });
@@ -187,9 +187,7 @@ export const getAllReplies = async (idTicket) => {
   }
 };
 
-/**
- * Invia una risposta o un rapporto di intervento.
- */
+
 export const postReply = async (idTicket, replyData, files = []) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
@@ -237,13 +235,14 @@ export const postReply = async (idTicket, replyData, files = []) => {
   }
 };
 
-// --- UPDATE & MANAGEMENT (Operatori / Responsabili) ---
+// --- UPDATE & MANAGEMENT ---
 
 export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
+    // PUT /ticket/{id} come da Architettura Pag 15 (Ticket Service)
     const response = await fetch(`${API_BASE}/ticket/${idTicket}`, {
       method: 'PUT',
       headers: {
@@ -265,29 +264,7 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
   }
 };
 
-// [NUOVO] Per Responsabili (IF-3.3): Modifica dettagli ticket (titolo/descrizione)
-export const updateTicketDetails = async (ticketId, updates) => {
-    try {
-        const token = await AsyncStorage.getItem('app_auth_token');
-        const response = await fetch(`${API_BASE}/ticket/${ticketId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(updates)
-        });
-        const data = await response.json();
-        return data.success === true;
-    } catch (e) {
-        console.error('ticketService.updateTicketDetails', e);
-        return false;
-    }
-};
-
-// [NUOVO] Per Responsabili (IF-3.6): Assegnazione Ticket
-// Coerente con Architecture Doc: Endpoint Intervention Service
+// Assegnazione Ticket (Intervention Service)
 export const assignTicket = async (ticketId, operatorId) => {
     try {
       const token = await AsyncStorage.getItem('app_auth_token');
@@ -331,24 +308,7 @@ export const deleteTicket = async (ticketId) => {
 };
 
 export const closeTicket = async (idTicket) => {
-  try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    if (!token) throw new Error('Non autenticato');
-
-    const response = await fetch(`${API_BASE}/ticket/${idTicket}/close`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-    });
-
-    const data = await response.json();
-    return data.success === true;
-  } catch (e) {
-    console.error('ticketService.closeTicket', e);
-    // Fallback locale se l'endpoint specifico fallisce
-    return await updateTicketStatus(idTicket, 'CLOSED', 3);
-  }
+  // [FIX] Architettura non prevede endpoint /close. Usiamo updateTicketStatus.
+  // Assumiamo che ID stato 3 = Chiuso/Risolto (come da esempio precedente)
+  return await updateTicketStatus(idTicket, 'CLOSED', 3);
 };

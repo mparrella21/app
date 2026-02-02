@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { login as loginService } from '../services/authService';
+import { login as loginService, logout as logoutService } from '../services/authService';
 
 const AuthContext = createContext();
 
@@ -28,31 +28,45 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Funzione helper per salvare la sessione (usata da login e post-registrazione)
+  const handleSessionSuccess = async (token, userData) => {
+      try {
+        await AsyncStorage.setItem('app_auth_token', token);
+        await AsyncStorage.setItem('app_user', JSON.stringify(userData));
+        setUser(userData);
+        return { success: true };
+      } catch (e) {
+          return { success: false, error: "Errore salvataggio dati" };
+      }
+  };
+
   const login = async (email, password) => {
-    // Chiamata al servizio reale
     const result = await loginService(email, password);
 
-    if (result.token && result.user) {
-      // 1. Salva Token e Utente nello storage persistente
-      await AsyncStorage.setItem('app_auth_token', result.token);
-      await AsyncStorage.setItem('app_user', JSON.stringify(result.user));
-      
-      // 2. Aggiorna lo stato
-      setUser(result.user);
-      return { success: true };
+    if (result.success && result.token && result.user) {
+      return await handleSessionSuccess(result.token, result.user);
     } else {
       return { success: false, error: result.error || "Credenziali non valide" };
     }
   };
 
+  // Permette di loggare l'utente direttamente (es. dopo registrazione)
+  const setDirectLogin = async (token, userData) => {
+      return await handleSessionSuccess(token, userData);
+  };
+
   const logout = async () => {
+    // Chiama l'API per invalidare il token (Diagramma 04)
+    await logoutService();
+    
+    // Pulizia locale
     await AsyncStorage.removeItem('app_auth_token');
     await AsyncStorage.removeItem('app_user');
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, setDirectLogin, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

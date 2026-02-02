@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert, ScrollView } from 'react-native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { register } from '../services/authService'; // [FIX] Import servizio registrazione
+import { register } from '../services/authService'; 
 
 const { width } = Dimensions.get('window');
 
 export default function AuthModal({ navigation }) {
-  const { login } = useAuth(); 
+  const { login, setDirectLogin } = useAuth(); 
   const [activeTab, setActiveTab] = useState('login'); 
-  const [isLoading, setIsLoading] = useState(false); // [FIX] Stato caricamento
+  const [isLoading, setIsLoading] = useState(false);
   
   // Login State
   const [email, setEmail] = useState('');
@@ -40,7 +40,7 @@ export default function AuthModal({ navigation }) {
             }
 
         } else {
-            // [FIX] Logica Registrazione Reale (UC-02)
+            // [FIX] Logica Registrazione (UC-02)
             if (!nome || !cognome || !email || !password || !confirmPassword) {
                 Alert.alert("Errore", "Compila tutti i campi obbligatori");
                 setIsLoading(false);
@@ -52,36 +52,42 @@ export default function AuthModal({ navigation }) {
                 return;
             }
 
-            // Preparazione payload coerente con User Service
             const userData = {
                 name: nome,
                 surname: cognome,
                 email: email,
                 password: password,
                 phone: cellulare,
-                role: 'Cittadino' // Ruolo di default per registrazione pubblica
+                role: 'Cittadino' 
             };
 
             const result = await register(userData);
 
             if (result.success) {
-                Alert.alert("Registrazione", "Account creato con successo! Effettua il login.");
-                setActiveTab('login');
-                // Pulisci form registrazione se vuoi
-                setPassword(''); setConfirmPassword('');
+                // Se l'architettura restituisce il token subito (Diagramma 01), logghiamo l'utente
+                if (result.token && result.user) {
+                    await setDirectLogin(result.token, result.user);
+                    navigation.goBack();
+                } else {
+                    Alert.alert("Registrazione", "Account creato con successo! Effettua il login.");
+                    setActiveTab('login');
+                    setPassword(''); 
+                    setConfirmPassword('');
+                }
             } else {
                 Alert.alert("Errore Registrazione", result.error || "Impossibile creare l'account.");
             }
         }
     } catch (e) {
         Alert.alert("Errore", "Si è verificato un problema tecnico.");
+        console.error(e);
     } finally {
         setIsLoading(false);
     }
   };
 
   const handleGoogleLogin = () => {
-      Alert.alert("Google Login", "Funzionalità non ancora attiva su mobile.");
+      Alert.alert("Google Login", "Funzionalità disabilitata.");
   };
 
   return (
@@ -175,21 +181,8 @@ export default function AuthModal({ navigation }) {
                 </Text>
               </TouchableOpacity>
 
-              {/* Google Login */}
-              {activeTab === 'login' && (
-                  <>
-                    <View style={styles.divider}>
-                        <View style={styles.line} />
-                        <Text style={styles.orText}>oppure</Text>
-                        <View style={styles.line} />
-                    </View>
-
-                    <TouchableOpacity style={styles.googleBtn} onPress={handleGoogleLogin}>
-                        <FontAwesome5 name="google" size={18} color="#DB4437" style={{marginRight: 10}} />
-                        <Text style={styles.googleBtnText}>Accedi con Google</Text>
-                    </TouchableOpacity>
-                  </>
-              )}
+              {/* Google Login rimosso/disabilitato come richiesto */}
+              
             </ScrollView>
           </View>
         </View>
