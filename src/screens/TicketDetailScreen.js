@@ -5,7 +5,18 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
 
-import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus, deleteTicket, assignTicket, updateTicketDetails } from '../services/ticketService';
+import { 
+    getTicket, 
+    getAllReplies, 
+    postReply, 
+    updateReply, 
+    deleteReply, 
+    closeTicket, 
+    updateTicketStatus, 
+    deleteTicket, 
+    assignTicket, 
+    updateTicketDetails 
+} from '../services/ticketService';
 import { sendFeedback } from '../services/interventionService';
 import { getOperatorsByTenant } from '../services/userService'; 
 import { getAddressFromCoordinates } from '../services/nominatim';
@@ -33,15 +44,20 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [interventionReport, setInterventionReport] = useState('');
   const [reportImage, setReportImage] = useState(null); 
 
-  // ASSEGNAZIONE E MODIFICA
+  // ASSEGNAZIONE
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [operators, setOperators] = useState([]);
   const [loadingOperators, setLoadingOperators] = useState(false);
   
-  // STATO MODIFICA TICKET
+  // STATO MODIFICA TICKET (Manager)
   const [isEditingTicket, setIsEditingTicket] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
+
+  // STATO MODIFICA MESSAGGIO (Reply)
+  const [editReplyModalVisible, setEditReplyModalVisible] = useState(false);
+  const [selectedReply, setSelectedReply] = useState(null);
+  const [editReplyText, setEditReplyText] = useState('');
 
   // 3. Helper per decodificare lo stato
   const getStatusLabel = (t) => {
@@ -110,6 +126,67 @@ export default function TicketDetailScreen({ route, navigation }) {
   const isCitizen = !user || user?.role === 'cittadino';
   const isManager = user?.role === 'responsabile' || user?.role === 'maintenance_manager'; 
 
+  // --- GESTIONE MESSAGGI (REPLY) ---
+  const handleLongPressReply = (reply) => {
+      // Permetti modifica solo se l'utente è l'autore
+      const isMyReply = reply.id_creator_user === user?.id;
+      if (!isMyReply) return;
+
+      Alert.alert(
+          "Gestione Messaggio",
+          "Cosa vuoi fare?",
+          [
+              { text: "Annulla", style: "cancel" },
+              { text: "Modifica", onPress: () => openEditReplyModal(reply) },
+              { text: "Elimina", style: "destructive", onPress: () => confirmDeleteReply(reply) }
+          ]
+      );
+  };
+
+  const openEditReplyModal = (reply) => {
+      setSelectedReply(reply);
+      setEditReplyText(reply.body || reply.text || reply.messaggio);
+      setEditReplyModalVisible(true);
+  };
+
+  const handleUpdateReply = async () => {
+      if (!selectedReply || !editReplyText.trim()) return;
+
+      setEditReplyModalVisible(false);
+      setActionLoading(true);
+
+      const success = await updateReply(ticket.id, selectedReply.id, editReplyText);
+      
+      setActionLoading(false);
+      if (success) {
+          fetchData(); // Ricarica messaggi
+      } else {
+          Alert.alert("Errore", "Impossibile modificare il messaggio.");
+      }
+  };
+
+  const confirmDeleteReply = (reply) => {
+      Alert.alert(
+          "Elimina Messaggio",
+          "Sei sicuro di voler eliminare questo messaggio?",
+          [
+              { text: "Annulla", style: "cancel" },
+              { text: "Elimina", style: "destructive", onPress: async () => {
+                  setActionLoading(true);
+                  // Passiamo il body corrente perché richiesto dalle API per la DELETE
+                  const bodyText = reply.body || reply.text || reply.messaggio;
+                  const success = await deleteReply(ticket.id, reply.id, bodyText);
+                  setActionLoading(false);
+                  if (success) {
+                      fetchData();
+                  } else {
+                      Alert.alert("Errore", "Impossibile eliminare il messaggio.");
+                  }
+              }}
+          ]
+      );
+  };
+
   // --- AZIONI OPERATORE ---
   const handleStatusChange = async (newStatus, newStatusId) => {
     if (newStatus === 'Risolto') {
@@ -160,13 +237,13 @@ export default function TicketDetailScreen({ route, navigation }) {
       setActionLoading(true);
 
       try {
-          // *** CORREZIONE: Specifichiamo type: 'REPORT' ***
           const replyData = {
               body: `[RAPPORTO INTERVENTO]: ${interventionReport}`,
               type: 'REPORT'
           };
 
           await postReply(ticket.id, replyData, reportImage ? [reportImage] : []);
+          // Chiudiamo il ticket (stato 3 o 4)
           const closeSuccess = await closeTicket(ticket.id);
 
           if (closeSuccess) {
@@ -287,13 +364,12 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // --- AZIONI MESSAGGI / RATING ---
+  // --- INVIO NUOVO MESSAGGIO ---
   const handleSendComment = async () => {
     if(!newComment.trim()) return;
     
     setActionLoading(true);
     
-    // *** CORREZIONE: Specifichiamo type: 'USER' ***
     const replyData = {
         body: newComment, 
         type: 'USER'
@@ -394,7 +470,7 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           </View>
 
-          {/* EDIT MODE */}
+          {/* EDIT MODE TICKET (MANAGER) */}
           {isEditingTicket ? (
               <View style={styles.editContainer}>
                   <Text style={styles.labelInput}>Modifica Titolo:</Text>
@@ -536,6 +612,8 @@ export default function TicketDetailScreen({ route, navigation }) {
 
           {/* MESSAGGI */}
           <Text style={styles.sectionTitle}>MESSAGGI</Text>
+          <Text style={{fontSize:10, color:'#666', marginBottom:5}}>Tieni premuto su un tuo messaggio per modificarlo.</Text>
+          
           {replies.length === 0 ? (
               <View style={{padding:20, alignItems:'center'}}>
                   <Ionicons name="chatbubble-outline" size={24} color="#ccc"/>
@@ -543,14 +621,18 @@ export default function TicketDetailScreen({ route, navigation }) {
               </View>
           ) : (
               replies.map((r, i) => (
-                <View key={i} style={[styles.msgBox, r.id_creator_user === user?.id ? styles.msgMine : styles.msgOther]}>
+                <TouchableOpacity 
+                    key={i} 
+                    onLongPress={() => handleLongPressReply(r)} 
+                    activeOpacity={0.8}
+                    style={[styles.msgBox, r.id_creator_user === user?.id ? styles.msgMine : styles.msgOther]}
+                >
                     <Text style={styles.msgUser}>
                         {r.user_name || (r.id_creator_user === user?.id ? 'Tu' : 'Utente')}
                     </Text>
-                    {/* Visualizza 'body' come da API */}
                     <Text style={styles.msgText}>{r.body || r.text || r.messaggio}</Text>
                     <Text style={styles.msgDate}>{r.date ? new Date(r.date).toLocaleDateString() : ''}</Text>
-                </View>
+                </TouchableOpacity>
               ))
           )}
         </View>
@@ -651,6 +733,36 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       </Modal>
 
+      {/* MODALE MODIFICA MESSAGGIO */}
+      <Modal
+          animationType="fade"
+          transparent={true}
+          visible={editReplyModalVisible}
+          onRequestClose={() => setEditReplyModalVisible(false)}
+      >
+          <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                  <Text style={styles.modalTitle}>Modifica Messaggio</Text>
+                  
+                  <TextInput 
+                      style={styles.modalInput}
+                      multiline
+                      value={editReplyText}
+                      onChangeText={setEditReplyText}
+                  />
+
+                  <View style={styles.modalButtons}>
+                      <TouchableOpacity style={[styles.modalBtn, {backgroundColor: '#ccc'}]} onPress={() => setEditReplyModalVisible(false)}>
+                          <Text style={styles.modalBtnText}>Annulla</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.modalBtn, {backgroundColor: '#3B82F6'}]} onPress={handleUpdateReply}>
+                          <Text style={styles.modalBtnText}>Aggiorna</Text>
+                      </TouchableOpacity>
+                  </View>
+              </View>
+          </View>
+      </Modal>
+
     </KeyboardAvoidingView>
   );
 }
@@ -690,7 +802,7 @@ const styles = StyleSheet.create({
 
   ratingBox: { backgroundColor: '#fff', padding: 20, borderRadius: 12, alignItems: 'center', elevation: 2, marginTop: 20, borderTopWidth: 4, borderTopColor: '#FFD700' },
   ratingTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 10 },
-  ratingSub: { fontSize: 12, color: '#6B7280', marginTop: 5 }, // Stile ripristinato
+  ratingSub: { fontSize: 12, color: '#6B7280', marginTop: 5 },
 
   msgBox: { padding: 12, borderRadius: 12, marginBottom: 10, maxWidth: '85%' },
   msgOther: { backgroundColor: '#fff', alignSelf: 'flex-start', elevation: 1, borderBottomLeftRadius: 0 },

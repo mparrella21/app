@@ -2,6 +2,11 @@ import { API_BASE } from './config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authenticatedFetch } from './authService';
 
+// Helper per estrarre solo gli ID dalle categorie
+const extractCategoryIds = (categories) => {
+    if (!Array.isArray(categories)) return [];
+    return categories.map(c => (typeof c === 'object' && c.id ? c.id : c));
+};
 
 export const getAllTickets = async () => {
   try {
@@ -49,7 +54,7 @@ export const getOperatorTickets = async (operatorId) => {
     const allTickets = await getAllTickets();
     const myTasks = allTickets.filter(t => {
         const isInAssignments = assignedTicketIds.includes(t.id);
-        const isActive = (t.id_status !== 3); 
+        const isActive = (t.id_status !== 3 && t.id_status !== 4); // Escludi Risolto (3) e Chiuso (4) se necessario
         return isInAssignments && isActive;
     });
     return myTasks; 
@@ -88,12 +93,15 @@ export const postTicket = async (ticketData, photos = []) => {
     const userStr = await AsyncStorage.getItem('app_user');
     const userObj = userStr ? JSON.parse(userStr) : {};
     
+    // Assicuriamoci che le categorie siano un array di interi [1, 2, 3]
+    const categoryIds = extractCategoryIds(ticketData.categories);
+
     const finalPayload = {
         title: ticketData.title || ticketData.descrizione,
         id_status: 1, 
         lat: parseFloat(ticketData.lat),
         lon: parseFloat(ticketData.lon),
-        categories: ticketData.categories || [], 
+        categories: categoryIds, 
         user: userObj.id 
     };
 
@@ -122,10 +130,8 @@ export const getAllReplies = async (idTicket) => {
   }
 };
 
-// *** MODIFICATO QUI ***
 export const postReply = async (idTicket, replyData, files = []) => {
   try {
-    // 1. Recuperiamo l'utente corrente per avere l'ID
     const userStr = await AsyncStorage.getItem('app_user');
     const userObj = userStr ? JSON.parse(userStr) : {};
 
@@ -134,29 +140,57 @@ export const postReply = async (idTicket, replyData, files = []) => {
         return false;
     }
 
-    // 2. Costruiamo il payload come richiesto: body, type, user
     const payload = {
-        body: replyData.body || replyData.text, // testo del messaggio
-        type: replyData.type || 'USER',         // 'USER' (default) o 'REPORT'
-        user: userObj.id                        // UUID dell'utente
+        body: replyData.body || replyData.text,
+        type: replyData.type || 'USER',
+        user: userObj.id
     };
-
-    console.log("Invio Reply Payload:", payload); // Debug
 
     const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply`, {
       method: 'POST',
       body: JSON.stringify(payload)
     });
 
-    if (!response.ok) {
-        console.error("Errore risposta API Reply:", response.status);
-    }
-
     return response.ok;
   } catch (e) {
     console.error('ticketService.postReply', e);
     return false;
   }
+};
+
+// *** NUOVA: Modifica un messaggio (PUT) ***
+export const updateReply = async (idTicket, idReply, newBodyText) => {
+    try {
+        const payload = {
+            body: newBodyText
+        };
+        const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply/${idReply}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('ticketService.updateReply', e);
+        return false;
+    }
+};
+
+// *** NUOVA: Elimina un messaggio (DELETE) ***
+// Nota: Le API specificano un corpo anche per la DELETE
+export const deleteReply = async (idTicket, idReply, currentBodyText = "") => {
+    try {
+        const payload = {
+            body: currentBodyText // Le API sembrano richiedere il body anche in cancellazione
+        };
+        const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply/${idReply}`, {
+            method: 'DELETE',
+            body: JSON.stringify(payload)
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('ticketService.deleteReply', e);
+        return false;
+    }
 };
 
 // --- UPDATE & MANAGEMENT ---
@@ -166,11 +200,22 @@ export const updateTicketDetails = async (idTicket, details) => {
         const currentTicket = await getTicket(idTicket);
         if (!currentTicket) return false;
 
+        // Prepariamo il payload per la PUT, assicurandoci che categories sia un array di ID
         const updatedBody = {
             ...currentTicket, 
-            title: details.title || currentTicket.title,
+            title: details.title || currentTicket.title || currentTicket.titolo,
+            // Importante: le API vogliono array di ID, non oggetti
+            categories: extractCategoryIds(currentTicket.categories),
+            // Campi obbligatori che devono essere ri-inviati
+            lat: currentTicket.lat,
+            lon: currentTicket.lon,
+            id_status: currentTicket.id_status
         };
 
+        // Sovrascriviamo la descrizione se necessario (se l'API supporta description nel body)
+        // Nota: Il documento API txt cita solo "title", "categories", "lat", "lon", "id_status" per la PUT.
+        // Se la descrizione non è modificabile via API, questa parte potrebbe non avere effetto sul server.
+        
         const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}`, {
             method: 'PUT',
             body: JSON.stringify(updatedBody)
@@ -188,8 +233,8 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
     if (!currentTicket) return false;
 
     const updatedBody = {
-        title: currentTicket.title,
-        categories: currentTicket.categories ? currentTicket.categories.map(c => c.id) : [],
+        title: currentTicket.title || currentTicket.titolo,
+        categories: extractCategoryIds(currentTicket.categories),
         lat: currentTicket.lat,
         lon: currentTicket.lon,
         id_status: statusId 
@@ -235,5 +280,5 @@ export const deleteTicket = async (ticketId) => {
 };
 
 export const closeTicket = async (idTicket) => {
-  return await updateTicketStatus(idTicket, 'CLOSED', 3); 
+  return await updateTicketStatus(idTicket, 'CLOSED', 4); // Stato 4 tipicamente per "Chiuso" o 3 per "Risolto" in base a convenzioni
 };
