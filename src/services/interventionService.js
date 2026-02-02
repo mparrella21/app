@@ -3,13 +3,11 @@ import { authenticatedFetch } from './authService';
 
 // --- ASSIGNMENT (Assegnazione Ticket a Operatore) ---
 
-// Recupera le assegnazioni
 export const getAssignments = async () => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/assignment`, { method: 'GET' });
         if (response.ok) {
             const data = await response.json();
-            // Gestione robusta: se torna { success: true, assignments: [] } o direttamente l'array
             return data.assignments || (Array.isArray(data) ? data : []);
         }
         return [];
@@ -19,13 +17,12 @@ export const getAssignments = async () => {
     }
 };
 
-// Crea una nuova assegnazione (Responsabile -> Operatore)
-export const createAssignment = async (ticketId, userId, note = "") => {
+// MODIFICATO: Allineato esattamente ai parametri richiesti dall'API 
+export const createAssignment = async (ticketId, userId) => {
     try {
         const payload = {
             id_ticket: ticketId,
-            id_user: userId,
-            note: note // Passiamo anche la nota se il backend la supporta
+            id_user: userId
         };
         const response = await authenticatedFetch(`${API_BASE}/intervention/assignment`, {
             method: 'POST',
@@ -38,14 +35,8 @@ export const createAssignment = async (ticketId, userId, note = "") => {
     }
 };
 
-// NOTA: La funzione updateAssignmentStatus è stata RIMOSSA.
-// Nelle API fornite non esiste un endpoint PUT per l'assegnazione.
-// Il cambio di stato "In Corso" o "Risolto" va fatto cambiando lo stato del TICKET.
-
-// Elimina assegnazione
 export const deleteAssignment = async (ticketId) => {
     try {
-        // Le API indicano DELETE /api/intervention/assignment/{id_ticket}
         const response = await authenticatedFetch(`${API_BASE}/intervention/assignment/${ticketId}`, {
             method: 'DELETE'
         });
@@ -60,21 +51,19 @@ export const deleteAssignment = async (ticketId) => {
 
 export const getRating = async (ticketId) => {
     try {
-        // API: GET /api/intervention/rating/{ticketId}
         const response = await authenticatedFetch(`${API_BASE}/intervention/rating/${ticketId}`, { method: 'GET' });
         if (response.ok) {
             const data = await response.json();
-            // L'API potrebbe tornare un array o un oggetto
             if (Array.isArray(data) && data.length > 0) return data[0];
             return data;
         }
         return null;
     } catch (e) {
-        // 404 significa spesso "nessun rating ancora presente", non è un errore critico
-        return null;
+        return null; // 404 è normale se non c'è rating
     }
 };
 
+// MODIFICATO: Allineato al corpo richiesto per la POST rating
 export const sendFeedback = async (ticketId, vote, comment = "") => {
     try {
         const payload = {

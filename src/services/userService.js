@@ -52,8 +52,6 @@ export const getOperators = async () => {
   }
 };
 
-// Alias per compatibilità con il codice esistente
-export const getOperatorsByTenant = getOperators;
 
 export const createOperator = async (operatorData) => {
   try {
@@ -137,16 +135,82 @@ export const deleteUser = async (id) => {
   }
 };
 
-export const updateUserProfile = async (id, userData) => {
-  try {
-    const response = await authenticatedFetch(`${API_BASE}/user/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(userData)
-    });
-    const data = await response.json();
-    return { success: response.ok, message: data.message };
-  } catch (e) {
-    console.error('userService.updateUserProfile', e);
-    return { success: false, message: 'Errore di connessione' };
-  }
+// Modifica dei dati del profilo (Nome, Cognome, ecc.) 
+export const updateProfile = async (userId, profileData) => {
+    try {
+        const payload = {
+            name: profileData.name,
+            surname: profileData.surname,
+            phonenumber: profileData.phonenumber
+        };
+        const response = await authenticatedFetch(`${API_BASE}/user/${userId}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('userService.updateProfile', e);
+        return false;
+    }
+};
+
+// --- GESTIONE RUOLI (OPERATOR / MANAGER) ---
+
+// Promuove un utente a operatore 
+export const setOperator = async (userId) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/operator`, {
+            method: 'POST',
+            body: JSON.stringify({ id: userId })
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('userService.setOperator', e);
+        return false;
+    }
+};
+
+// Rimuove i privilegi da operatore 
+export const unsetOperator = async (userId) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/operator/${userId}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ id: userId })
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('userService.unsetOperator', e);
+        return false;
+    }
+};
+
+// Restituisce tutti gli operatori (filtrando lato frontend o backend se supportato)
+export const getOperatorsByTenant = async () => {
+    try {
+        // Le API forniscono GET /api/operator che restituisce solo gli ID 
+        const opResponse = await authenticatedFetch(`${API_BASE}/operator`, { method: 'GET' });
+        if (!opResponse.ok) return [];
+        const operatorIds = await opResponse.json();
+
+        // Recuperiamo i dettagli di tutti gli utenti e filtriamo quelli che sono operatori
+        const allUsers = await getAllUsers();
+        return allUsers.filter(user => operatorIds.includes(user.id));
+    } catch (e) {
+        console.error('userService.getOperatorsByTenant', e);
+        return [];
+    }
+};
+
+// Promuove un utente a manager 
+export const setManager = async (userId) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/manager`, {
+            method: 'POST',
+            body: JSON.stringify({ id: userId })
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('userService.setManager', e);
+        return false;
+    }
 };

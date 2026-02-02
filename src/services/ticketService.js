@@ -2,7 +2,6 @@ import { API_BASE } from './config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authenticatedFetch } from './authService';
 
-// Helper per estrarre solo gli ID dalle categorie
 const extractCategoryIds = (categories) => {
     if (!Array.isArray(categories)) return [];
     return categories.map(c => (typeof c === 'object' && c.id ? c.id : c));
@@ -54,7 +53,7 @@ export const getOperatorTickets = async (operatorId) => {
     const allTickets = await getAllTickets();
     const myTasks = allTickets.filter(t => {
         const isInAssignments = assignedTicketIds.includes(t.id);
-        const isActive = (t.id_status !== 3 && t.id_status !== 4); // Escludi Risolto (3) e Chiuso (4) se necessario
+        const isActive = (t.id_status !== 3 && t.id_status !== 4); 
         return isInAssignments && isActive;
     });
     return myTasks; 
@@ -93,7 +92,6 @@ export const postTicket = async (ticketData, photos = []) => {
     const userStr = await AsyncStorage.getItem('app_user');
     const userObj = userStr ? JSON.parse(userStr) : {};
     
-    // Assicuriamoci che le categorie siano un array di interi [1, 2, 3]
     const categoryIds = extractCategoryIds(ticketData.categories);
 
     const finalPayload = {
@@ -135,11 +133,6 @@ export const postReply = async (idTicket, replyData, files = []) => {
     const userStr = await AsyncStorage.getItem('app_user');
     const userObj = userStr ? JSON.parse(userStr) : {};
 
-    if (!userObj.id) {
-        console.error("Errore postReply: User ID non trovato in storage");
-        return false;
-    }
-
     const payload = {
         body: replyData.body || replyData.text,
         type: replyData.type || 'USER',
@@ -160,9 +153,7 @@ export const postReply = async (idTicket, replyData, files = []) => {
 
 export const updateReply = async (idTicket, idReply, newBodyText) => {
     try {
-        const payload = {
-            body: newBodyText
-        };
+        const payload = { body: newBodyText };
         const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply/${idReply}`, {
             method: 'PUT',
             body: JSON.stringify(payload)
@@ -176,9 +167,7 @@ export const updateReply = async (idTicket, idReply, newBodyText) => {
 
 export const deleteReply = async (idTicket, idReply, currentBodyText = "") => {
     try {
-        const payload = {
-            body: currentBodyText // Le API richiedono il body anche in cancellazione
-        };
+        const payload = { body: currentBodyText };
         const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply/${idReply}`, {
             method: 'DELETE',
             body: JSON.stringify(payload)
@@ -197,7 +186,6 @@ export const updateTicketDetails = async (idTicket, details) => {
         const currentTicket = await getTicket(idTicket);
         if (!currentTicket) return false;
 
-        // Prepariamo il payload per la PUT, assicurandoci che categories sia un array di ID
         const updatedBody = {
             title: details.title || currentTicket.title || currentTicket.titolo,
             categories: details.categories ? extractCategoryIds(details.categories) : extractCategoryIds(currentTicket.categories),
@@ -241,23 +229,6 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
   }
 };
 
-export const assignTicket = async (ticketId, operatorId) => {
-    try {
-      const response = await authenticatedFetch(`${API_BASE}/intervention/assignment`, {
-        method: 'POST',
-        body: JSON.stringify({
-          id_ticket: ticketId,
-          id_user: operatorId 
-        })
-      });
-      return response.ok;
-    } catch (e) {
-      console.error('ticketService.assignTicket', e);
-      return false;
-    }
-};
-
-// *** MODIFICATO: Ora accetta l'oggetto ticket intero per inviare il body richiesto dalle API ***
 export const deleteTicket = async (ticket) => {
     try {
         const payload = {
@@ -280,5 +251,5 @@ export const deleteTicket = async (ticket) => {
 };
 
 export const closeTicket = async (idTicket) => {
-  return await updateTicketStatus(idTicket, 'CLOSED', 3); // Modificato da 4 a 3 (Risolto) secondo le convenzioni comuni del progetto
+  return await updateTicketStatus(idTicket, 'CLOSED', 3); 
 };

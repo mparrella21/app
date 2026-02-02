@@ -14,55 +14,47 @@ import {
     closeTicket, 
     updateTicketStatus, 
     deleteTicket, 
-    assignTicket, 
     updateTicketDetails,
-    getCategories // Aggiunto per recuperare le categorie
+    getCategories
 } from '../services/ticketService';
-import { sendFeedback, getRating } from '../services/interventionService';
+// MODIFICA: Importato createAssignment da interventionService invece che da ticketService
+import { sendFeedback, getRating, createAssignment } from '../services/interventionService';
 import { getOperatorsByTenant } from '../services/userService'; 
 import { getAddressFromCoordinates } from '../services/nominatim';
 
 export default function TicketDetailScreen({ route, navigation }) {
-  // 1. Recupero ID
   const { id, ticket: paramTicket } = route.params || {};
   const ticketId = id || paramTicket?.id;
 
   const { user } = useAuth();
   
-  // 2. Stato Locale
   const [ticket, setTicket] = useState(null);
   const [replies, setReplies] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
   
-  // Rating state
   const [rating, setRating] = useState(0); 
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
-  // REPORT DI INTERVENTO
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [interventionReport, setInterventionReport] = useState('');
   const [reportImage, setReportImage] = useState(null); 
 
-  // ASSEGNAZIONE
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [operators, setOperators] = useState([]);
   const [loadingOperators, setLoadingOperators] = useState(false);
   
-  // STATO MODIFICA TICKET (Manager)
   const [isEditingTicket, setIsEditingTicket] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editCategoryId, setEditCategoryId] = useState(null);
   const [allCategories, setAllCategories] = useState([]);
 
-  // STATO MODIFICA MESSAGGIO (Reply)
   const [editReplyModalVisible, setEditReplyModalVisible] = useState(false);
   const [selectedReply, setSelectedReply] = useState(null);
   const [editReplyText, setEditReplyText] = useState('');
 
-  // 3. Helper per decodificare lo stato
   const getStatusLabel = (t) => {
       if (!t) return 'Sconosciuto';
       const sid = t.id_status || t.statusId;
@@ -76,7 +68,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // 4. Caricamento Dati Completi
   const fetchData = async () => {
       if (!ticketId) return;
       setLoading(true);
@@ -101,7 +92,6 @@ export default function TicketDetailScreen({ route, navigation }) {
                setEditCategoryId(freshTicket.categories[0].id || freshTicket.categories[0]);
            }
 
-           // Recupera Rating se esiste
            try {
                const fetchedRating = await getRating(ticketId);
                if (fetchedRating && fetchedRating.vote) {
@@ -120,7 +110,6 @@ export default function TicketDetailScreen({ route, navigation }) {
         const fetchedReplies = await getAllReplies(ticketId);
         setReplies(fetchedReplies);
 
-        // Se Manager, precarichiamo le categorie per eventuale modifica
         if (user?.role === 'responsabile' || user?.role === 'maintenance_manager') {
             const cats = await getCategories();
             setAllCategories(cats);
@@ -141,14 +130,11 @@ export default function TicketDetailScreen({ route, navigation }) {
   const isResolved = statusLabel.toLowerCase() === 'risolto' || statusLabel.toLowerCase() === 'chiuso';
   const isInProgress = statusLabel.toLowerCase() === 'in lavorazione' || statusLabel.toLowerCase() === 'assegnato' || statusLabel.toLowerCase() === 'in corso';
   
-  // Ruoli
   const isOperator = user?.role === 'operatore';
   const isCitizen = !user || user?.role === 'cittadino';
   const isManager = user?.role === 'responsabile' || user?.role === 'maintenance_manager'; 
 
-  // --- GESTIONE MESSAGGI (REPLY) ---
   const handleLongPressReply = (reply) => {
-      // Permetti modifica solo se l'utente è l'autore
       const isMyReply = reply.id_creator_user === user?.id;
       if (!isMyReply) return;
 
@@ -193,7 +179,6 @@ export default function TicketDetailScreen({ route, navigation }) {
               { text: "Annulla", style: "cancel" },
               { text: "Elimina", style: "destructive", onPress: async () => {
                   setActionLoading(true);
-                  // Passiamo il body corrente perché richiesto dalle API per la DELETE
                   const bodyText = reply.body || reply.text || reply.messaggio;
                   const success = await deleteReply(ticket.id, reply.id, bodyText);
                   setActionLoading(false);
@@ -207,7 +192,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       );
   };
 
-  // --- AZIONI OPERATORE ---
   const handleStatusChange = async (newStatus, newStatusId) => {
     if (newStatus === 'Risolto') {
         setReportModalVisible(true);
@@ -263,7 +247,6 @@ export default function TicketDetailScreen({ route, navigation }) {
           };
 
           await postReply(ticket.id, replyData, reportImage ? [reportImage] : []);
-          // Chiudiamo il ticket (stato 3 = Risolto)
           const closeSuccess = await closeTicket(ticket.id);
 
           if (closeSuccess) {
@@ -282,7 +265,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // --- AZIONI RESPONSABILE ---
   const toggleEditMode = () => {
       if (isEditingTicket) {
           setEditTitle(ticket.titolo || ticket.title);
@@ -340,11 +322,12 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
+  // MODIFICA: Ora chiama createAssignment da interventionService
   const handleAssignOperator = async (operatorId) => {
       setAssignModalVisible(false);
       setActionLoading(true);
       try {
-          const success = await assignTicket(ticket.id, operatorId);
+          const success = await createAssignment(ticket.id, operatorId);
           if (success) {
               Alert.alert("Assegnato", "Il ticket è stato assegnato all'operatore.");
               fetchData(); 
@@ -364,7 +347,6 @@ export default function TicketDetailScreen({ route, navigation }) {
           { text: "Annulla", style: "cancel" },
           { text: "Elimina", style: 'destructive', onPress: async () => {
               setActionLoading(true);
-              // MODIFICA IMPORTANTE: Passiamo l'intero oggetto ticket per il body della DELETE
               const success = await deleteTicket(ticket);
               setActionLoading(false);
               if (success) {
@@ -389,7 +371,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // --- INVIO NUOVO MESSAGGIO ---
   const handleSendComment = async () => {
     if(!newComment.trim()) return;
     
@@ -458,7 +439,6 @@ export default function TicketDetailScreen({ route, navigation }) {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1, backgroundColor:'#F3F4F6'}}>
       
-      {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
            <Ionicons name="arrow-back" size={24} color="white" />
@@ -468,7 +448,6 @@ export default function TicketDetailScreen({ route, navigation }) {
 
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
         
-        {/* COPERTINA */}
         {ticket.images && ticket.images.length > 0 ? (
           <Image source={{ uri: ticket.images[0] }} style={styles.coverImg} />
         ) : (
@@ -479,7 +458,6 @@ export default function TicketDetailScreen({ route, navigation }) {
         )}
 
         <View style={styles.content}>
-          {/* BADGES */}
           <View style={styles.badgeRow}>
             <View style={styles.catBadge}>
                 <Text style={styles.catText}>
@@ -495,7 +473,6 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           </View>
 
-          {/* EDIT MODE TICKET (MANAGER) */}
           {isEditingTicket ? (
               <View style={styles.editContainer}>
                   <Text style={styles.labelInput}>Modifica Titolo:</Text>
@@ -538,7 +515,6 @@ export default function TicketDetailScreen({ route, navigation }) {
               <>
                 <Text style={styles.title}>{ticket.titolo || ticket.title}</Text>
                 
-                {/* INDIRIZZO E MAPPA */}
                 <Text style={styles.address}>
                     <Ionicons name="location-outline" size={14} /> {ticket.indirizzo || ticket.address || 'Posizione non disponibile'}
                 </Text>
@@ -563,7 +539,6 @@ export default function TicketDetailScreen({ route, navigation }) {
               </>
           )}
 
-          {/* PANNELLI AZIONI */}
           {isOperator && (
             <View style={styles.operatorPanel}>
                 <Text style={styles.opTitle}>Pannello Operatore</Text>
@@ -625,7 +600,6 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* RATING */}
           {isResolved && isCitizen && (
             <View style={styles.ratingBox}>
                 <Text style={styles.ratingTitle}>
@@ -649,7 +623,6 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* MESSAGGI */}
           <Text style={styles.sectionTitle}>MESSAGGI</Text>
           <Text style={{fontSize:10, color:'#666', marginBottom:5}}>Tieni premuto su un tuo messaggio per modificarlo.</Text>
           
@@ -677,7 +650,6 @@ export default function TicketDetailScreen({ route, navigation }) {
         </View>
       </ScrollView>
 
-      {/* INPUT BAR */}
       {!isResolved && (
           <View style={styles.inputArea}>
              <TextInput 
@@ -692,7 +664,6 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       )}
 
-      {/* MODALE REPORT */}
       <Modal
           animationType="slide"
           transparent={true}
@@ -739,7 +710,6 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       </Modal>
 
-      {/* MODALE ASSEGNAZIONE */}
       <Modal
           animationType="fade"
           transparent={true}
@@ -772,7 +742,6 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       </Modal>
 
-      {/* MODALE MODIFICA MESSAGGIO */}
       <Modal
           animationType="fade"
           transparent={true}
