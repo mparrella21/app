@@ -32,8 +32,12 @@ const Stack = createStackNavigator();
 function RootNavigator() {
   const { user, loading } = useAuth();
 
-  // Helper per gestire i ruoli in modo sicuro (case insensitive)
-  const getRole = () => user?.role ? user.role.toLowerCase() : '';
+  // FIX SICUREZZA: Convertiamo in Stringa prima di fare toLowerCase()
+  // Questo previene crash se user.role è un numero (es. 1) o undefined
+  const getRole = () => {
+      if (!user || !user.role) return '';
+      return String(user.role).toLowerCase();
+  };
 
   if (loading) {
     return (
@@ -70,7 +74,7 @@ function RootNavigator() {
           // --- LOGGATO ---
           <>
             {/* 1. Routing Principale in base al Ruolo */}
-            {getRole() === 'responsabile' ? (
+            {getRole() === 'responsabile' || getRole() === 'admin' ? (
               <>
                 <Stack.Screen name="ResponsibleHome" component={ResponsibleTicketsScreen} />
                 <Stack.Screen name="ManageOperators" component={ManageOperatorsScreen} />
@@ -79,7 +83,7 @@ function RootNavigator() {
               // Operatore va diretto ai lavori
               <Stack.Screen name="OperatorHome" component={OperatorTicketsScreen} />
             ) : (
-              // Cittadino (o default) va alla dashboard personale
+              // Cittadino (o default/fallback) va alla dashboard personale
               <Stack.Screen name="CitizenHome" component={CitizenHomeScreen} />
             )}
 
