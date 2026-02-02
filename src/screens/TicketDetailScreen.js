@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, FlatList } from 'react-native';
+import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, FlatList, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker'; // Aggiunto per IF-3.9 (Foto Report)
+import * as ImagePicker from 'expo-image-picker'; 
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
 
-// Assicurati di aggiungere 'updateTicketDetails' nel tuo ticketService.js
 import { getTicket, getAllReplies, postReply, closeTicket, updateTicketStatus, deleteTicket, assignTicket, updateTicketDetails } from '../services/ticketService';
 import { sendFeedback } from '../services/interventionService';
 import { getOperatorsByTenant } from '../services/userService'; 
+// Importiamo il servizio per risolvere l'indirizzo
+import { getAddressFromCoordinates } from '../services/nominatim';
 
 export default function TicketDetailScreen({ route, navigation }) {
   // 1. Recupero ID
@@ -28,17 +29,17 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [rating, setRating] = useState(0); 
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
-  // REPORT DI INTERVENTO (Modale per IF-3.10 / IF-3.9 - Operatore)
+  // REPORT DI INTERVENTO
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [interventionReport, setInterventionReport] = useState('');
-  const [reportImage, setReportImage] = useState(null); // Aggiunto per foto report
+  const [reportImage, setReportImage] = useState(null); 
 
-  // ASSEGNAZIONE E MODIFICA (Responsabile IF-3.6, IF-3.3)
+  // ASSEGNAZIONE E MODIFICA
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [operators, setOperators] = useState([]);
   const [loadingOperators, setLoadingOperators] = useState(false);
   
-  // STATO MODIFICA TICKET (IF-3.3 Responsabile)
+  // STATO MODIFICA TICKET
   const [isEditingTicket, setIsEditingTicket] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
@@ -65,8 +66,17 @@ export default function TicketDetailScreen({ route, navigation }) {
       try {
         const freshTicket = await getTicket(ticketId);
         if (freshTicket) {
+           // Se abbiamo lat/lon ma non l'indirizzo, lo recuperiamo al volo
+           if ((!freshTicket.indirizzo && !freshTicket.address) && freshTicket.lat && freshTicket.lon) {
+               try {
+                   const resolvedAddress = await getAddressFromCoordinates(freshTicket.lat, freshTicket.lon);
+                   freshTicket.address = resolvedAddress;
+               } catch (err) {
+                   console.warn("Impossibile risolvere indirizzo", err);
+               }
+           }
+
            setTicket(freshTicket);
-           // Inizializza campi modifica
            setEditTitle(freshTicket.titolo || freshTicket.title);
            setEditDesc(freshTicket.descrizione || freshTicket.description || freshTicket.desc);
 
@@ -130,7 +140,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // Funzione per scegliere foto report (IF-3.9)
   const pickReportImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -153,20 +162,13 @@ export default function TicketDetailScreen({ route, navigation }) {
       setActionLoading(true);
 
       try {
-          // 1. Invio del Rapporto come "Reply" speciale (IF-3.9)
-          // Nota: Se il backend supporta immagini nelle reply, si dovrebbe passare reportImage qui.
-          // Qui assumiamo un flusso standard multipart se presente, o solo testo + riferimento.
+          // Invio Rapporto come Reply speciale (uso campo 'body')
           const replyData = {
-              text: `[RAPPORTO INTERVENTO]: ${interventionReport} ${reportImage ? '(FOTO ALLEGATA)' : ''}`,
+              body: `[RAPPORTO INTERVENTO]: ${interventionReport}`,
               author: user?.name || 'Operatore',
-              date: new Date().toISOString(),
-              isReport: true // Flag per il backend se gestito
           };
 
-          // Chiamata per inviare il messaggio (e l'immagine se il service postReply lo supporta)
           await postReply(ticket.id, replyData, reportImage ? [reportImage] : []);
-
-          // 2. Chiusura Ticket
           const closeSuccess = await closeTicket(ticket.id);
 
           if (closeSuccess) {
@@ -185,12 +187,9 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // --- AZIONI RESPONSABILE (MANAGER) ---
-  
-  // IF-3.3: Correzione Dati Ticket
+  // --- AZIONI RESPONSABILE ---
   const toggleEditMode = () => {
       if (isEditingTicket) {
-          // Annulla modifica
           setEditTitle(ticket.titolo || ticket.title);
           setEditDesc(ticket.descrizione || ticket.description || ticket.desc);
           setIsEditingTicket(false);
@@ -200,19 +199,16 @@ export default function TicketDetailScreen({ route, navigation }) {
   };
 
   const handleSaveTicketDetails = async () => {
-      if (!editTitle.trim() || !editDesc.trim()) {
-          Alert.alert("Errore", "Titolo e descrizione non possono essere vuoti.");
+      if (!editTitle.trim()) {
+          Alert.alert("Errore", "Il titolo non può essere vuoto.");
           return;
       }
 
       setActionLoading(true);
       try {
-          // Chiamata al servizio (da implementare in ticketService.js se manca)
-          // Payload: { title: editTitle, description: editDesc, ... }
           const success = await updateTicketDetails(ticket.id, {
               title: editTitle,
               description: editDesc,
-              // category: ticket.category // Si potrebbe aggiungere anche la categoria
           });
 
           if (success) {
@@ -230,7 +226,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
   
-  // Apertura modale assegnazione
   const openAssignModal = async () => {
       setAssignModalVisible(true);
       if (operators.length === 0) {
@@ -266,7 +261,7 @@ export default function TicketDetailScreen({ route, navigation }) {
   };
 
   const handleDeleteTicket = () => {
-      Alert.alert("Elimina Ticket", "Sei sicuro di voler eliminare definitivamente questo ticket? L'operazione è irreversibile.", [
+      Alert.alert("Elimina Ticket", "Sei sicuro di voler eliminare definitivamente questo ticket?", [
           { text: "Annulla", style: "cancel" },
           { text: "Elimina", style: 'destructive', onPress: async () => {
               setActionLoading(true);
@@ -282,15 +277,28 @@ export default function TicketDetailScreen({ route, navigation }) {
       ]);
   };
 
-  // --- AZIONI COMUNI (MESSAGGI / RATING) ---
+  // Funzione per aprire la mappa esterna
+  const openMap = () => {
+      if(ticket.lat && ticket.lon) {
+          const url = Platform.select({
+            ios: `maps:0,0?q=${ticket.lat},${ticket.lon}`,
+            android: `geo:0,0?q=${ticket.lat},${ticket.lon}(Ticket)`
+          });
+          Linking.openURL(url);
+      } else {
+          Alert.alert("Info", "Coordinate non disponibili");
+      }
+  };
+
+  // --- AZIONI MESSAGGI / RATING ---
   const handleSendComment = async () => {
     if(!newComment.trim()) return;
     
     setActionLoading(true);
+    // Usa 'body' come richiesto dall'API TXT
     const replyData = {
-        text: newComment, 
-        author: user?.name || 'Utente', 
-        date: new Date().toISOString()
+        body: newComment, 
+        author: user?.name || 'Utente'
     };
 
     const success = await postReply(ticket.id, replyData);
@@ -319,7 +327,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                 setRatingSubmitted(true);
                 Alert.alert("Grazie!", "La tua valutazione è stata inviata.");
             } else {
-                Alert.alert("Attenzione", "Impossibile salvare la valutazione sul server, riprova più tardi.");
+                Alert.alert("Attenzione", "Impossibile salvare la valutazione sul server.");
             }
         }}
     ]);
@@ -356,7 +364,7 @@ export default function TicketDetailScreen({ route, navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
            <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ticket #{ticket.id.toString().slice(0,8)}</Text>
+        <Text style={styles.headerTitle}>Ticket #{ticket.id ? ticket.id.toString().slice(0,8) : '...'}</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
@@ -375,7 +383,11 @@ export default function TicketDetailScreen({ route, navigation }) {
           {/* BADGES */}
           <View style={styles.badgeRow}>
             <View style={styles.catBadge}>
-                <Text style={styles.catText}>{ticket.categoria || ticket.category || 'Generico'}</Text>
+                <Text style={styles.catText}>
+                    {Array.isArray(ticket.categories) && ticket.categories.length > 0 
+                        ? ticket.categories[0].label 
+                        : (ticket.category || 'Generico')}
+                </Text>
             </View>
             <View style={[styles.statusBadge, {backgroundColor: getStatusColor()}]}>
                 <Text style={{color: getStatusTextColor(), fontWeight:'bold'}}>
@@ -384,7 +396,7 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           </View>
 
-          {/* EDIT MODE per Responsabile (IF-3.3) */}
+          {/* EDIT MODE */}
           {isEditingTicket ? (
               <View style={styles.editContainer}>
                   <Text style={styles.labelInput}>Modifica Titolo:</Text>
@@ -412,13 +424,21 @@ export default function TicketDetailScreen({ route, navigation }) {
           ) : (
               <>
                 <Text style={styles.title}>{ticket.titolo || ticket.title}</Text>
+                
+                {/* INDIRIZZO E MAPPA */}
                 <Text style={styles.address}>
                     <Ionicons name="location-outline" size={14} /> {ticket.indirizzo || ticket.address || 'Posizione non disponibile'}
                 </Text>
+                {ticket.lat && ticket.lon && (
+                    <TouchableOpacity onPress={openMap} style={{flexDirection:'row', alignItems:'center', marginBottom:15}}>
+                        <Ionicons name="map" size={16} color={COLORS.primary} />
+                        <Text style={{color: COLORS.primary, marginLeft:5, fontWeight:'bold', fontSize:14}}>Vedi su Mappa</Text>
+                    </TouchableOpacity>
+                )}
 
                 <View style={styles.metaInfo}>
                     <Text style={styles.metaText}>
-                        <Ionicons name="calendar-outline" size={12} /> {ticket.creation_date || ticket.timestamp ? new Date(ticket.creation_date || ticket.timestamp).toLocaleDateString() : 'Data N/D'}
+                        <Ionicons name="calendar-outline" size={12} /> {ticket.creation_date ? new Date(ticket.creation_date).toLocaleDateString() : 'Data N/D'}
                     </Text>
                     <Text style={styles.metaText}>
                         <Ionicons name="person-outline" size={12} /> {ticket.author_name || ticket.id_creator_user || 'Utente'}
@@ -430,7 +450,7 @@ export default function TicketDetailScreen({ route, navigation }) {
               </>
           )}
 
-          {/* AREA OPERATORE */}
+          {/* PANNELLI AZIONI */}
           {isOperator && (
             <View style={styles.operatorPanel}>
                 <Text style={styles.opTitle}>Pannello Operatore</Text>
@@ -460,7 +480,6 @@ export default function TicketDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* AREA RESPONSABILE (IF-3.6, IF-3.3) */}
           {isManager && (
             <View style={styles.operatorPanel}>
                 <Text style={[styles.opTitle, {color: '#B91C1C'}]}>Pannello Responsabile</Text>
@@ -482,7 +501,6 @@ export default function TicketDetailScreen({ route, navigation }) {
                             </TouchableOpacity>
                         </View>
                         
-                        {/* Tasto Modifica Dati (IF-3.3) */}
                         {!isEditingTicket && !isResolved && (
                              <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#F59E0B'}]} onPress={toggleEditMode}>
                                  <Ionicons name="create" size={18} color="white" />
@@ -527,12 +545,12 @@ export default function TicketDetailScreen({ route, navigation }) {
               </View>
           ) : (
               replies.map((r, i) => (
-                <View key={i} style={[styles.msgBox, r.id_user === user?.id ? styles.msgMine : styles.msgOther]}>
+                <View key={i} style={[styles.msgBox, r.id_creator_user === user?.id ? styles.msgMine : styles.msgOther]}>
                     <Text style={styles.msgUser}>
-                        {r.user_name || r.author || (r.id_user === user?.id ? 'Tu' : 'Utente')}
+                        {r.user_name || (r.id_creator_user === user?.id ? 'Tu' : 'Utente')}
                     </Text>
-                    <Text style={styles.msgText}>{r.text || r.messaggio || r.body}</Text>
-                    {/* Se il messaggio è un report e ha un'immagine associata, qui si potrebbe visualizzare */}
+                    {/* Visualizza 'body' come da API */}
+                    <Text style={styles.msgText}>{r.body || r.text || r.messaggio}</Text>
                     <Text style={styles.msgDate}>{r.date ? new Date(r.date).toLocaleDateString() : ''}</Text>
                 </View>
               ))
@@ -540,7 +558,7 @@ export default function TicketDetailScreen({ route, navigation }) {
         </View>
       </ScrollView>
 
-      {/* INPUT BAR (Chat) */}
+      {/* INPUT BAR */}
       {!isResolved && (
           <View style={styles.inputArea}>
              <TextInput 
@@ -555,7 +573,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       )}
 
-      {/* MODALE RAPPORTO INTERVENTO (Operatore) */}
+      {/* MODALE REPORT */}
       <Modal
           animationType="slide"
           transparent={true}
@@ -565,18 +583,17 @@ export default function TicketDetailScreen({ route, navigation }) {
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
                   <Text style={styles.modalTitle}>Rapporto di Intervento</Text>
-                  <Text style={styles.modalSub}>Descrivi le operazioni effettuate ed allega una foto (opzionale).</Text>
+                  <Text style={styles.modalSub}>Descrivi le operazioni effettuate.</Text>
                   
                   <TextInput 
                       style={styles.modalInput}
                       multiline
                       numberOfLines={4}
-                      placeholder="Descrizione tecnica dell'intervento..."
+                      placeholder="Descrizione tecnica..."
                       value={interventionReport}
                       onChangeText={setInterventionReport}
                   />
 
-                  {/* SEZIONE FOTO REPORT (IF-3.9) */}
                   <TouchableOpacity style={styles.reportPhotoBtn} onPress={pickReportImage}>
                       {reportImage ? (
                           <View style={{flexDirection:'row', alignItems:'center'}}>
@@ -603,7 +620,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       </Modal>
 
-      {/* MODALE ASSEGNAZIONE (Responsabile) */}
+      {/* MODALE ASSEGNAZIONE */}
       <Modal
           animationType="fade"
           transparent={true}
@@ -613,8 +630,6 @@ export default function TicketDetailScreen({ route, navigation }) {
           <View style={styles.modalOverlay}>
               <View style={[styles.modalContent, {maxHeight: '80%'}]}>
                   <Text style={styles.modalTitle}>Assegna a Operatore</Text>
-                  <Text style={styles.modalSub}>Seleziona un operatore dalla lista:</Text>
-                  
                   {loadingOperators ? (
                       <ActivityIndicator size="large" color={COLORS.primary} style={{margin: 20}} />
                   ) : operators.length === 0 ? (
@@ -626,12 +641,11 @@ export default function TicketDetailScreen({ route, navigation }) {
                           renderItem={({item}) => (
                               <TouchableOpacity style={styles.operatorItem} onPress={() => handleAssignOperator(item.id)}>
                                   <Ionicons name="person" size={20} color="#555" />
-                                  <Text style={styles.operatorName}>{item.name || item.cognome + ' ' + item.nome}</Text>
+                                  <Text style={styles.operatorName}>{item.name} {item.surname}</Text>
                               </TouchableOpacity>
                           )}
                       />
                   )}
-
                   <TouchableOpacity style={[styles.modalBtn, {backgroundColor: '#ccc', marginTop:15, alignSelf:'flex-end'}]} onPress={() => setAssignModalVisible(false)}>
                       <Text style={styles.modalBtnText}>Annulla</Text>
                   </TouchableOpacity>
@@ -666,7 +680,6 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 14, fontWeight: 'bold', color: '#999', marginBottom: 10, marginTop: 10, letterSpacing: 1 },
   desc: { fontSize: 16, color: '#333', lineHeight: 24 },
 
-  // Edit Mode Styles
   editContainer: { marginBottom: 15, backgroundColor: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#ddd' },
   labelInput: { fontSize: 12, fontWeight: 'bold', color: '#666', marginBottom: 5 },
   editInput: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 8, fontSize: 14, marginBottom: 10 },
@@ -679,7 +692,7 @@ const styles = StyleSheet.create({
 
   ratingBox: { backgroundColor: '#fff', padding: 20, borderRadius: 12, alignItems: 'center', elevation: 2, marginTop: 20, borderTopWidth: 4, borderTopColor: '#FFD700' },
   ratingTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 10 },
-  ratingSub: { fontSize: 12, color: '#6B7280', marginTop: 5 },
+  ratingSub: { fontSize: 12, color: '#6B7280', marginTop: 5 }, // Stile ripristinato
 
   msgBox: { padding: 12, borderRadius: 12, marginBottom: 10, maxWidth: '85%' },
   msgOther: { backgroundColor: '#fff', alignSelf: 'flex-start', elevation: 1, borderBottomLeftRadius: 0 },
@@ -692,21 +705,15 @@ const styles = StyleSheet.create({
   input: { flex: 1, backgroundColor: '#f0f0f0', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, marginRight: 10 },
   sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.primary || '#D32F2F', justifyContent: 'center', alignItems: 'center' },
 
-  // Stili Modale
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { width: '90%', backgroundColor: 'white', borderRadius: 12, padding: 20, elevation: 5 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 5 },
   modalSub: { fontSize: 12, color: '#666', marginBottom: 15 },
   modalInput: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 10, height: 100, textAlignVertical: 'top', marginBottom: 15 },
-  
-  // Stili Foto Report
   reportPhotoBtn: { flexDirection: 'row', alignItems:'center', justifyContent:'center', padding: 10, backgroundColor:'#F3F4F6', borderRadius: 8, marginBottom: 20, borderWidth: 1, borderColor: '#E5E7EB', borderStyle: 'dashed' },
-
   modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
   modalBtn: { paddingVertical: 10, paddingHorizontal: 15, borderRadius: 6 },
   modalBtnText: { color: 'white', fontWeight: 'bold' },
-  
-  // Stili lista operatori
   operatorItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#eee', flexDirection: 'row', alignItems: 'center' },
   operatorName: { marginLeft: 10, fontSize: 16, color: '#333' }
 });

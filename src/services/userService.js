@@ -7,14 +7,14 @@ export const getOperators = async () => {
     // 1. Prendi gli ID degli operatori
     const opResponse = await authenticatedFetch(`${API_BASE}/operator`, { method: 'GET' });
     if (!opResponse.ok) return [];
-    const operatorIds = await opResponse.json(); // Esempio: ["id1", "id2"]
+    const operatorIds = await opResponse.json(); // Array di UUID ["id1", "id2"]
 
     if (!Array.isArray(operatorIds) || operatorIds.length === 0) return [];
 
-    // 2. Prendi TUTTI gli utenti (Il backend non sembra supportare ?role=Operatore)
+    // 2. Prendi TUTTI gli utenti
     const usersResponse = await authenticatedFetch(`${API_BASE}/user`, { method: 'GET' });
     if (!usersResponse.ok) return [];
-    const allUsers = await usersResponse.json(); // Array di oggetti utente
+    const allUsers = await usersResponse.json(); 
 
     // 3. Filtra solo quelli che sono nella lista operatori
     const operators = allUsers.filter(u => operatorIds.includes(u.id));
@@ -25,20 +25,64 @@ export const getOperators = async () => {
   }
 };
 
+// Alias per compatibilità con il codice esistente
+export const getOperatorsByTenant = getOperators;
+
 export const createOperator = async (operatorData) => {
   try {
-    const response = await authenticatedFetch(`${API_BASE}/user`, {
+    // PASSO 1: Creare l'utente base (POST /api/user)
+    const userPayload = {
+        name: operatorData.name,
+        surname: operatorData.surname,
+        birth_date: operatorData.birth_date || "2000-01-01", // Default se manca
+        phonenumber: operatorData.phonenumber || operatorData.phoneNumber
+    };
+
+    const createResp = await authenticatedFetch(`${API_BASE}/user`, {
       method: 'POST',
-      body: JSON.stringify({ ...operatorData, role: 'Operatore' }) // Nota: il backend assegna il ruolo, ma lo passiamo per completezza
+      body: JSON.stringify(userPayload)
     });
-    // Dopo aver creato l'utente, bisogna promuoverlo a operatore? 
-    // Il txt dice "POST SET OPERATOR {id}". 
-    // Se la creazione utente è generica, potrebbe servire un passo extra.
-    // Assumiamo per ora che basti creare l'utente e poi fare SET OPERATOR se necessario, 
-    // ma per il Requirements Doc sembra che il Responsabile crei direttamente l'account.
+
+    if (!createResp.ok) {
+        console.error("Errore creazione utente base per operatore");
+        return false;
+    }
+
+    // Per ottenere l'ID del nuovo utente, dobbiamo cercarlo nella lista utenti
+    // (poiché la POST /api/user spesso non restituisce l'ID creato nel body in alcune implementazioni, 
+    // ma se lo fa, usiamo quello).
+    let newUserId = null;
+    const createdData = await createResp.json();
     
-    const data = await response.json();
-    return response.ok; // o data.success
+    if (createdData && createdData.id) {
+        newUserId = createdData.id;
+    } else {
+        // Fallback: Cerchiamo l'utente appena creato tramite GET ALL
+        const usersResp = await authenticatedFetch(`${API_BASE}/user`, { method: 'GET' });
+        const users = await usersResp.json();
+        // Cerchiamo per numero di telefono (univoco si spera) o nome/cognome
+        const found = users.find(u => 
+            u.phonenumber === userPayload.phonenumber && 
+            u.surname === userPayload.surname
+        );
+        if (found) newUserId = found.id;
+    }
+
+    if (!newUserId) {
+        console.error("Impossibile recuperare ID nuovo utente");
+        return false;
+    }
+
+    // PASSO 2: Promuovere a Operatore (POST SET OPERATOR)
+    // Endpoint: http://192.168.72.107:32413/api/operator
+    // Body: { "id": "uuid" }
+    const setOpResp = await authenticatedFetch(`${API_BASE}/operator`, {
+        method: 'POST',
+        body: JSON.stringify({ id: newUserId })
+    });
+
+    return setOpResp.ok;
+
   } catch (e) {
     console.error('userService.createOperator', e);
     return false;
@@ -51,7 +95,6 @@ export const updateOperator = async (id, operatorData) => {
       method: 'PUT',
       body: JSON.stringify(operatorData)
     });
-    const data = await response.json();
     return response.ok;
   } catch (e) {
     console.error('userService.updateOperator', e);
@@ -61,6 +104,13 @@ export const updateOperator = async (id, operatorData) => {
 
 export const deleteUser = async (id) => {
   try {
+    // Se è un operatore, dovremmo prima fare UNSET OPERATOR (DEL /api/operator/{id})
+    // Poi eliminare l'utente. Proviamo a fare entrambi.
+    
+    // 1. Tenta rimozione ruolo operatore (non bloccante se fallisce/non esiste)
+    await authenticatedFetch(`${API_BASE}/operator/${id}`, { method: 'DELETE' });
+
+    // 2. Elimina utente fisico
     const response = await authenticatedFetch(`${API_BASE}/user/${id}`, {
       method: 'DELETE'
     });
