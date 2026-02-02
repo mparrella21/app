@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert, ScrollView } from 'react-native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import { register } from '../services/authService'; // [FIX] Import servizio registrazione
 
 const { width } = Dimensions.get('window');
 
 export default function AuthModal({ navigation }) {
-  const { login } = useAuth(); // Prende la funzione dal Context
+  const { login } = useAuth(); 
   const [activeTab, setActiveTab] = useState('login'); 
+  const [isLoading, setIsLoading] = useState(false); // [FIX] Stato caricamento
   
   // Login State
   const [email, setEmail] = useState('');
@@ -20,42 +22,65 @@ export default function AuthModal({ navigation }) {
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const handleAuthAction = async () => {
-    if (activeTab === 'login') {
-        if (!email || !password) {
-            Alert.alert("Errore", "Inserisci Email e Password");
-            return;
-        }
-        
-        // CHIAMATA REALE AL CONTEXT
-        // Il backend restituirà il ruolo, e il Context aggiornerà lo stato 'user'
-        const result = await login(email, password);
-        
-        if (result.success) {
-             // Chiude la modale, la navigazione cambierà automaticamente grazie al Context in App.js
-             navigation.goBack(); 
-        } else {
-             Alert.alert("Errore Login", result.error || "Credenziali non valide");
-        }
+    setIsLoading(true);
+    try {
+        if (activeTab === 'login') {
+            if (!email || !password) {
+                Alert.alert("Errore", "Inserisci Email e Password");
+                setIsLoading(false);
+                return;
+            }
+            
+            const result = await login(email, password);
+            
+            if (result.success) {
+                 navigation.goBack(); 
+            } else {
+                 Alert.alert("Errore Login", result.error || "Credenziali non valide");
+            }
 
-    } else {
-        // Logica Registrazione (Simulata o collegata a service)
-        if (!nome || !cognome || !email || !password || !confirmPassword) {
-            Alert.alert("Errore", "Compila tutti i campi obbligatori");
-            return;
+        } else {
+            // [FIX] Logica Registrazione Reale (UC-02)
+            if (!nome || !cognome || !email || !password || !confirmPassword) {
+                Alert.alert("Errore", "Compila tutti i campi obbligatori");
+                setIsLoading(false);
+                return;
+            }
+            if (password !== confirmPassword) {
+                Alert.alert("Errore", "Le password non coincidono");
+                setIsLoading(false);
+                return;
+            }
+
+            // Preparazione payload coerente con User Service
+            const userData = {
+                name: nome,
+                surname: cognome,
+                email: email,
+                password: password,
+                phone: cellulare,
+                role: 'Cittadino' // Ruolo di default per registrazione pubblica
+            };
+
+            const result = await register(userData);
+
+            if (result.success) {
+                Alert.alert("Registrazione", "Account creato con successo! Effettua il login.");
+                setActiveTab('login');
+                // Pulisci form registrazione se vuoi
+                setPassword(''); setConfirmPassword('');
+            } else {
+                Alert.alert("Errore Registrazione", result.error || "Impossibile creare l'account.");
+            }
         }
-        if (password !== confirmPassword) {
-            Alert.alert("Errore", "Le password non coincidono");
-            return;
-        }
-        // Qui dovresti chiamare register(nome, cognome, email, password)...
-        Alert.alert("Registrazione", "Account creato con successo! Ora puoi accedere.");
-        setActiveTab('login');
+    } catch (e) {
+        Alert.alert("Errore", "Si è verificato un problema tecnico.");
+    } finally {
+        setIsLoading(false);
     }
   };
 
   const handleGoogleLogin = () => {
-      // Per il progetto universitario, se non hai implementato il Google Sign-in nativo su mobile,
-      // puoi lasciare un alert o simulare un login cittadino standard.
       Alert.alert("Google Login", "Funzionalità non ancora attiva su mobile.");
   };
 
@@ -72,7 +97,6 @@ export default function AuthModal({ navigation }) {
               <Ionicons name="close" size={24} color="white" />
             </TouchableOpacity>
 
-            {/* Toggle Header */}
             <View style={styles.toggleContainer}>
               <TouchableOpacity style={[styles.toggleItem, activeTab === 'login' && styles.activeTab]} onPress={() => setActiveTab('login')}>
                 <Text style={[styles.toggleText, activeTab === 'login' && styles.activeText]}>Login</Text>
@@ -105,7 +129,7 @@ export default function AuthModal({ navigation }) {
                 </>
               )}
 
-              {/* CAMPI LOGIN */}
+              {/* CAMPI LOGIN/EMAIL */}
               <View style={styles.inputContainer}>
                 <Ionicons name="mail-outline" size={20} color="#666" style={{marginRight:10}} />
                 <TextInput 
@@ -145,8 +169,10 @@ export default function AuthModal({ navigation }) {
               )}
 
               {/* Action Button */}
-              <TouchableOpacity style={styles.mainBtn} onPress={handleAuthAction}>
-                <Text style={styles.mainBtnText}>{activeTab === 'login' ? 'ACCEDI' : 'REGISTRATI'}</Text>
+              <TouchableOpacity style={[styles.mainBtn, isLoading && {backgroundColor:'#888'}]} onPress={handleAuthAction} disabled={isLoading}>
+                <Text style={styles.mainBtnText}>
+                    {isLoading ? "CARICAMENTO..." : (activeTab === 'login' ? 'ACCEDI' : 'REGISTRATI')}
+                </Text>
               </TouchableOpacity>
 
               {/* Google Login */}

@@ -1,9 +1,11 @@
 import { API_BASE } from './config';
 
-// Auth service: login / register against existing PHP API
+// Auth service: login / register against API Gateway (Auth Service)
+
 export const login = async (email, password) => {
   try {
-    const response = await fetch(`${API_BASE}/login`, {
+    // [FIX] Aggiunto prefisso /auth come da specifica architetturale (POST /auth/login)
+    const response = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({ email, password })
@@ -12,7 +14,8 @@ export const login = async (email, password) => {
     const data = await response.json();
 
     if (response.ok && data.success) {
-      return { token: data.token, user: data.user };
+      // Il backend restituisce token e user
+      return { token: data.token || data.access_token, user: data.user };
     }
 
     return { error: data.message || 'Login fallito' };
@@ -22,12 +25,14 @@ export const login = async (email, password) => {
   }
 };
 
-export const register = async (name, email, password) => {
+export const register = async (userData) => {
   try {
-    const response = await fetch(`${API_BASE}/register`, {
+    // [FIX] Aggiunto prefisso /auth e supporto per oggetto userData completo
+    // Endpoint: POST /auth/register
+    const response = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ name, email, password })
+      body: JSON.stringify(userData)
     });
 
     const data = await response.json();
