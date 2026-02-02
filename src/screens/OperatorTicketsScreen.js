@@ -6,7 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 // Services
 import { updateTicketStatus } from '../services/ticketService';
-import { getAssignments, updateAssignmentStatus } from '../services/interventionService'; 
+import { getAssignments } from '../services/interventionService'; 
 import { COLORS } from '../styles/global';
 
 export default function OperatorTicketsScreen({ navigation }) {
@@ -34,9 +34,9 @@ export default function OperatorTicketsScreen({ navigation }) {
 
   // Gestione "Prendi in Carico"
   const handleTakeCharge = async (item) => {
-    // item rappresenta l'oggetto assegnazione che contiene il ticket
-    const ticketId = item.ticketId || item.ticket?.id || item.id; 
-    const assignmentId = item.id; // L'ID dell'assegnazione è fondamentale per l'Intervention Service
+    // Estraiamo l'ID del ticket (adattabile a seconda se item è l'assegnazione o il ticket stesso)
+    const ticketData = item.ticket ? item.ticket : item;
+    const ticketId = ticketData.id || ticketData.id_ticket; 
 
     Alert.alert(
       "Presa in carico",
@@ -48,20 +48,14 @@ export default function OperatorTicketsScreen({ navigation }) {
           onPress: async () => {
             setLoading(true);
             try {
-                // 1. Aggiorna lo stato del TICKET (Ticket Service)
-                const ticketSuccess = await updateTicketStatus(ticketId, 'In Corso', 2);
+                // Per prendere in carico, basta aggiornare lo stato del TICKET a 2 ("In Lavorazione")
+                const success = await updateTicketStatus(ticketId, 'In Lavorazione', 2);
                 
-                // 2. Aggiorna lo stato dell'ASSEGNAZIONE (Intervention Service)
-                let assignmentSuccess = true;
-                if (assignmentId) {
-                    assignmentSuccess = await updateAssignmentStatus(assignmentId, 'In Corso');
-                }
-
-                if (ticketSuccess && assignmentSuccess) {
+                if (success) {
                     Alert.alert("Successo", "Ticket preso in carico correttamente.");
                     loadTasks(); 
                 } else {
-                    Alert.alert("Attenzione", "Stato aggiornato parzialmente. Verifica la connessione.");
+                    Alert.alert("Errore", "Impossibile aggiornare lo stato del ticket. Riprova.");
                     loadTasks();
                 }
             } catch (error) {
@@ -78,7 +72,7 @@ export default function OperatorTicketsScreen({ navigation }) {
 
   // Gestione "Risolvi"
   const handleResolve = (ticketData) => {
-    // Passiamo i dati del ticket alla schermata di dettaglio per la chiusura
+    // Passiamo i dati del ticket alla schermata di dettaglio per la chiusura (aggiunta foto e rapporto intervento)
     navigation.navigate('TicketDetail', { ticket: ticketData });
   };
 
@@ -87,33 +81,38 @@ export default function OperatorTicketsScreen({ navigation }) {
     return tasks.filter(item => {
       // Normalizzazione: supporta sia struttura piatta che annidata
       const ticketStatus = (item.ticket?.status || item.status || '').toLowerCase();
+      const statusId = item.ticket?.id_status || item.id_status;
       
       if (filter === 'todo') {
-        // Ticket assegnati ma non ancora in lavorazione
-        return ticketStatus === 'assegnato' || ticketStatus === 'ricevuto' || ticketStatus === 'open' || ticketStatus === 'aperto';
+        // Ticket assegnati ma non ancora in lavorazione (Stato 1)
+        return statusId === 1 || ticketStatus === 'assegnato' || ticketStatus === 'ricevuto' || ticketStatus === 'open' || ticketStatus === 'aperto';
       }
       if (filter === 'working') {
-        return ticketStatus === 'in corso' || ticketStatus === 'working' || ticketStatus === 'in_progress';
+        // Ticket in corso (Stato 2)
+        return statusId === 2 || ticketStatus === 'in lavorazione' || ticketStatus === 'in corso' || ticketStatus === 'working' || ticketStatus === 'in_progress';
       }
       if (filter === 'done') {
-        return ticketStatus === 'risolto' || ticketStatus === 'chiuso' || ticketStatus === 'closed';
+        // Ticket risolti o chiusi (Stato 3 o 4)
+        return statusId === 3 || statusId === 4 || ticketStatus === 'risolto' || ticketStatus === 'chiuso' || ticketStatus === 'closed';
       }
       return true;
     });
   };
 
   const renderItem = ({ item }) => {
-    // Estrazione dati ticket dall'oggetto assegnazione
+    // Estrazione dati ticket dall'oggetto assegnazione o dal ticket stesso
     const ticketData = item.ticket ? item.ticket : item; 
     
     if (!ticketData) return null;
 
-    const status = (ticketData.status || '').toLowerCase();
-    
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-            <Text style={styles.categoryBadge}>{ticketData.categoria || ticketData.category || 'Manutenzione'}</Text>
+            <Text style={styles.categoryBadge}>
+                {Array.isArray(ticketData.categories) && ticketData.categories.length > 0 
+                    ? ticketData.categories[0].label 
+                    : (ticketData.category || 'Generico')}
+            </Text>
             <Text style={styles.date}>{ticketData.creation_date ? new Date(ticketData.creation_date).toLocaleDateString() : 'Data N/D'}</Text>
         </View>
         
@@ -179,7 +178,7 @@ export default function OperatorTicketsScreen({ navigation }) {
       ) : (
         <FlatList 
             data={getFilteredTasks()} 
-            keyExtractor={(item, index) => String(item.id || index)} 
+            keyExtractor={(item, index) => String(item.id || item.id_ticket || index)} 
             renderItem={renderItem}
             contentContainerStyle={{padding: 16, paddingBottom: 100}}
             refreshControl={<RefreshControl refreshing={loading} onRefresh={loadTasks}/>}

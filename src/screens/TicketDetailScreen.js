@@ -15,7 +15,8 @@ import {
     updateTicketStatus, 
     deleteTicket, 
     assignTicket, 
-    updateTicketDetails 
+    updateTicketDetails,
+    getCategories // Aggiunto per recuperare le categorie
 } from '../services/ticketService';
 import { sendFeedback, getRating } from '../services/interventionService';
 import { getOperatorsByTenant } from '../services/userService'; 
@@ -53,6 +54,8 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [isEditingTicket, setIsEditingTicket] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [editCategoryId, setEditCategoryId] = useState(null);
+  const [allCategories, setAllCategories] = useState([]);
 
   // STATO MODIFICA MESSAGGIO (Reply)
   const [editReplyModalVisible, setEditReplyModalVisible] = useState(false);
@@ -93,8 +96,12 @@ export default function TicketDetailScreen({ route, navigation }) {
            setTicket(freshTicket);
            setEditTitle(freshTicket.titolo || freshTicket.title);
            setEditDesc(freshTicket.descrizione || freshTicket.description || freshTicket.desc);
+           
+           if(freshTicket.categories && freshTicket.categories.length > 0) {
+               setEditCategoryId(freshTicket.categories[0].id || freshTicket.categories[0]);
+           }
 
-           // NUOVO: Recupera Rating se esiste
+           // Recupera Rating se esiste
            try {
                const fetchedRating = await getRating(ticketId);
                if (fetchedRating && fetchedRating.vote) {
@@ -112,6 +119,12 @@ export default function TicketDetailScreen({ route, navigation }) {
 
         const fetchedReplies = await getAllReplies(ticketId);
         setReplies(fetchedReplies);
+
+        // Se Manager, precarichiamo le categorie per eventuale modifica
+        if (user?.role === 'responsabile' || user?.role === 'maintenance_manager') {
+            const cats = await getCategories();
+            setAllCategories(cats);
+        }
 
       } catch (error) {
         console.error("Errore fetch ticket detail", error);
@@ -166,7 +179,7 @@ export default function TicketDetailScreen({ route, navigation }) {
       
       setActionLoading(false);
       if (success) {
-          fetchData(); // Ricarica messaggi
+          fetchData(); 
       } else {
           Alert.alert("Errore", "Impossibile modificare il messaggio.");
       }
@@ -250,7 +263,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           };
 
           await postReply(ticket.id, replyData, reportImage ? [reportImage] : []);
-          // Chiudiamo il ticket (stato 3 o 4)
+          // Chiudiamo il ticket (stato 3 = Risolto)
           const closeSuccess = await closeTicket(ticket.id);
 
           if (closeSuccess) {
@@ -274,6 +287,9 @@ export default function TicketDetailScreen({ route, navigation }) {
       if (isEditingTicket) {
           setEditTitle(ticket.titolo || ticket.title);
           setEditDesc(ticket.descrizione || ticket.description || ticket.desc);
+          if(ticket.categories && ticket.categories.length > 0) {
+              setEditCategoryId(ticket.categories[0].id || ticket.categories[0]);
+          }
           setIsEditingTicket(false);
       } else {
           setIsEditingTicket(true);
@@ -291,6 +307,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           const success = await updateTicketDetails(ticket.id, {
               title: editTitle,
               description: editDesc,
+              categories: editCategoryId ? [editCategoryId] : []
           });
 
           if (success) {
@@ -347,7 +364,8 @@ export default function TicketDetailScreen({ route, navigation }) {
           { text: "Annulla", style: "cancel" },
           { text: "Elimina", style: 'destructive', onPress: async () => {
               setActionLoading(true);
-              const success = await deleteTicket(ticket.id);
+              // MODIFICA IMPORTANTE: Passiamo l'intero oggetto ticket per il body della DELETE
+              const success = await deleteTicket(ticket);
               setActionLoading(false);
               if (success) {
                   Alert.alert("Eliminato", "Ticket rimosso correttamente.");
@@ -486,6 +504,20 @@ export default function TicketDetailScreen({ route, navigation }) {
                       value={editTitle} 
                       onChangeText={setEditTitle} 
                   />
+                  
+                  <Text style={styles.labelInput}>Modifica Categoria:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 10}}>
+                      {allCategories.map(cat => (
+                          <TouchableOpacity 
+                            key={cat.id} 
+                            style={[styles.catSelectBtn, editCategoryId === cat.id && styles.catSelectBtnActive]}
+                            onPress={() => setEditCategoryId(cat.id)}
+                          >
+                              <Text style={[styles.catSelectText, editCategoryId === cat.id && styles.catSelectTextActive]}>{cat.label}</Text>
+                          </TouchableOpacity>
+                      ))}
+                  </ScrollView>
+
                   <Text style={styles.labelInput}>Modifica Descrizione:</Text>
                   <TextInput 
                       style={[styles.editInput, {height: 80, textAlignVertical:'top'}]} 
@@ -800,6 +832,10 @@ const styles = StyleSheet.create({
   editContainer: { marginBottom: 15, backgroundColor: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#ddd' },
   labelInput: { fontSize: 12, fontWeight: 'bold', color: '#666', marginBottom: 5 },
   editInput: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 8, fontSize: 14, marginBottom: 10 },
+  catSelectBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 15, backgroundColor: '#E5E7EB', marginRight: 8 },
+  catSelectBtnActive: { backgroundColor: COLORS.primary || '#D32F2F' },
+  catSelectText: { fontSize: 12, color: '#374151' },
+  catSelectTextActive: { color: 'white', fontWeight: 'bold' },
 
   operatorPanel: { marginTop: 20, padding: 15, backgroundColor: '#FFF7E6', borderRadius: 10, borderWidth: 1, borderColor: '#FFE0B2' },
   opTitle: { fontWeight: 'bold', color: '#B45309', marginBottom: 10, textTransform: 'uppercase', fontSize: 12 },

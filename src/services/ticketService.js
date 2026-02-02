@@ -158,7 +158,6 @@ export const postReply = async (idTicket, replyData, files = []) => {
   }
 };
 
-// *** NUOVA: Modifica un messaggio (PUT) ***
 export const updateReply = async (idTicket, idReply, newBodyText) => {
     try {
         const payload = {
@@ -175,12 +174,10 @@ export const updateReply = async (idTicket, idReply, newBodyText) => {
     }
 };
 
-// *** NUOVA: Elimina un messaggio (DELETE) ***
-// Nota: Le API specificano un corpo anche per la DELETE
 export const deleteReply = async (idTicket, idReply, currentBodyText = "") => {
     try {
         const payload = {
-            body: currentBodyText // Le API sembrano richiedere il body anche in cancellazione
+            body: currentBodyText // Le API richiedono il body anche in cancellazione
         };
         const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply/${idReply}`, {
             method: 'DELETE',
@@ -202,20 +199,13 @@ export const updateTicketDetails = async (idTicket, details) => {
 
         // Prepariamo il payload per la PUT, assicurandoci che categories sia un array di ID
         const updatedBody = {
-            ...currentTicket, 
             title: details.title || currentTicket.title || currentTicket.titolo,
-            // Importante: le API vogliono array di ID, non oggetti
-            categories: extractCategoryIds(currentTicket.categories),
-            // Campi obbligatori che devono essere ri-inviati
-            lat: currentTicket.lat,
-            lon: currentTicket.lon,
+            categories: details.categories ? extractCategoryIds(details.categories) : extractCategoryIds(currentTicket.categories),
+            lat: parseFloat(currentTicket.lat),
+            lon: parseFloat(currentTicket.lon),
             id_status: currentTicket.id_status
         };
 
-        // Sovrascriviamo la descrizione se necessario (se l'API supporta description nel body)
-        // Nota: Il documento API txt cita solo "title", "categories", "lat", "lon", "id_status" per la PUT.
-        // Se la descrizione non è modificabile via API, questa parte potrebbe non avere effetto sul server.
-        
         const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}`, {
             method: 'PUT',
             body: JSON.stringify(updatedBody)
@@ -235,8 +225,8 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
     const updatedBody = {
         title: currentTicket.title || currentTicket.titolo,
         categories: extractCategoryIds(currentTicket.categories),
-        lat: currentTicket.lat,
-        lon: currentTicket.lon,
+        lat: parseFloat(currentTicket.lat),
+        lon: parseFloat(currentTicket.lon),
         id_status: statusId 
     };
 
@@ -267,10 +257,20 @@ export const assignTicket = async (ticketId, operatorId) => {
     }
 };
 
-export const deleteTicket = async (ticketId) => {
+// *** MODIFICATO: Ora accetta l'oggetto ticket intero per inviare il body richiesto dalle API ***
+export const deleteTicket = async (ticket) => {
     try {
-        const response = await authenticatedFetch(`${API_BASE}/ticket/${ticketId}`, {
-            method: 'DELETE'
+        const payload = {
+            title: ticket.title || ticket.titolo,
+            categories: extractCategoryIds(ticket.categories),
+            lat: parseFloat(ticket.lat),
+            lon: parseFloat(ticket.lon),
+            id_status: ticket.id_status
+        };
+
+        const response = await authenticatedFetch(`${API_BASE}/ticket/${ticket.id}`, {
+            method: 'DELETE',
+            body: JSON.stringify(payload)
         });
         return response.ok;
     } catch (e) {
@@ -280,5 +280,5 @@ export const deleteTicket = async (ticketId) => {
 };
 
 export const closeTicket = async (idTicket) => {
-  return await updateTicketStatus(idTicket, 'CLOSED', 4); // Stato 4 tipicamente per "Chiuso" o 3 per "Risolto" in base a convenzioni
+  return await updateTicketStatus(idTicket, 'CLOSED', 3); // Modificato da 4 a 3 (Risolto) secondo le convenzioni comuni del progetto
 };

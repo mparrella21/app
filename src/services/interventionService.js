@@ -38,28 +38,15 @@ export const createAssignment = async (ticketId, userId, note = "") => {
     }
 };
 
-// Aggiorna lo stato di un'assegnazione (es. Presa in carico)
-// QUESTA MANCAVA: L'ho reinserita
-export const updateAssignmentStatus = async (assignmentId, status) => {
-    try {
-        const response = await authenticatedFetch(`${API_BASE}/intervention/assignment/${assignmentId}`, {
-            method: 'PUT',
-            body: JSON.stringify({ status })
-        });
-        const data = await response.json();
-        return response.ok; // o data.success
-    } catch (e) {
-        console.error('interventionService.updateAssignmentStatus', e);
-        return false;
-    }
-};
+// NOTA: La funzione updateAssignmentStatus è stata RIMOSSA.
+// Nelle API fornite non esiste un endpoint PUT per l'assegnazione.
+// Il cambio di stato "In Corso" o "Risolto" va fatto cambiando lo stato del TICKET.
 
 // Elimina assegnazione
-export const deleteAssignment = async (assignmentId) => {
+export const deleteAssignment = async (ticketId) => {
     try {
-        // Nota: verifica se l'ID passato è l'ID dell'assegnazione o del ticket. 
-        // Solitamente è l'ID assegnazione per la DELETE specifica.
-        const response = await authenticatedFetch(`${API_BASE}/intervention/assignment/${assignmentId}`, {
+        // Le API indicano DELETE /api/intervention/assignment/{id_ticket}
+        const response = await authenticatedFetch(`${API_BASE}/intervention/assignment/${ticketId}`, {
             method: 'DELETE'
         });
         return response.ok;
