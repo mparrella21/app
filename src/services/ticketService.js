@@ -187,7 +187,6 @@ export const getAllReplies = async (idTicket) => {
   }
 };
 
-
 export const postReply = async (idTicket, replyData, files = []) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
