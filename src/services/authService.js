@@ -37,6 +37,12 @@ export const login = async (email, password, tenant_id) => {
 
     if (response.ok && (data.token || data.access_token)) {
       const token = data.token || data.access_token;
+      const refreshToken = data.refresh_token; // Salviamo anche il refresh token
+      
+      if (refreshToken) {
+          await AsyncStorage.setItem('app_refresh_token', refreshToken);
+      }
+
       const decoded = decodeJWT(token);
       
       let user = {
@@ -48,7 +54,6 @@ export const login = async (email, password, tenant_id) => {
           tenant_id: decoded?.tid || tenant_id
       };
 
-      // Scarichiamo i dati reali dal profilo
       try {
         const userResp = await fetch(`${API_BASE}/user/${user.id}`, {
             method: 'GET',
@@ -57,7 +62,6 @@ export const login = async (email, password, tenant_id) => {
         if (userResp.ok) {
             const userDataFull = await userResp.json();
             const realUser = Array.isArray(userDataFull) ? userDataFull[0] : (userDataFull.user || userDataFull);
-            
             if (realUser) {
                 user.name = realUser.name || user.name;
                 user.surname = realUser.surname || user.surname;
@@ -80,7 +84,6 @@ export const login = async (email, password, tenant_id) => {
 
 export const register = async (userData) => {
   try {
-    // 1. REGISTRAZIONE AUTH (Crea account)
     const authPayload = {
         tenant_id: userData.tenant_id,
         email: userData.email,
@@ -97,37 +100,22 @@ export const register = async (userData) => {
 
     if (response.ok) {
         const token = data.token || data.access_token;
-        
         if (token) {
-            // 2. CREAZIONE PROFILO USER (Crea anagrafica)
             try {
-                // PAYLOAD RIDOTTO ALL'OSSO (Come Postman)
-                // Il backend prenderà ID, Tenant ed Email dal Token
                 const userProfileData = {
                     name: userData.name,
                     surname: userData.surname,
-                    birth_date: userData.birth_date,   // YYYY-MM-DD
-                    phonenumber: userData.phoneNumber  // "phonenumber" minuscolo come nel tuo JSON funzionante
+                    birth_date: userData.birth_date,
+                    phonenumber: userData.phoneNumber
                 };
-
-                console.log("Creazione Profilo User (Payload Postman):", userProfileData);
-
-                const userResponse = await fetch(`${API_BASE}/user`, {
+                await fetch(`${API_BASE}/user`, {
                     method: 'POST', 
                     headers: { 
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}` // Qui dentro ci sono ID e Tenant!
+                        'Authorization': `Bearer ${token}`
                     },
                     body: JSON.stringify(userProfileData)
                 });
-
-                if (!userResponse.ok) {
-                    const errText = await userResponse.text();
-                    console.error("Errore User Service (" + userResponse.status + "):", errText);
-                } else {
-                    console.log("Profilo creato con successo!");
-                }
-                
             } catch (err) {
                 console.error("Eccezione fetch User:", err);
             }
@@ -159,7 +147,40 @@ export const logout = async () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
         });
+        await AsyncStorage.removeItem('app_auth_token');
+        await AsyncStorage.removeItem('app_refresh_token');
     } catch (e) {
         console.warn('Logout API failed', e);
+    }
+};
+
+export const refreshToken = async () => {
+    try {
+        const refresh = await AsyncStorage.getItem('app_refresh_token');
+        const token = await AsyncStorage.getItem('app_auth_token');
+        // Necessario recuperare il tenant_id in qualche modo (es. dal vecchio token o storage)
+        const decoded = decodeJWT(token); 
+        const tenant_id = decoded?.tid;
+
+        if (!refresh || !tenant_id) return null;
+
+        const response = await fetch(`${AUTH_URL}/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tenant_id, refresh_token: refresh })
+        });
+        
+        const data = await response.json();
+        if (response.ok && data.access_token) {
+            await AsyncStorage.setItem('app_auth_token', data.access_token);
+            if (data.refresh_token) {
+                await AsyncStorage.setItem('app_refresh_token', data.refresh_token);
+            }
+            return data.access_token;
+        }
+        return null;
+    } catch (e) {
+        console.error("Refresh token failed", e);
+        return null;
     }
 };

@@ -7,33 +7,16 @@ export const searchTenantByCoordinates = async (lat, lon) => {
     const token = await AsyncStorage.getItem('app_auth_token');
     const url = `${API_BASE}/tenant/search?lat=${lat}&lon=${lon}`;
 
-    console.log('[TenantService] Searching:', url);
+    const headers = { Accept: 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
 
-    const headers = {
-      Accept: 'application/json',
-    };
+    const response = await fetch(url, { method: 'GET', headers });
 
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-    });
-
-    if (!response.ok) {
-      if (response.status === 404) return null;
-      return null; 
-    }
+    if (!response.ok) return null;
 
     const data = await response.json();
 
-
-    if (data && data.tenant_id && data.geometry) {
-      
-      // La mappa vuole un oggetto che contenga un array "features", 
-      // altrimenti crasha cercando di fare .filter() su undefined.
+    if (data && (data.tenant_id || data.istat_code) && data.geometry) {
       const safeBoundary = {
         type: "FeatureCollection",
         features: [
@@ -41,9 +24,10 @@ export const searchTenantByCoordinates = async (lat, lon) => {
             type: "Feature",
             properties: {
               id: data.tenant_id,
+              istat: data.istat_code,
               name: data.label
             },
-            geometry: data.geometry // Inseriamo qui il MultiPolygon dell'API
+            geometry: data.geometry
           }
         ]
       };
@@ -54,13 +38,71 @@ export const searchTenantByCoordinates = async (lat, lon) => {
             name: data.label,
             istat_code: data.istat_code
         },
-        boundary: safeBoundary, // Passiamo alla mappa la versione "impacchettata"
+        boundary: safeBoundary,
       };
     }
-
     return null;
   } catch (e) {
     console.error('tenantService.searchTenantByCoordinates', e);
     return null;
   }
+};
+
+// Recupera tutti i tenant
+export const getAllTenants = async () => {
+    try {
+        const response = await fetch(`${API_BASE}/tenant`, { method: 'GET' });
+        if (response.ok) return await response.json();
+        return [];
+    } catch (e) {
+        console.error('tenantService.getAllTenants', e);
+        return [];
+    }
+};
+
+// Recupera province
+export const getProvinces = async () => {
+    try {
+        const response = await fetch(`${API_BASE}/tenant/provincia`, { method: 'GET' });
+        if (response.ok) return await response.json();
+        return [];
+    } catch (e) {
+        console.error('tenantService.getProvinces', e);
+        return [];
+    }
+};
+
+// Recupera regioni
+export const getRegions = async () => {
+    try {
+        const response = await fetch(`${API_BASE}/tenant/regione`, { method: 'GET' });
+        if (response.ok) return await response.json();
+        return [];
+    } catch (e) {
+        console.error('tenantService.getRegions', e);
+        return [];
+    }
+};
+
+// Recupera i confini specifici di un tenant (per ISTAT code o ID)
+export const getTenantBoundary = async (idOrIstat) => {
+    try {
+        const response = await fetch(`${API_BASE}/tenant/boundaries/${idOrIstat}`, { method: 'GET' });
+        if (response.ok) {
+            const data = await response.json();
+            // Impacchetta in GeoJSON FeatureCollection per coerenza con la mappa
+            return {
+                type: "FeatureCollection",
+                features: [{
+                    type: "Feature",
+                    properties: { istat_code: data.istat_code },
+                    geometry: data.geometry
+                }]
+            };
+        }
+        return null;
+    } catch (e) {
+        console.error('tenantService.getTenantBoundary', e);
+        return null;
+    }
 };
