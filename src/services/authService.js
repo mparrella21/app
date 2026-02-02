@@ -37,11 +37,12 @@ export const login = async (email, password, tenant_id) => {
 
     if (response.ok && (data.token || data.access_token)) {
       const token = data.token || data.access_token;
-      const refreshToken = data.refresh_token; // Salviamo anche il refresh token
+      const refreshToken = data.refresh_token; 
       
-      if (refreshToken) {
-          await AsyncStorage.setItem('app_refresh_token', refreshToken);
-      }
+      // Salviamo token e anche il tenant_id attuale per futuri refresh
+      await AsyncStorage.setItem('app_auth_token', token);
+      if (refreshToken) await AsyncStorage.setItem('app_refresh_token', refreshToken);
+      if (tenant_id) await AsyncStorage.setItem('app_tenant_id', tenant_id);
 
       const decoded = decodeJWT(token);
       
@@ -55,6 +56,7 @@ export const login = async (email, password, tenant_id) => {
       };
 
       try {
+        // Usiamo authenticatedFetch anche qui per coerenza, o fetch diretto col token appena preso
         const userResp = await fetch(`${API_BASE}/user/${user.id}`, {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${token}` }
@@ -101,6 +103,10 @@ export const register = async (userData) => {
     if (response.ok) {
         const token = data.token || data.access_token;
         if (token) {
+            // Salviamo il token per le chiamate successive
+            await AsyncStorage.setItem('app_auth_token', token);
+            await AsyncStorage.setItem('app_tenant_id', userData.tenant_id);
+
             try {
                 const userProfileData = {
                     name: userData.name,
@@ -147,23 +153,23 @@ export const logout = async () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
         });
-        await AsyncStorage.removeItem('app_auth_token');
-        await AsyncStorage.removeItem('app_refresh_token');
+        await AsyncStorage.clear(); // Pulisce tutto (token, user, tenant)
     } catch (e) {
         console.warn('Logout API failed', e);
+        await AsyncStorage.clear();
     }
 };
 
-export const refreshToken = async () => {
+// Funzione interna per refresh
+const performRefreshToken = async () => {
     try {
         const refresh = await AsyncStorage.getItem('app_refresh_token');
-        const token = await AsyncStorage.getItem('app_auth_token');
-        // Necessario recuperare il tenant_id in qualche modo (es. dal vecchio token o storage)
-        const decoded = decodeJWT(token); 
-        const tenant_id = decoded?.tid;
+        // Recuperiamo il tenant_id salvato al login
+        const tenant_id = await AsyncStorage.getItem('app_tenant_id');
 
         if (!refresh || !tenant_id) return null;
 
+        console.log("Tentativo Refresh Token...");
         const response = await fetch(`${AUTH_URL}/refresh`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -183,4 +189,41 @@ export const refreshToken = async () => {
         console.error("Refresh token failed", e);
         return null;
     }
+};
+
+// --- NUOVA FUNZIONE CENTRALE PER LE CHIAMATE ---
+// Usa questa funzione negli altri service invece di fetch()
+export const authenticatedFetch = async (url, options = {}) => {
+    let token = await AsyncStorage.getItem('app_auth_token');
+    
+    // Imposta headers di default
+    const headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        ...options.headers
+    };
+
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    let response = await fetch(url, { ...options, headers });
+
+    // Se riceviamo 401 (Unauthorized), proviamo a fare refresh
+    if (response.status === 401) {
+        console.log("Ricevuto 401, provo refresh...");
+        const newToken = await performRefreshToken();
+        
+        if (newToken) {
+            console.log("Refresh OK, ripeto richiesta.");
+            // Aggiorna header con nuovo token
+            headers['Authorization'] = `Bearer ${newToken}`;
+            response = await fetch(url, { ...options, headers });
+        } else {
+            console.log("Refresh fallito o token mancante.");
+            // Opzionale: Qui si potrebbe forzare il logout o lanciare un evento
+        }
+    }
+
+    return response;
 };

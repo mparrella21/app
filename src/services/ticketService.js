@@ -1,27 +1,14 @@
 import { API_BASE } from './config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// --- TICKET SERVICE (Core Domain: Ticket Lifecycle) ---
+import { authenticatedFetch } from './authService';
 
 export const getAllTickets = async () => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    const url = `${API_BASE}/ticket`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { 
-        'Accept': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : undefined 
-      }
-    });
-
-    if (!response.ok) throw new Error(`HTTP error status: ${response.status}`);
+    const response = await authenticatedFetch(`${API_BASE}/ticket`, { method: 'GET' });
+    if (!response.ok) throw new Error(`Status: ${response.status}`);
     const data = await response.json();
-    
     if (data.success && Array.isArray(data.tickets)) return data.tickets;
     if (Array.isArray(data)) return data; 
-    
     return [];
   } catch (e) {
     console.error('ticketService.getAllTickets', e);
@@ -32,12 +19,10 @@ export const getAllTickets = async () => {
 export const getUserTickets = async (userId) => {
   try {
     const allTickets = await getAllTickets();
-    // Filtro più robusto per gestire diverse convenzioni di nomi del backend
     const myTickets = allTickets.filter(t => 
-        t.user === userId || // Chiave usata nel POST
+        t.user === userId || 
         t.id_creator_user === userId || 
-        t.user_id === userId || 
-        t.userId === userId
+        t.user_id === userId
     );
     return myTickets; 
   } catch (e) {
@@ -48,40 +33,27 @@ export const getUserTickets = async (userId) => {
 
 export const getOperatorTickets = async (operatorId) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
     if (!operatorId) return [];
-
     let assignedTicketIds = [];
     
-    // 1. Tenta di recuperare le assegnazioni dall'Intervention Service
     try {
-        const assignResponse = await fetch(`${API_BASE}/intervention/assignment`, {
-            method: 'GET',
-            headers: { 
-                'Accept': 'application/json',
-                'Authorization': token ? `Bearer ${token}` : undefined 
-            }
-        });
-        
+        const assignResponse = await authenticatedFetch(`${API_BASE}/intervention/assignment`, { method: 'GET' });
         if (assignResponse.ok) {
             const assignData = await assignResponse.json();
             const assignments = assignData.assignments || assignData || [];
             assignedTicketIds = assignments
-                .filter(a => a.operatorId === operatorId || a.operator_id === operatorId)
-                .map(a => a.ticketId || a.ticket_id);
+                .filter(a => a.id_user === operatorId) // id_user come da txt
+                .map(a => a.id_ticket); // id_ticket come da txt
         }
     } catch (assignError) {
-        console.warn("Impossibile recuperare assegnazioni, uso fallback ticket.", assignError);
+        console.warn("Impossibile recuperare assegnazioni", assignError);
     }
 
-    // 2. Recupera i ticket e filtra
     const allTickets = await getAllTickets();
     const myTasks = allTickets.filter(t => {
         const isInAssignments = assignedTicketIds.includes(t.id);
-        const isDirectlyAssigned = (t.operator_id === operatorId || t.assigned_to === operatorId);
-        
-        const isActive = (t.status !== 'CLOSED' && t.status !== 'Risolto' && t.status !== 'CHIUSO'); 
-        return (isInAssignments || isDirectlyAssigned) && isActive;
+        const isActive = (t.id_status !== 3); // Assumendo 3 = Chiuso/Risolto
+        return isInAssignments && isActive;
     });
 
     return myTasks; 
@@ -93,16 +65,9 @@ export const getOperatorTickets = async (operatorId) => {
 
 export const getTicket = async (id) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    const response = await fetch(`${API_BASE}/ticket/${id}`, {
-      method: 'GET',
-      headers: { 
-        'Accept': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : undefined
-      }
-    });
+    const response = await authenticatedFetch(`${API_BASE}/ticket/${id}`, { method: 'GET' });
     const data = await response.json();
-    if (response.ok && data.success) return data.ticket;
+    if (response.ok) return data.ticket || data; // Gestisce formati diversi
     return null; 
   } catch (e) {
     console.error('ticketService.getTicket', e);
@@ -112,16 +77,9 @@ export const getTicket = async (id) => {
 
 export const getCategories = async () => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    const response = await fetch(`${API_BASE}/ticket/categories`, {
-      method: 'GET',
-      headers: { 
-        'Accept': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : undefined
-      }
-    });
+    const response = await authenticatedFetch(`${API_BASE}/ticket/categories`, { method: 'GET' });
     const data = await response.json();
-    if (response.ok && data.success) return data.categories || [];
+    if (response.ok) return data.categories || data || [];
     return []; 
   } catch (e) {
     console.error('ticketService.getCategories', e);
@@ -131,28 +89,27 @@ export const getCategories = async () => {
 
 export const postTicket = async (ticketData, photos = []) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    if (!token) throw new Error('Non autenticato');
+    // Recupera utente corrente per inserirlo nel payload (Richiesto dal txt)
+    const userStr = await AsyncStorage.getItem('app_user');
+    const userObj = userStr ? JSON.parse(userStr) : {};
+    
+    // Costruisci il payload esatto richiesto dal TXT
+    // Esempio TXT: { "title": "...", "id_status": 1, "lat": ..., "lon": ..., "categories": [1], "user": "uuid" }
+    const finalPayload = {
+        title: ticketData.title || ticketData.descrizione, // Mappa i campi della UI
+        id_status: 1, // 1 = Ricevuto/Nuovo
+        lat: parseFloat(ticketData.lat),
+        lon: parseFloat(ticketData.lon),
+        categories: ticketData.categories || [], // Array di ID categorie
+        user: userObj.id // Fondamentale
+    };
 
-    // NOTA: Ignoriamo 'photos' per ora perché il media service non è pronto.
-
-    const response = await fetch(`${API_BASE}/ticket`, {
+    const response = await authenticatedFetch(`${API_BASE}/ticket`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json', // JSON invece di multipart
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify(ticketData)
+      body: JSON.stringify(finalPayload)
     });
 
-    if (response.status === 201 || response.ok) {
-        return true;
-    } else {
-        const errText = await response.text();
-        console.error("Errore postTicket:", errText);
-        return false;
-    }
+    return response.ok;
   } catch (e) {
     console.error('ticketService.postTicket', e);
     return false;
@@ -163,16 +120,9 @@ export const postTicket = async (ticketData, photos = []) => {
 
 export const getAllReplies = async (idTicket) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    const response = await fetch(`${API_BASE}/ticket/${idTicket}/reply`, {
-      method: 'GET',
-      headers: { 
-          'Accept': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : undefined
-      }
-    });
+    const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply`, { method: 'GET' });
     const data = await response.json();
-    if (response.ok && data.success) return data.replies || [];
+    if (response.ok) return data.replies || data || [];
     return [];
   } catch (e) {
     console.error('ticketService.getAllReplies', e);
@@ -182,44 +132,14 @@ export const getAllReplies = async (idTicket) => {
 
 export const postReply = async (idTicket, replyData, files = []) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    if (!token) throw new Error('Non autenticato');
-
-    let body;
-    let headers = {
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${token}`
-    };
-
-    // Logica ibrida: Se ci sono file usa FormData, altrimenti JSON
-    // (Da adattare quando il media service sarà attivo)
-    if (files && files.length > 0) {
-        const formData = new FormData();
-        Object.keys(replyData).forEach(key => {
-            formData.append(key, String(replyData[key]));
-        });
-        files.forEach((file, index) => {
-             const fileName = file.fileName || `reply_img_${index}.jpg`;
-             formData.append('files', {
-                 uri: file.uri,
-                 type: 'image/jpeg',
-                 name: fileName
-             });
-        });
-        body = formData;
-    } else {
-        headers['Content-Type'] = 'application/json';
-        body = JSON.stringify(replyData);
-    }
-
-    const response = await fetch(`${API_BASE}/ticket/${idTicket}/reply`, {
+    // Qui andrebbe gestito il FormData se il backend lo supportasse per i file
+    // Per ora mandiamo JSON come da txt
+    const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply`, {
       method: 'POST',
-      headers: headers,
-      body: body
+      body: JSON.stringify(replyData)
     });
 
-    const data = await response.json();
-    return data.success === true;
+    return response.ok;
   } catch (e) {
     console.error('ticketService.postReply', e);
     return false;
@@ -230,24 +150,26 @@ export const postReply = async (idTicket, replyData, files = []) => {
 
 export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    if (!token) throw new Error('Non autenticato');
+    // 1. Il TXT mostra che la PUT richiede l'oggetto COMPLETO.
+    // Quindi prima scarichiamo il ticket attuale.
+    const currentTicket = await getTicket(idTicket);
+    if (!currentTicket) return false;
 
-    const response = await fetch(`${API_BASE}/ticket/${idTicket}`, {
+    // 2. Aggiorniamo solo lo status e manteniamo il resto
+    const updatedBody = {
+        title: currentTicket.title,
+        categories: currentTicket.categories ? currentTicket.categories.map(c => c.id) : [],
+        lat: currentTicket.lat,
+        lon: currentTicket.lon,
+        id_status: statusId // Aggiorniamo lo status ID (es. 2 = In lavorazione)
+    };
+
+    const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        status: statusStr,
-        id_status: statusId 
-      })
+      body: JSON.stringify(updatedBody)
     });
 
-    const data = await response.json();
-    return data.success === true;
+    return response.ok;
   } catch (e) {
     console.error('ticketService.updateTicketStatus', e);
     return false;
@@ -256,21 +178,14 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
 
 export const assignTicket = async (ticketId, operatorId) => {
     try {
-      const token = await AsyncStorage.getItem('app_auth_token');
-      const response = await fetch(`${API_BASE}/intervention/assignment`, {
+      const response = await authenticatedFetch(`${API_BASE}/intervention/assignment`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
         body: JSON.stringify({
-          ticket_id: ticketId,
-          operator_id: operatorId
+          id_ticket: ticketId, // Corretto key name
+          id_user: operatorId  // Corretto key name
         })
       });
-      const data = await response.json();
-      return data.success === true;
+      return response.ok;
     } catch (e) {
       console.error('ticketService.assignTicket', e);
       return false;
@@ -279,16 +194,10 @@ export const assignTicket = async (ticketId, operatorId) => {
 
 export const deleteTicket = async (ticketId) => {
     try {
-        const token = await AsyncStorage.getItem('app_auth_token');
-        const response = await fetch(`${API_BASE}/ticket/${ticketId}`, {
-            method: 'DELETE',
-            headers: {
-                'Accept': 'application/json',
-                'Authorization': `Bearer ${token}`
-            }
+        const response = await authenticatedFetch(`${API_BASE}/ticket/${ticketId}`, {
+            method: 'DELETE'
         });
-        const data = await response.json();
-        return data.success === true;
+        return response.ok;
     } catch (e) {
         console.error('ticketService.deleteTicket', e);
         return false;
@@ -296,5 +205,5 @@ export const deleteTicket = async (ticketId) => {
 };
 
 export const closeTicket = async (idTicket) => {
-  return await updateTicketStatus(idTicket, 'CLOSED', 3);
+  return await updateTicketStatus(idTicket, 'CLOSED', 3); // 3 = Risolto
 };

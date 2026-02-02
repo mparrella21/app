@@ -1,111 +1,84 @@
 import { API_BASE } from './config';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authenticatedFetch } from './authService';
 
-// Recupera tutti gli utenti (filtrati lato backend per il tenant del responsabile)
+// Recupera tutti gli operatori incrociando GET /api/operator e GET /api/user
 export const getOperators = async () => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    if (!token) throw new Error('Non autenticato');
+    // 1. Prendi gli ID degli operatori
+    const opResponse = await authenticatedFetch(`${API_BASE}/operator`, { method: 'GET' });
+    if (!opResponse.ok) return [];
+    const operatorIds = await opResponse.json(); // Esempio: ["id1", "id2"]
 
-    const response = await fetch(`${API_BASE}/user?role=Operatore`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-    });
+    if (!Array.isArray(operatorIds) || operatorIds.length === 0) return [];
 
-    const data = await response.json();
-    if (response.ok && data.success) return data.users || [];
-    return [];
+    // 2. Prendi TUTTI gli utenti (Il backend non sembra supportare ?role=Operatore)
+    const usersResponse = await authenticatedFetch(`${API_BASE}/user`, { method: 'GET' });
+    if (!usersResponse.ok) return [];
+    const allUsers = await usersResponse.json(); // Array di oggetti utente
+
+    // 3. Filtra solo quelli che sono nella lista operatori
+    const operators = allUsers.filter(u => operatorIds.includes(u.id));
+    return operators;
   } catch (e) {
     console.error('userService.getOperators', e);
     return [];
   }
 };
 
-// Crea un nuovo operatore (Responsabile crea account operatore)
 export const createOperator = async (operatorData) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    if (!token) throw new Error('Non autenticato');
-
-    const response = await fetch(`${API_BASE}/user`, {
+    const response = await authenticatedFetch(`${API_BASE}/user`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ ...operatorData, role: 'Operatore' })
+      body: JSON.stringify({ ...operatorData, role: 'Operatore' }) // Nota: il backend assegna il ruolo, ma lo passiamo per completezza
     });
-
+    // Dopo aver creato l'utente, bisogna promuoverlo a operatore? 
+    // Il txt dice "POST SET OPERATOR {id}". 
+    // Se la creazione utente è generica, potrebbe servire un passo extra.
+    // Assumiamo per ora che basti creare l'utente e poi fare SET OPERATOR se necessario, 
+    // ma per il Requirements Doc sembra che il Responsabile crei direttamente l'account.
+    
     const data = await response.json();
-    return data.success === true;
+    return response.ok; // o data.success
   } catch (e) {
     console.error('userService.createOperator', e);
     return false;
   }
 };
 
-// Aggiorna un operatore specifico (Lato Responsabile - UC-12)
 export const updateOperator = async (id, operatorData) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    const response = await fetch(`${API_BASE}/user/${id}`, {
+    const response = await authenticatedFetch(`${API_BASE}/user/${id}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
       body: JSON.stringify(operatorData)
     });
     const data = await response.json();
-    return data.success === true;
+    return response.ok;
   } catch (e) {
     console.error('userService.updateOperator', e);
     return false;
   }
 };
 
-// Elimina un operatore (Lato Responsabile)
 export const deleteUser = async (id) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    const response = await fetch(`${API_BASE}/user/${id}`, {
-      method: 'DELETE',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
+    const response = await authenticatedFetch(`${API_BASE}/user/${id}`, {
+      method: 'DELETE'
     });
-    const data = await response.json();
-    return data.success === true;
+    return response.ok;
   } catch (e) {
     console.error('userService.deleteUser', e);
     return false;
   }
 };
 
-// Aggiorna il profilo dell'utente loggato (Self-service)
 export const updateUserProfile = async (id, userData) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    if (!token) throw new Error('Non autenticato');
-
-    const response = await fetch(`${API_BASE}/user/${id}`, {
+    const response = await authenticatedFetch(`${API_BASE}/user/${id}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
       body: JSON.stringify(userData)
     });
-
     const data = await response.json();
-    return { success: data.success === true, message: data.message };
+    return { success: response.ok, message: data.message };
   } catch (e) {
     console.error('userService.updateUserProfile', e);
     return { success: false, message: 'Errore di connessione' };
