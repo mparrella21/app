@@ -43,7 +43,6 @@ export default function MapScreen({ navigation }) {
       });
 
       // NEW: Carica il boundary per la posizione attuale dell'utente all'avvio
-      // per parità visiva con il sito (che mostra i confini), ma usando l'API backend.
       checkCurrentLocationBoundary(loc.coords.latitude, loc.coords.longitude);
     })();
   }, []);
@@ -59,10 +58,16 @@ export default function MapScreen({ navigation }) {
   const fetchExistingTickets = async () => {
       try {
           const tickets = await getAllTickets();
-          const validTickets = tickets.filter(t => t.lat && t.lon);
+          
+          // --- FIX CRASH QUI ---
+          // Se tickets è null o undefined, usiamo un array vuoto [] per evitare l'errore su .filter
+          const safeTickets = Array.isArray(tickets) ? tickets : [];
+          const validTickets = safeTickets.filter(t => t.lat && t.lon);
+          
           setExistingTickets(validTickets);
       } catch (e) {
           console.warn("Errore caricamento pin mappa:", e);
+          setExistingTickets([]); // Reset in caso di errore
       }
   };
 

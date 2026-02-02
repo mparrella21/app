@@ -1,20 +1,24 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Auth service: login / register / logout against API Gateway (Auth Service)
+// Endpoint base per Auth (senza /api/ come da tuoi test)
+const AUTH_URL = "http://192.168.72.107:32413/auth";
 
-export const login = async (email, password) => {
+export const login = async (email, password, phoneNumber, tenant_id) => {
   try {
-    // Coerente con UC-01 e Diagramma 02 LOGIN
-    const response = await fetch(`http://192.168.72.107:32413/auth/login`, {
+    const response = await fetch(`${AUTH_URL}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ 
+        email, 
+        password, 
+        phoneNumber, // Aggiunto come da test Postman
+        tenant_id    // Aggiunto come da test Postman
+      })
     });
 
     const data = await response.json();
 
     if (response.ok && (data.token || data.access_token)) {
-      // Il backend restituisce token e user
       return { 
           success: true, 
           token: data.token || data.access_token, 
@@ -31,18 +35,16 @@ export const login = async (email, password) => {
 
 export const register = async (userData) => {
   try {
-    // Coerente con UC-02 e Diagramma 01 REGISTER
-    const response = await fetch(`http://192.168.72.107:32413/auth/register`, {
+    const response = await fetch(`${AUTH_URL}/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      // Il body ora contiene esattamente i campi validati: tenant_id, name, surname, email, password, phoneNumber
       body: JSON.stringify(userData)
     });
 
     const data = await response.json();
 
     if (response.ok) {
-        // Se il backend segue il diagramma 01, restituisce GIA' i token qui.
-        // Supportiamo sia il caso "Auto-login" sia il caso "Solo successo".
         if (data.token || data.access_token) {
             return { 
                 success: true, 
@@ -62,11 +64,10 @@ export const register = async (userData) => {
 
 export const logout = async () => {
     try {
-        // Coerente con Diagramma 04 LOGOUT
         const token = await AsyncStorage.getItem('app_auth_token');
         if (!token) return;
 
-        await fetch(`http://192.168.72.107:32413/auth/logout`, {
+        await fetch(`${AUTH_URL}/logout`, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json', 
@@ -75,6 +76,5 @@ export const logout = async () => {
         });
     } catch (e) {
         console.warn('Logout API failed', e);
-        // Procediamo comunque al logout locale
     }
 };

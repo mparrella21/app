@@ -1,17 +1,11 @@
 import { API_BASE } from './config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Cerca il Tenant (Comune) in base alle coordinate geografiche.
-// Se il punto è all'interno di un comune gestito, restituisce i dati del tenant e il boundary (GeoJSON).
-// Se il punto non è coperto, restituisce null.
-// Endpoint: GET /api/tenants/search?lat=...&lon=...
-
 export const searchTenantByCoordinates = async (lat, lon) => {
   try {
     const token = await AsyncStorage.getItem('app_auth_token');
 
-    // Costruzione URL con query params
-    const url = `${API_BASE}/tenants/search?lat=${lat}&lon=${lon}`;
+    const url = `${API_BASE}/tenant/search?lat=${lat}&lon=${lon}`;
 
     console.log('[TenantService] Searching:', url);
 
@@ -35,10 +29,18 @@ export const searchTenantByCoordinates = async (lat, lon) => {
 
     const data = await response.json();
 
-    if (data && data.boundary) {
+    // MODIFICA QUI: Adattiamo il parsing alla risposta reale del backend
+    // Il backend restituisce "geometry" e "tenant_id" direttamente nella root dell'oggetto
+    if (data && data.tenant_id) {
       return {
-        tenant: data.tenant,
-        boundary: data.boundary,
+        // Ricostruiamo l'oggetto tenant come se lo aspetta l'App
+        tenant: {
+            id: data.tenant_id,
+            name: data.label,
+            istat_code: data.istat_code
+        },
+        // Mappiamo "geometry" (nome campo API) su "boundary" (nome variabile App)
+        boundary: data.geometry, 
       };
     }
 

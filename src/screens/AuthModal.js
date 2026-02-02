@@ -1,48 +1,85 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert, ScrollView } from 'react-native';
-import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location'; 
 import { useAuth } from '../context/AuthContext';
-import { register } from '../services/authService'; 
+import { register, login as loginApi } from '../services/authService'; 
+import { searchTenantByCoordinates } from '../services/tenantService';
 
 const { width } = Dimensions.get('window');
 
 export default function AuthModal({ navigation }) {
-  const { login, setDirectLogin } = useAuth(); 
+  const { setDirectLogin } = useAuth(); 
   const [activeTab, setActiveTab] = useState('login'); 
   const [isLoading, setIsLoading] = useState(false);
   
-  // Login State
+  // Form State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
-  // Register State
   const [nome, setNome] = useState('');
   const [cognome, setCognome] = useState('');
   const [cellulare, setCellulare] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  const getTenantFromLocation = async () => {
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert("Permessi negati", "Abbiamo bisogno della posizione per identificare il tuo Comune.");
+        return null;
+      }
+
+      let location = await Location.getCurrentPositionAsync({});
+      const result = await searchTenantByCoordinates(location.coords.latitude, location.coords.longitude);
+      
+      if (result && result.tenant && result.tenant.id) {
+        return result.tenant.id;
+      } else {
+        // Debug per vedere che coordinate sta leggendo l'emulatore
+        Alert.alert("Zona non coperta", `La tua posizione (${location.coords.latitude.toFixed(4)}, ${location.coords.longitude.toFixed(4)}) non è associata a un Comune.`);
+        return null;
+      }
+    } catch (e) {
+      console.error(e);
+      Alert.alert("Errore Posizione", "Impossibile determinare il Comune dalla posizione.");
+      return null;
+    }
+  };
+
   const handleAuthAction = async () => {
     setIsLoading(true);
+    
+    // 1. Recupero Tenant ID dinamico
+    const currentTenantId = await getTenantFromLocation();
+    if (!currentTenantId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
         if (activeTab === 'login') {
-            if (!email || !password) {
-                Alert.alert("Errore", "Inserisci Email e Password");
+            if (!email || !password || !cellulare) {
+                Alert.alert("Errore", "Email, Password e Cellulare sono obbligatori per il login.");
                 setIsLoading(false);
                 return;
             }
             
-            const result = await login(email, password);
+            // Login con i 4 parametri richiesti dal tuo test Postman
+            const result = await loginApi(email, password, cellulare, currentTenantId);
             
             if (result.success) {
+                 if (result.token && result.user) {
+                    await setDirectLogin(result.token, result.user);
+                 }
                  navigation.goBack(); 
             } else {
                  Alert.alert("Errore Login", result.error || "Credenziali non valide");
             }
 
         } else {
-            // [FIX] Logica Registrazione (UC-02)
-            if (!nome || !cognome || !email || !password || !confirmPassword) {
-                Alert.alert("Errore", "Compila tutti i campi obbligatori");
+            // Registrazione
+            if (!nome || !cognome || !email || !password || !cellulare) {
+                Alert.alert("Errore", "Compila tutti i campi");
                 setIsLoading(false);
                 return;
             }
@@ -53,41 +90,33 @@ export default function AuthModal({ navigation }) {
             }
 
             const userData = {
+                tenant_id: currentTenantId,
                 name: nome,
                 surname: cognome,
                 email: email,
                 password: password,
-                phone: cellulare,
-                role: 'Cittadino' 
+                phoneNumber: cellulare // Coerente con il body Postman
             };
 
             const result = await register(userData);
 
             if (result.success) {
-                // Se l'architettura restituisce il token subito (Diagramma 01), logghiamo l'utente
                 if (result.token && result.user) {
                     await setDirectLogin(result.token, result.user);
                     navigation.goBack();
                 } else {
-                    Alert.alert("Registrazione", "Account creato con successo! Effettua il login.");
+                    Alert.alert("Successo", "Account creato! Ora puoi accedere.");
                     setActiveTab('login');
-                    setPassword(''); 
-                    setConfirmPassword('');
                 }
             } else {
-                Alert.alert("Errore Registrazione", result.error || "Impossibile creare l'account.");
+                Alert.alert("Errore Registrazione", result.error);
             }
         }
     } catch (e) {
-        Alert.alert("Errore", "Si è verificato un problema tecnico.");
-        console.error(e);
+        Alert.alert("Errore", "Problema tecnico durante l'autenticazione.");
     } finally {
         setIsLoading(false);
     }
-  };
-
-  const handleGoogleLogin = () => {
-      Alert.alert("Google Login", "Funzionalità disabilitata.");
   };
 
   return (
@@ -98,7 +127,7 @@ export default function AuthModal({ navigation }) {
             <View style={styles.backdrop} />
           </TouchableWithoutFeedback>
 
-          <View style={[styles.card, activeTab === 'register' && { height: '80%' }]}>
+          <View style={[styles.card, activeTab === 'register' && { height: '85%' }]}>
             <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()}>
               <Ionicons name="close" size={24} color="white" />
             </TouchableOpacity>
@@ -116,9 +145,8 @@ export default function AuthModal({ navigation }) {
 
             <ScrollView showsVerticalScrollIndicator={false} style={styles.form}>
               
-              {/* CAMPI REGISTRAZIONE */}
+              {/* CAMPI SOLO REGISTRAZIONE */}
               {activeTab === 'register' && (
-                <>
                   <View style={styles.row}>
                       <View style={[styles.inputContainer, {flex:1, marginRight:5}]}>
                         <Ionicons name="person-outline" size={20} color="#666" style={{marginRight:5}} />
@@ -128,14 +156,9 @@ export default function AuthModal({ navigation }) {
                         <TextInput placeholder="Cognome" style={styles.input} value={cognome} onChangeText={setCognome} placeholderTextColor="#999"/>
                       </View>
                   </View>
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="call-outline" size={20} color="#666" style={{marginRight:10}} />
-                    <TextInput placeholder="Cellulare" keyboardType="phone-pad" style={styles.input} value={cellulare} onChangeText={setCellulare} placeholderTextColor="#999"/>
-                  </View>
-                </>
               )}
 
-              {/* CAMPI LOGIN/EMAIL */}
+              {/* CAMPI SEMPRE VISIBILI (SIA LOGIN CHE REGISTER) */}
               <View style={styles.inputContainer}>
                 <Ionicons name="mail-outline" size={20} color="#666" style={{marginRight:10}} />
                 <TextInput 
@@ -148,6 +171,20 @@ export default function AuthModal({ navigation }) {
                     placeholderTextColor="#999"
                 />
               </View>
+
+              {/* SPOSTATO FUORI: Ora visibile anche in Login */}
+              <View style={styles.inputContainer}>
+                <Ionicons name="call-outline" size={20} color="#666" style={{marginRight:10}} />
+                <TextInput 
+                    placeholder="Cellulare" 
+                    keyboardType="phone-pad" 
+                    style={styles.input} 
+                    value={cellulare} 
+                    onChangeText={setCellulare} 
+                    placeholderTextColor="#999"
+                />
+              </View>
+
               <View style={styles.inputContainer}>
                 <Ionicons name="lock-closed-outline" size={20} color="#666" style={{marginRight:10}} />
                 <TextInput 
@@ -160,6 +197,7 @@ export default function AuthModal({ navigation }) {
                 />
               </View>
 
+              {/* CAMPO CONFERMA SOLO REGISTRAZIONE */}
               {activeTab === 'register' && (
                   <View style={styles.inputContainer}>
                     <Ionicons name="lock-closed-outline" size={20} color="#666" style={{marginRight:10}} />
@@ -176,12 +214,14 @@ export default function AuthModal({ navigation }) {
 
               {/* Action Button */}
               <TouchableOpacity style={[styles.mainBtn, isLoading && {backgroundColor:'#888'}]} onPress={handleAuthAction} disabled={isLoading}>
-                <Text style={styles.mainBtnText}>
-                    {isLoading ? "CARICAMENTO..." : (activeTab === 'login' ? 'ACCEDI' : 'REGISTRATI')}
-                </Text>
+                {isLoading ? (
+                    <ActivityIndicator color="white" />
+                ) : (
+                    <Text style={styles.mainBtnText}>
+                        {activeTab === 'login' ? 'ACCEDI' : 'REGISTRATI'}
+                    </Text>
+                )}
               </TouchableOpacity>
-
-              {/* Google Login rimosso/disabilitato come richiesto */}
               
             </ScrollView>
           </View>
@@ -208,9 +248,4 @@ const styles = StyleSheet.create({
   input: { flex: 1, fontSize: 16, color: '#333' },
   mainBtn: { backgroundColor: '#1F2937', borderRadius: 8, height: 50, justifyContent: 'center', alignItems: 'center', marginTop: 5 },
   mainBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-  googleBtn: { backgroundColor: 'white', borderRadius: 8, height: 50, justifyContent: 'center', alignItems: 'center', marginTop: 10, flexDirection: 'row' },
-  googleBtnText: { color: '#1F2937', fontWeight: 'bold', fontSize: 16 },
-  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 15 },
-  line: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.3)' },
-  orText: { color: 'rgba(255,255,255,0.8)', marginHorizontal: 10, fontSize: 12 },
 });
