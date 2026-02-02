@@ -7,20 +7,28 @@ import * as Location from 'expo-location';
 import { postTicket, getCategories } from '../services/ticketService'; 
 import { useAuth } from '../context/AuthContext';
 
+// Mappatura manuale ID <-> Label (perché il backend vuole ID interi)
+// Assumiamo questi ID in base all'esempio Postman [1,3,5]
+const CATEGORY_MAP = [
+    { id: 1, label: 'Buca stradale' },
+    { id: 2, label: 'Illuminazione guasta' },
+    { id: 3, label: 'Rifiuti abbandonati' },
+    { id: 4, label: 'Verde pubblico' },
+    { id: 5, label: 'Altro' }
+];
+
 export default function CreateTicketScreen({ navigation, route }) {
-  // [FIX] Recupero utente per inviare id_creator_user
   const { user } = useAuth();
 
-  // 1. Recupera coordinate dai parametri (dalla Mappa)
   const initialLat = route.params?.lat || null;
   const initialLng = route.params?.lon || null;
 
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   
-  // STATO PER CATEGORIE DINAMICHE
+  // Categorie
   const [categories, setCategories] = useState([]);
-  const [category, setCategory] = useState(''); // Stringa vuota all'inizio
+  const [selectedCatId, setSelectedCatId] = useState(null); // Salviamo l'ID, non la stringa
   const [loadingCats, setLoadingCats] = useState(false);
 
   const [coords, setCoords] = useState({ lat: initialLat, lng: initialLng });
@@ -28,10 +36,8 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [images, setImages] = useState([]); 
   const [loadingAddr, setLoadingAddr] = useState(false);
   
-  // STATO PER IL CARICAMENTO INVIO
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Caricamento Iniziale (Posizione + Categorie)
   useEffect(() => {
     // A. Gestione Posizione
     if (initialLat && initialLng) {
@@ -48,34 +54,14 @@ export default function CreateTicketScreen({ navigation, route }) {
       })();
     }
 
-    // B. Caricamento Categorie dal Server
-    fetchCategories();
+    // B. Caricamento Categorie
+    loadCategories();
   }, [initialLat, initialLng]);
 
-  const fetchCategories = async () => {
-      setLoadingCats(true);
-      try {
-          const cats = await getCategories();
-          // Se l'array è valido, lo usiamo, altrimenti fallback statico
-          if (cats && cats.length > 0) {
-              setCategories(cats);
-              // Imposta la prima categoria come default se disponibile
-              setCategory(cats[0].label || cats[0]);
-          } else {
-              // [FIX] Fallback statico allineato con le categorie del SITO (aggiuntaTicket.html)
-              const defaults = ['Buca stradale', 'Illuminazione guasta', 'Rifiuti abbandonati', 'Verde pubblico', 'Altro'];
-              setCategories(defaults);
-              setCategory(defaults[0]);
-          }
-      } catch (e) {
-          console.log("Fallback categorie statiche");
-          // [FIX] Fallback allineato
-          const defaults = ['Buca stradale', 'Illuminazione guasta', 'Rifiuti abbandonati', 'Verde pubblico', 'Altro'];
-          setCategories(defaults);
-          setCategory(defaults[0]);
-      } finally {
-          setLoadingCats(false);
-      }
+  const loadCategories = async () => {
+      // Usiamo la mappa statica per garantire di avere gli ID corretti per il backend
+      setCategories(CATEGORY_MAP);
+      setSelectedCatId(CATEGORY_MAP[0].id);
   };
 
   const fetchAddress = async (lat, lon) => {
@@ -101,7 +87,6 @@ export default function CreateTicketScreen({ navigation, route }) {
       "Scegli una sorgente",
       [
         { text: "Galleria", onPress: pickImage },
-        // { text: "Fotocamera", onPress: takePhoto }, 
         { text: "Annulla", style: "cancel" }
       ]
     );
@@ -114,35 +99,33 @@ export default function CreateTicketScreen({ navigation, route }) {
       aspect: [4, 3],
       quality: 0.5,
     });
-    // Architettura: Prepariamo l'array di immagini
-    if (!result.canceled) setImages([result.assets[0]]); 
+    if (!result.canceled) {
+        setImages([result.assets[0]]);
+        // AVVISO UTENTE: Foto disabilitate temporaneamente
+        Alert.alert("Info", "Al momento il server non supporta il caricamento foto. La foto non verrà inviata.");
+    } 
   };
 
   const handleSubmit = async () => {
     if (!title) return Alert.alert("Attenzione", "Inserisci almeno un titolo!");
-    if (!category) return Alert.alert("Attenzione", "Seleziona una categoria!");
+    if (!selectedCatId) return Alert.alert("Attenzione", "Seleziona una categoria!");
     if (!coords.lat || !coords.lng) return Alert.alert("Attenzione", "Posizione non rilevata.");
 
     setIsSubmitting(true);
 
-    // [FIX] Architettura: Allineamento nomi campi con le API del Sito
-    // Usiamo chiavi in INGLESE come si aspetta il backend (visto nel file ticket.js del sito)
+    // [FIX] Struttura JSON ESATTA richiesta da Postman
     const ticketData = {
-      title: title,            
-      description: desc,       
-      category: category,     
-      lat: coords.lat,         
-      lon: coords.lng,         
-      address: address,      
-      status: 'Ricevuto',
-      id_status: 1,            // Aggiunto per coerenza con il sito
-      id_creator_user: user?.id, 
-      timestamp: new Date().toISOString(),
+      title: title,
+      // description: desc, // Se Postman non la vuole, commentala, ma di solito serve
+      id_status: 1,      // 1 = Ricevuto/Aperto
+      lat: coords.lat,
+      lon: coords.lng,   // Postman usa 'lon'
+      categories: [selectedCatId], // ARRAY di interi, es. [1]
+      user: user?.id     // Chiave 'user', non 'id_creator_user'
     };
 
     try {
-      // Passiamo ticketData E images separatamente al service
-      // Il service gestirà la chiamata unica multipart
+      // Passiamo ticketData. Le immagini le passiamo ma il service le ignorerà per ora.
       const success = await postTicket(ticketData, images);
       
       if (success) {
@@ -196,22 +179,18 @@ export default function CreateTicketScreen({ navigation, route }) {
 
           <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
             <Text style={styles.label}>CATEGORIA</Text>
-            {loadingCats && <ActivityIndicator size="small" color="#1D2D44"/>}
           </View>
           
           <View style={styles.chipsRow}>
             {categories.map((cat, index) => {
-               // Gestione dinamica: supporta sia stringhe semplici che oggetti {id, label}
-               const catLabel = typeof cat === 'object' ? cat.label : cat;
-               
                return (
                  <TouchableOpacity 
-                   key={index} 
-                   style={[styles.chip, category === catLabel && styles.chipActive]}
-                   onPress={() => setCategory(catLabel)}
+                   key={cat.id} 
+                   style={[styles.chip, selectedCatId === cat.id && styles.chipActive]}
+                   onPress={() => setSelectedCatId(cat.id)}
                  >
-                   <Text style={[styles.chipText, category === catLabel && styles.chipTextActive]}>
-                      {catLabel}
+                   <Text style={[styles.chipText, selectedCatId === cat.id && styles.chipTextActive]}>
+                      {cat.label}
                    </Text>
                  </TouchableOpacity>
                );

@@ -32,7 +32,9 @@ export const getAllTickets = async () => {
 export const getUserTickets = async (userId) => {
   try {
     const allTickets = await getAllTickets();
+    // Filtro più robusto per gestire diverse convenzioni di nomi del backend
     const myTickets = allTickets.filter(t => 
+        t.user === userId || // Chiave usata nel POST
         t.id_creator_user === userId || 
         t.user_id === userId || 
         t.userId === userId
@@ -77,8 +79,7 @@ export const getOperatorTickets = async (operatorId) => {
     const myTasks = allTickets.filter(t => {
         const isInAssignments = assignedTicketIds.includes(t.id);
         const isDirectlyAssigned = (t.operator_id === operatorId || t.assigned_to === operatorId);
-        // Filtra via i ticket chiusi se necessario, o mostrali come storico
-        // Qui mostriamo solo quelli attivi per "Le mie attività"
+        
         const isActive = (t.status !== 'CLOSED' && t.status !== 'Risolto' && t.status !== 'CHIUSO'); 
         return (isInAssignments || isDirectlyAssigned) && isActive;
     });
@@ -133,33 +134,25 @@ export const postTicket = async (ticketData, photos = []) => {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
-    const formData = new FormData();
-    Object.keys(ticketData).forEach(key => {
-        if (ticketData[key] !== null && ticketData[key] !== undefined) {
-            formData.append(key, String(ticketData[key]));
-        }
-    });
-
-    photos.forEach((photo, index) => {
-        const fileName = photo.fileName || `ticket_img_${index}.jpg`;
-        formData.append('files', {
-            uri: photo.uri,
-            type: 'image/jpeg', 
-            name: fileName
-        });
-    });
+    // NOTA: Ignoriamo 'photos' per ora perché il media service non è pronto.
 
     const response = await fetch(`${API_BASE}/ticket`, {
       method: 'POST',
       headers: {
+        'Content-Type': 'application/json', // JSON invece di multipart
         'Accept': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: formData
+      body: JSON.stringify(ticketData)
     });
 
-    const data = await response.json();
-    return data.success === true || response.status === 201;
+    if (response.status === 201 || response.ok) {
+        return true;
+    } else {
+        const errText = await response.text();
+        console.error("Errore postTicket:", errText);
+        return false;
+    }
   } catch (e) {
     console.error('ticketService.postTicket', e);
     return false;
@@ -198,13 +191,13 @@ export const postReply = async (idTicket, replyData, files = []) => {
       'Authorization': `Bearer ${token}`
     };
 
+    // Logica ibrida: Se ci sono file usa FormData, altrimenti JSON
+    // (Da adattare quando il media service sarà attivo)
     if (files && files.length > 0) {
         const formData = new FormData();
-        
         Object.keys(replyData).forEach(key => {
             formData.append(key, String(replyData[key]));
         });
-
         files.forEach((file, index) => {
              const fileName = file.fileName || `reply_img_${index}.jpg`;
              formData.append('files', {
@@ -213,7 +206,6 @@ export const postReply = async (idTicket, replyData, files = []) => {
                  name: fileName
              });
         });
-
         body = formData;
     } else {
         headers['Content-Type'] = 'application/json';
@@ -241,7 +233,6 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
     const token = await AsyncStorage.getItem('app_auth_token');
     if (!token) throw new Error('Non autenticato');
 
-    // PUT /ticket/{id} come da Architettura Pag 15 (Ticket Service)
     const response = await fetch(`${API_BASE}/ticket/${idTicket}`, {
       method: 'PUT',
       headers: {
@@ -263,7 +254,6 @@ export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
   }
 };
 
-// Assegnazione Ticket (Intervention Service)
 export const assignTicket = async (ticketId, operatorId) => {
     try {
       const token = await AsyncStorage.getItem('app_auth_token');
@@ -287,7 +277,6 @@ export const assignTicket = async (ticketId, operatorId) => {
     }
 };
 
-// [NUOVO] Per Responsabili (IF-3.3): Eliminazione Ticket
 export const deleteTicket = async (ticketId) => {
     try {
         const token = await AsyncStorage.getItem('app_auth_token');
@@ -307,7 +296,5 @@ export const deleteTicket = async (ticketId) => {
 };
 
 export const closeTicket = async (idTicket) => {
-  // [FIX] Architettura non prevede endpoint /close. Usiamo updateTicketStatus.
-  // Assumiamo che ID stato 3 = Chiuso/Risolto (come da esempio precedente)
   return await updateTicketStatus(idTicket, 'CLOSED', 3);
 };

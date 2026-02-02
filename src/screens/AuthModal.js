@@ -18,6 +18,7 @@ export default function AuthModal({ navigation }) {
   const [password, setPassword] = useState('');
   const [nome, setNome] = useState('');
   const [cognome, setCognome] = useState('');
+  const [birthDate, setBirthDate] = useState(''); // NUOVO CAMPO
   const [cellulare, setCellulare] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -35,8 +36,7 @@ export default function AuthModal({ navigation }) {
       if (result && result.tenant && result.tenant.id) {
         return result.tenant.id;
       } else {
-        // Debug per vedere che coordinate sta leggendo l'emulatore
-        Alert.alert("Zona non coperta", `La tua posizione (${location.coords.latitude.toFixed(4)}, ${location.coords.longitude.toFixed(4)}) non è associata a un Comune.`);
+        Alert.alert("Zona non coperta", `La tua posizione non è associata a un Comune gestito.`);
         return null;
       }
     } catch (e) {
@@ -58,14 +58,14 @@ export default function AuthModal({ navigation }) {
 
     try {
         if (activeTab === 'login') {
-            if (!email || !password || !cellulare) {
-                Alert.alert("Errore", "Email, Password e Cellulare sono obbligatori per il login.");
+            if (!email || !password) {
+                Alert.alert("Errore", "Email e Password sono obbligatori.");
                 setIsLoading(false);
                 return;
             }
             
-            // Login con i 4 parametri richiesti dal tuo test Postman
-            const result = await loginApi(email, password, cellulare, currentTenantId);
+            // Login: Ora inviamo solo ciò che serve (email, pass, tenant)
+            const result = await loginApi(email, password, currentTenantId);
             
             if (result.success) {
                  if (result.token && result.user) {
@@ -78,11 +78,21 @@ export default function AuthModal({ navigation }) {
 
         } else {
             // Registrazione
-            if (!nome || !cognome || !email || !password || !cellulare) {
-                Alert.alert("Errore", "Compila tutti i campi");
+            // Controllo campi obbligatori (inclusa data nascita)
+            if (!nome || !cognome || !email || !password || !cellulare || !birthDate) {
+                Alert.alert("Errore", "Compila tutti i campi, inclusa la data di nascita.");
                 setIsLoading(false);
                 return;
             }
+            
+            // Validazione formato data (semplice)
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!dateRegex.test(birthDate)) {
+                Alert.alert("Errore Data", "La data deve essere nel formato AAAA-MM-GG (es. 2002-07-08)");
+                setIsLoading(false);
+                return;
+            }
+
             if (password !== confirmPassword) {
                 Alert.alert("Errore", "Le password non coincidono");
                 setIsLoading(false);
@@ -95,7 +105,8 @@ export default function AuthModal({ navigation }) {
                 surname: cognome,
                 email: email,
                 password: password,
-                phoneNumber: cellulare // Coerente con il body Postman
+                phoneNumber: cellulare,
+                birth_date: birthDate // Inviamo la data
             };
 
             const result = await register(userData);
@@ -114,6 +125,7 @@ export default function AuthModal({ navigation }) {
         }
     } catch (e) {
         Alert.alert("Errore", "Problema tecnico durante l'autenticazione.");
+        console.error(e);
     } finally {
         setIsLoading(false);
     }
@@ -127,7 +139,7 @@ export default function AuthModal({ navigation }) {
             <View style={styles.backdrop} />
           </TouchableWithoutFeedback>
 
-          <View style={[styles.card, activeTab === 'register' && { height: '85%' }]}>
+          <View style={[styles.card, activeTab === 'register' && { height: '90%' }]}>
             <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()}>
               <Ionicons name="close" size={24} color="white" />
             </TouchableOpacity>
@@ -147,18 +159,45 @@ export default function AuthModal({ navigation }) {
               
               {/* CAMPI SOLO REGISTRAZIONE */}
               {activeTab === 'register' && (
-                  <View style={styles.row}>
-                      <View style={[styles.inputContainer, {flex:1, marginRight:5}]}>
-                        <Ionicons name="person-outline" size={20} color="#666" style={{marginRight:5}} />
-                        <TextInput placeholder="Nome" style={styles.input} value={nome} onChangeText={setNome} placeholderTextColor="#999"/>
-                      </View>
-                      <View style={[styles.inputContainer, {flex:1, marginLeft:5}]}>
-                        <TextInput placeholder="Cognome" style={styles.input} value={cognome} onChangeText={setCognome} placeholderTextColor="#999"/>
-                      </View>
-                  </View>
+                  <>
+                    <View style={styles.row}>
+                        <View style={[styles.inputContainer, {flex:1, marginRight:5}]}>
+                            <Ionicons name="person-outline" size={20} color="#666" style={{marginRight:5}} />
+                            <TextInput placeholder="Nome" style={styles.input} value={nome} onChangeText={setNome} placeholderTextColor="#999"/>
+                        </View>
+                        <View style={[styles.inputContainer, {flex:1, marginLeft:5}]}>
+                            <TextInput placeholder="Cognome" style={styles.input} value={cognome} onChangeText={setCognome} placeholderTextColor="#999"/>
+                        </View>
+                    </View>
+
+                    {/* NUOVO INPUT DATA DI NASCITA */}
+                    <View style={styles.inputContainer}>
+                        <Ionicons name="calendar-outline" size={20} color="#666" style={{marginRight:10}} />
+                        <TextInput 
+                            placeholder="Data Nascita (AAAA-MM-GG)" 
+                            style={styles.input} 
+                            value={birthDate} 
+                            onChangeText={setBirthDate} 
+                            placeholderTextColor="#999"
+                            keyboardType="numbers-and-punctuation"
+                        />
+                    </View>
+                    
+                    <View style={styles.inputContainer}>
+                        <Ionicons name="call-outline" size={20} color="#666" style={{marginRight:10}} />
+                        <TextInput 
+                            placeholder="Cellulare" 
+                            keyboardType="phone-pad" 
+                            style={styles.input} 
+                            value={cellulare} 
+                            onChangeText={setCellulare} 
+                            placeholderTextColor="#999"
+                        />
+                    </View>
+                  </>
               )}
 
-              {/* CAMPI SEMPRE VISIBILI (SIA LOGIN CHE REGISTER) */}
+              {/* CAMPI LOGIN e REGISTRAZIONE */}
               <View style={styles.inputContainer}>
                 <Ionicons name="mail-outline" size={20} color="#666" style={{marginRight:10}} />
                 <TextInput 
@@ -168,19 +207,6 @@ export default function AuthModal({ navigation }) {
                     onChangeText={setEmail} 
                     autoCapitalize="none"
                     keyboardType="email-address"
-                    placeholderTextColor="#999"
-                />
-              </View>
-
-              {/* SPOSTATO FUORI: Ora visibile anche in Login */}
-              <View style={styles.inputContainer}>
-                <Ionicons name="call-outline" size={20} color="#666" style={{marginRight:10}} />
-                <TextInput 
-                    placeholder="Cellulare" 
-                    keyboardType="phone-pad" 
-                    style={styles.input} 
-                    value={cellulare} 
-                    onChangeText={setCellulare} 
                     placeholderTextColor="#999"
                 />
               </View>
@@ -197,7 +223,7 @@ export default function AuthModal({ navigation }) {
                 />
               </View>
 
-              {/* CAMPO CONFERMA SOLO REGISTRAZIONE */}
+              {/* CONFERMA PASSWORD SOLO REGISTRAZIONE */}
               {activeTab === 'register' && (
                   <View style={styles.inputContainer}>
                     <Ionicons name="lock-closed-outline" size={20} color="#666" style={{marginRight:10}} />
@@ -212,7 +238,7 @@ export default function AuthModal({ navigation }) {
                   </View>
               )}
 
-              {/* Action Button */}
+              {/* Bottone Azione */}
               <TouchableOpacity style={[styles.mainBtn, isLoading && {backgroundColor:'#888'}]} onPress={handleAuthAction} disabled={isLoading}>
                 {isLoading ? (
                     <ActivityIndicator color="white" />
@@ -234,7 +260,7 @@ export default function AuthModal({ navigation }) {
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)' },
   backdrop: { position: 'absolute', width: '100%', height: '100%' },
-  card: { width: width * 0.9, backgroundColor: '#467599', borderRadius: 15, padding: 25, elevation: 10, maxHeight: '90%' },
+  card: { width: width * 0.9, backgroundColor: '#467599', borderRadius: 15, padding: 25, elevation: 10, maxHeight: '95%' }, // aumentata altezza
   closeBtn: { position: 'absolute', top: 15, right: 15, zIndex: 10 },
   toggleContainer: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 3, marginBottom: 20 },
   toggleItem: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 6 },
