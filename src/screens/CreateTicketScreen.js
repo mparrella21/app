@@ -4,7 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { postTicket, getCategories } from '../services/ticketService'; 
+
+// Manteniamo getCategories dal vecchio servizio (per le categorie dinamiche)
+import { getCategories } from '../services/ticketService'; 
+// Usiamo il nuovo servizio per l'invio effettivo del ticket
+import { interventionService } from '../services/interventionService'; 
 import { useAuth } from '../context/AuthContext';
 
 export default function CreateTicketScreen({ navigation, route }) {
@@ -16,7 +20,7 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   
-  // Categorie dinamiche (Sostituisce CATEGORY_MAP statica)
+  // RIPRISTINATO: Categorie dinamiche dal backend
   const [categories, setCategories] = useState([]);
   const [selectedCatId, setSelectedCatId] = useState(null);
   const [loadingCats, setLoadingCats] = useState(false);
@@ -29,7 +33,7 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    // A. Gestione Posizione
+    // A. Gestione Posizione (Invariata dal tuo originale)
     if (initialLat && initialLng) {
       setCoords({ lat: initialLat, lng: initialLng });
       fetchAddress(initialLat, initialLng);
@@ -44,7 +48,7 @@ export default function CreateTicketScreen({ navigation, route }) {
       })();
     }
 
-    // B. Caricamento Categorie da API
+    // B. RIPRISTINATO: Caricamento Categorie da API
     loadCategories();
   }, [initialLat, initialLng]);
 
@@ -52,12 +56,10 @@ export default function CreateTicketScreen({ navigation, route }) {
       setLoadingCats(true);
       try {
           const apiCats = await getCategories();
-          // L'API ritorna oggetti {id, label}
           if (Array.isArray(apiCats) && apiCats.length > 0) {
               setCategories(apiCats);
               setSelectedCatId(apiCats[0].id); // Seleziona la prima di default
           } else {
-              // Fallback se il server non risponde, per non bloccare l'UI
               Alert.alert("Attenzione", "Impossibile caricare le categorie dal server.");
           }
       } catch (e) {
@@ -96,8 +98,9 @@ export default function CreateTicketScreen({ navigation, route }) {
   };
 
   const pickImage = async () => {
+    // RISOLTO WARNING: Sostituito MediaTypeOptions.Images (deprecato) con ['images']
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'], 
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.5,
@@ -109,24 +112,30 @@ export default function CreateTicketScreen({ navigation, route }) {
   };
 
   const handleSubmit = async () => {
-    if (!title) return Alert.alert("Attenzione", "Inserisci almeno un titolo!");
+    if (!title || !desc) return Alert.alert("Attenzione", "Inserisci titolo e descrizione!");
     if (!selectedCatId) return Alert.alert("Attenzione", "Seleziona una categoria!");
     if (!coords.lat || !coords.lng) return Alert.alert("Attenzione", "Posizione non rilevata.");
 
     setIsSubmitting(true);
 
+    // Recuperiamo la label della categoria selezionata
+    const selectedCategoryLabel = categories.find(c => c.id === selectedCatId)?.label || 'Altro';
+
+    // PAYLOAD PER IL NUOVO BACKEND (Intervention Service)
     const ticketData = {
-      title: title,
-      descrizione: desc, // Campo aggiunto rispetto alla versione precedente
-      id_status: 1,      // 1 = Ricevuto/Aperto
-      lat: coords.lat,
-      lon: coords.lng,
-      categories: [selectedCatId], 
-      user: user?.id
+      tenant_id: user.tenant_id,
+      creator_id: user.id,
+      category: selectedCategoryLabel, 
+      description: `${title} - ${desc}`, 
+      location: address,
+      latitude: coords.lat,
+      longitude: coords.lng,
+      status: 'Aperto'
     };
 
     try {
-      const success = await postTicket(ticketData, images);
+      // CHIAMA IL NUOVO SERVIZIO UNIFICATO
+      const success = await interventionService.createIntervention(ticketData);
       
       if (success) {
         Alert.alert("Successo", "Segnalazione inviata correttamente!");

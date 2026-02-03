@@ -1,7 +1,101 @@
+// mparrella21/app/app-main/src/services/interventionService.js
+
 import { API_BASE } from './config';
 import { authenticatedFetch } from './authService';
 
-// --- ASSIGNMENT (Assegnazione Ticket a Operatore) ---
+// =====================================================================
+// --- CORE INTERVENTIONS (Ticket Base) - AGGIUNTE ORA ---
+// =====================================================================
+
+export const getInterventions = async () => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/interventions`, { method: 'GET' });
+        if (response.ok) return await response.json();
+        return [];
+    } catch (e) {
+        console.error('interventionService.getInterventions', e);
+        return [];
+    }
+};
+
+export const getUserInterventions = async (userId) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/interventions/user/${userId}`, { method: 'GET' });
+        if (response.ok) return await response.json();
+        return [];
+    } catch (e) {
+        console.error('interventionService.getUserInterventions', e);
+        return [];
+    }
+};
+
+export const getInterventionById = async (id) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/interventions/${id}`, { method: 'GET' });
+        if (response.ok) return await response.json();
+        return null;
+    } catch (e) {
+        console.error('interventionService.getInterventionById', e);
+        return null;
+    }
+};
+
+export const createIntervention = async (interventionData) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/interventions`, {
+            method: 'POST',
+            body: JSON.stringify(interventionData)
+        });
+        if (response.ok) return await response.json();
+        return null;
+    } catch (e) {
+        console.error('interventionService.createIntervention', e);
+        return null;
+    }
+};
+
+export const updateInterventionStatus = async (id, newStatus) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/interventions/${id}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: newStatus })
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('interventionService.updateInterventionStatus', e);
+        return false;
+    }
+};
+
+export const closeIntervention = async (id, closingNotes) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/interventions/${id}/close`, {
+            method: 'PATCH',
+            body: JSON.stringify({ 
+                closing_notes: closingNotes,
+                status: 'Risolto'
+            })
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('interventionService.closeIntervention', e);
+        return false;
+    }
+};
+
+export const deleteIntervention = async (id) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/interventions/${id}`, { method: 'DELETE' });
+        return response.ok;
+    } catch (e) {
+        console.error('interventionService.deleteIntervention', e);
+        return false;
+    }
+};
+
+// =====================================================================
+// --- ASSIGNMENT (Assegnazione Ticket a Operatore) - ORIGINALE ---
+// =====================================================================
 
 export const getAssignments = async () => {
     try {
@@ -46,7 +140,9 @@ export const deleteAssignment = async (ticketId) => {
     }
 };
 
-// --- RATING (Valutazione Intervento) ---
+// =====================================================================
+// --- RATING (Valutazione Intervento) - ORIGINALE ---
+// =====================================================================
 
 export const getRating = async (ticketId) => {
     try {
@@ -80,7 +176,9 @@ export const sendFeedback = async (ticketId, vote, comment = "") => {
     }
 };
 
-// --- OPERATOR CATEGORIES & MAPPINGS ---
+// =====================================================================
+// --- OPERATOR CATEGORIES & MAPPINGS - ORIGINALE ---
+// =====================================================================
 
 export const getOperatorCategories = async () => {
     try {
@@ -180,7 +278,6 @@ export const removeOperatorCategory = async (userId, tenantId, categoryId) => {
 };
 
 // NUOVA: MAPPATURA CATEGORIA OPERATORE -> CATEGORIA TICKET
-// N.B. La creazione/modifica spetta all'Admin sul web. In app serve solo la lettura (GET) per filtrare.
 export const getOperatorTicketMappings = async () => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/mappings/operator-ticket`, { method: 'GET' });

@@ -5,21 +5,29 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
 
+// 1. IMPORTIAMO IL NUOVO SERVIZIO PER IL CICLO DI VITA DEL TICKET E LE ASSEGNAZIONI/RATING
 import { 
-    getTicket, 
+    getInterventionById, 
+    updateInterventionStatus, 
+    closeIntervention, 
+    deleteIntervention,
+    sendFeedback, 
+    getRating, 
+    createAssignment, 
+    getAssignments, 
+    deleteAssignment 
+} from '../services/interventionService';
+
+// 2. MANTENIAMO IL VECCHIO SERVIZIO PER CHAT E MODIFICA DATI
+import { 
     getAllReplies, 
     postReply, 
     updateReply, 
     deleteReply, 
-    closeTicket, 
-    updateTicketStatus, 
-    deleteTicket, 
     updateTicketDetails,
     getCategories
 } from '../services/ticketService';
 
-// FIX: Importati getAssignments e deleteAssignment per la gestione completa dell'assegnazione
-import { sendFeedback, getRating, createAssignment, getAssignments, deleteAssignment } from '../services/interventionService';
 import { getOperatorsByTenant, getAllUsers } from '../services/userService'; 
 import { getAddressFromCoordinates } from '../services/nominatim';
 
@@ -33,70 +41,58 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [replies, setReplies] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [newComment, setNewComment] = useState('');
   
-  // Assegnazione info
+  // STATI PER LA CHAT
+  const [newComment, setNewComment] = useState('');
+  const [editReplyModalVisible, setEditReplyModalVisible] = useState(false);
+  const [selectedReply, setSelectedReply] = useState(null);
+  const [editReplyText, setEditReplyText] = useState('');
+  
+  // STATI PER L'ASSEGNAZIONE
   const [assignedOperator, setAssignedOperator] = useState(null);
-
-  const [rating, setRating] = useState(0); 
-  const [ratingSubmitted, setRatingSubmitted] = useState(false);
-
-  const [reportModalVisible, setReportModalVisible] = useState(false);
-  const [interventionReport, setInterventionReport] = useState('');
-  const [reportImage, setReportImage] = useState(null); 
-
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [operators, setOperators] = useState([]);
   const [loadingOperators, setLoadingOperators] = useState(false);
+
+  // STATI PER IL RATING
+  const [rating, setRating] = useState(0); 
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+
+  // STATI PER LA CHIUSURA (RAPPORTO)
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [interventionReport, setInterventionReport] = useState('');
+  const [reportImage, setReportImage] = useState(null); 
   
+  // STATI PER LA MODIFICA TICKET
   const [isEditingTicket, setIsEditingTicket] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editCategoryId, setEditCategoryId] = useState(null);
   const [allCategories, setAllCategories] = useState([]);
 
-  const [editReplyModalVisible, setEditReplyModalVisible] = useState(false);
-  const [selectedReply, setSelectedReply] = useState(null);
-  const [editReplyText, setEditReplyText] = useState('');
-
-  const getStatusLabel = (t) => {
-      if (!t) return 'Sconosciuto';
-      const sid = t.id_status || t.statusId;
-      if (t.status && typeof t.status === 'string') return t.status;
-      switch (sid) {
-          case 1: return 'Ricevuto'; 
-          case 2: return 'In Lavorazione'; 
-          case 3: return 'Risolto'; 
-          case 4: return 'Chiuso';
-          default: return 'Ricevuto';
-      }
-  };
-
+  // FETCH INIZIALE DEI DATI
   const fetchData = async () => {
       if (!ticketId) return;
       setLoading(true);
       
       try {
-        const freshTicket = await getTicket(ticketId);
+        // Usa il nuovo servizio per ottenere il ticket
+        const freshTicket = await getInterventionById(ticketId);
         if (freshTicket) {
-           if ((!freshTicket.indirizzo && !freshTicket.address) && freshTicket.lat && freshTicket.lon) {
+           if ((!freshTicket.indirizzo && !freshTicket.location) && freshTicket.latitude && freshTicket.longitude) {
                try {
-                   const resolvedAddress = await getAddressFromCoordinates(freshTicket.lat, freshTicket.lon);
-                   freshTicket.address = resolvedAddress;
+                   const resolvedAddress = await getAddressFromCoordinates(freshTicket.latitude, freshTicket.longitude);
+                   freshTicket.location = resolvedAddress;
                } catch (err) {
                    console.warn("Impossibile risolvere indirizzo", err);
                }
            }
 
            setTicket(freshTicket);
-           setEditTitle(freshTicket.titolo || freshTicket.title);
-           setEditDesc(freshTicket.descrizione || freshTicket.description || freshTicket.desc);
+           setEditTitle(freshTicket.description); // Nel nuovo backend titolo e desc sono uniti in description
+           setEditDesc(freshTicket.description);
            
-           if(freshTicket.categories && freshTicket.categories.length > 0) {
-               setEditCategoryId(freshTicket.categories[0].id || freshTicket.categories[0]);
-           }
-
-           // Controlla se è assegnato e a chi
+           // Controlla se è assegnato e a chi (invariato)
            const assignments = await getAssignments();
            const thisTicketAssignment = assignments.find(a => a.id_ticket === ticketId);
            if (thisTicketAssignment) {
@@ -107,6 +103,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                setAssignedOperator(null);
            }
 
+           // Logica Rating (invariata)
            try {
                const fetchedRating = await getRating(ticketId);
                if (fetchedRating && fetchedRating.vote) {
@@ -122,10 +119,11 @@ export default function TicketDetailScreen({ route, navigation }) {
             navigation.goBack();
         }
 
+        // CARICAMENTO CHAT E CATEGORIE
         const fetchedReplies = await getAllReplies(ticketId);
         setReplies(fetchedReplies);
 
-        if (user?.role === 'responsabile' || user?.role === 'maintenance_manager') {
+        if (user?.role === 'RESPONSIBLE' || user?.role === 'maintenance_manager') {
             const cats = await getCategories();
             setAllCategories(cats);
         }
@@ -141,14 +139,18 @@ export default function TicketDetailScreen({ route, navigation }) {
     fetchData();
   }, [ticketId]);
 
-  const statusLabel = ticket ? getStatusLabel(ticket) : '';
-  const isResolved = statusLabel.toLowerCase() === 'risolto' || statusLabel.toLowerCase() === 'chiuso';
-  const isInProgress = statusLabel.toLowerCase() === 'in lavorazione' || statusLabel.toLowerCase() === 'assegnato' || statusLabel.toLowerCase() === 'in corso';
+  // STATI E RUOLI
+  const statusLabel = ticket ? (ticket.status || '') : '';
+  const isResolved = statusLabel === 'Risolto';
+  const isInProgress = statusLabel === 'In carico';
   
-  const isOperator = user?.role === 'operatore';
-  const isCitizen = !user || user?.role === 'cittadino';
-  const isManager = user?.role === 'responsabile' || user?.role === 'maintenance_manager'; 
+  const isOperator = user?.role === 'OPERATOR';
+  const isCitizen = !user || user?.role === 'CITIZEN';
+  const isManager = user?.role === 'RESPONSIBLE'; 
 
+  // ==========================================
+  // LOGICHE DELLA CHAT (Mantenute identiche)
+  // ==========================================
   const handleLongPressReply = (reply) => {
       const isMyReply = reply.id_creator_user === user?.id;
       if (!isMyReply) return;
@@ -207,31 +209,45 @@ export default function TicketDetailScreen({ route, navigation }) {
       );
   };
 
-  const handleStatusChange = async (newStatus, newStatusId) => {
-    if (newStatus === 'Risolto') {
-        setReportModalVisible(true);
-        return;
-    }
+  const handleSendComment = async () => {
+    if(!newComment.trim()) return;
+    
+    setActionLoading(true);
+    
+    const replyData = {
+        body: newComment, 
+        type: 'USER'
+    };
 
-    Alert.alert("Conferma", `Vuoi impostare lo stato a "${newStatus}"?`, [
-        { text: "Annulla", style: "cancel" },
-        { text: "Conferma", onPress: async () => {
-            performStatusUpdate(newStatus, newStatusId);
-        }}
-    ]);
+    const success = await postReply(ticket.id, replyData);
+    setActionLoading(false);
+
+    if (success) {
+        setNewComment('');
+        fetchData(); 
+    } else {
+        Alert.alert("Errore", "Impossibile inviare il messaggio.");
+    }
   };
 
-  const performStatusUpdate = async (newStatus, newStatusId) => {
-      setActionLoading(true);
-      const success = await updateTicketStatus(ticket.id, newStatus, newStatusId);
-      setActionLoading(false);
-      
-      if (success) {
-          fetchData();
-          Alert.alert("Successo", `Stato aggiornato a ${newStatus}.`);
-      } else {
-          Alert.alert("Errore", "Impossibile aggiornare lo stato.");
-      }
+  // ==========================================
+  // LOGICHE DEL TICKET (Stati e Modifiche)
+  // ==========================================
+  const handleTakeCharge = async () => {
+    Alert.alert("Conferma", "Vuoi prendere in carico questo ticket?", [
+        { text: "Annulla", style: "cancel" },
+        { text: "Conferma", onPress: async () => {
+            setActionLoading(true);
+            const success = await updateInterventionStatus(ticket.id, 'In carico');
+            setActionLoading(false);
+            if (success) {
+                fetchData();
+                Alert.alert("Successo", "Ticket preso in carico.");
+            } else {
+                Alert.alert("Errore", "Impossibile aggiornare lo stato.");
+            }
+        }}
+    ]);
   };
 
   const pickReportImage = async () => {
@@ -256,13 +272,15 @@ export default function TicketDetailScreen({ route, navigation }) {
       setActionLoading(true);
 
       try {
+          // SALVA IL REPORT NELLA CHAT (Come facevi prima)
           const replyData = {
               body: `[RAPPORTO INTERVENTO]: ${interventionReport}`,
               type: 'REPORT'
           };
-
           await postReply(ticket.id, replyData, reportImage ? [reportImage] : []);
-          const closeSuccess = await closeTicket(ticket.id);
+
+          // CHIUDE IL TICKET CON IL NUOVO SERVIZIO
+          const closeSuccess = await closeIntervention(ticket.id, interventionReport);
 
           if (closeSuccess) {
               setInterventionReport('');
@@ -282,11 +300,8 @@ export default function TicketDetailScreen({ route, navigation }) {
 
   const toggleEditMode = () => {
       if (isEditingTicket) {
-          setEditTitle(ticket.titolo || ticket.title);
-          setEditDesc(ticket.descrizione || ticket.description || ticket.desc);
-          if(ticket.categories && ticket.categories.length > 0) {
-              setEditCategoryId(ticket.categories[0].id || ticket.categories[0]);
-          }
+          setEditTitle(ticket.description);
+          setEditDesc(ticket.description);
           setIsEditingTicket(false);
       } else {
           setIsEditingTicket(true);
@@ -322,6 +337,9 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
   
+  // ==========================================
+  // ASSEGNAZIONE ED ELIMINAZIONE
+  // ==========================================
   const openAssignModal = async () => {
       setAssignModalVisible(true);
       if (operators.length === 0) {
@@ -356,7 +374,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // FIX: Funzione per rimuovere l'assegnazione
   const handleRemoveAssignment = () => {
       Alert.alert("Rimuovi Assegnazione", "Vuoi rimuovere l'operatore assegnato da questo ticket?", [
           { text: "Annulla", style: "cancel" },
@@ -380,7 +397,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           { text: "Annulla", style: "cancel" },
           { text: "Elimina", style: 'destructive', onPress: async () => {
               setActionLoading(true);
-              const success = await deleteTicket(ticket);
+              const success = await deleteIntervention(ticket.id); // NUOVO SERVIZIO
               setActionLoading(false);
               if (success) {
                   Alert.alert("Eliminato", "Ticket rimosso correttamente.");
@@ -392,37 +409,19 @@ export default function TicketDetailScreen({ route, navigation }) {
       ]);
   };
 
+  // ==========================================
+  // MAPPA E RATING
+  // ==========================================
   const openMap = () => {
-      if(ticket.lat && ticket.lon) {
+      if(ticket.latitude && ticket.longitude) {
           const url = Platform.select({
-            ios: `maps:0,0?q=${ticket.lat},${ticket.lon}`,
-            android: `geo:0,0?q=${ticket.lat},${ticket.lon}(Ticket)`
+            ios: `maps:0,0?q=${ticket.latitude},${ticket.longitude}`,
+            android: `geo:0,0?q=${ticket.latitude},${ticket.longitude}(Ticket)`
           });
           Linking.openURL(url);
       } else {
           Alert.alert("Info", "Coordinate non disponibili");
       }
-  };
-
-  const handleSendComment = async () => {
-    if(!newComment.trim()) return;
-    
-    setActionLoading(true);
-    
-    const replyData = {
-        body: newComment, 
-        type: 'USER'
-    };
-
-    const success = await postReply(ticket.id, replyData);
-    setActionLoading(false);
-
-    if (success) {
-        setNewComment('');
-        fetchData(); 
-    } else {
-        Alert.alert("Errore", "Impossibile inviare il messaggio.");
-    }
   };
 
   const handleRating = async (stars) => {
@@ -494,9 +493,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           <View style={styles.badgeRow}>
             <View style={styles.catBadge}>
                 <Text style={styles.catText}>
-                    {Array.isArray(ticket.categories) && ticket.categories.length > 0 
-                        ? ticket.categories[0].label 
-                        : (ticket.category || 'Generico')}
+                    {ticket.category || 'Generico'}
                 </Text>
             </View>
             <View style={[styles.statusBadge, {backgroundColor: getStatusColor()}]}>
@@ -546,12 +543,12 @@ export default function TicketDetailScreen({ route, navigation }) {
               </View>
           ) : (
               <>
-                <Text style={styles.title}>{ticket.titolo || ticket.title}</Text>
+                <Text style={styles.title}>{ticket.description}</Text>
                 
                 <Text style={styles.address}>
-                    <Ionicons name="location-outline" size={14} /> {ticket.indirizzo || ticket.address || 'Posizione non disponibile'}
+                    <Ionicons name="location-outline" size={14} /> {ticket.location || 'Posizione non disponibile'}
                 </Text>
-                {ticket.lat && ticket.lon && (
+                {ticket.latitude && ticket.longitude && (
                     <TouchableOpacity onPress={openMap} style={{flexDirection:'row', alignItems:'center', marginBottom:15}}>
                         <Ionicons name="map" size={16} color={COLORS.primary} />
                         <Text style={{color: COLORS.primary, marginLeft:5, fontWeight:'bold', fontSize:14}}>Vedi su Mappa</Text>
@@ -563,7 +560,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                         <Ionicons name="calendar-outline" size={12} /> {ticket.creation_date ? new Date(ticket.creation_date).toLocaleDateString() : 'Data N/D'}
                     </Text>
                     <Text style={styles.metaText}>
-                        <Ionicons name="person-outline" size={12} /> {ticket.author_name || ticket.id_creator_user || 'Utente'}
+                        <Ionicons name="person-outline" size={12} /> {ticket.creator_id || 'Utente'}
                     </Text>
                 </View>
 
@@ -578,7 +575,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                 )}
 
                 <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
-                <Text style={styles.desc}>{ticket.descrizione || ticket.description || ticket.desc || "Nessuna descrizione."}</Text>
+                <Text style={styles.desc}>{ticket.description || "Nessuna descrizione."}</Text>
               </>
           )}
 
@@ -590,18 +587,20 @@ export default function TicketDetailScreen({ route, navigation }) {
                 ) : (
                     <View style={styles.opButtons}>
                         {!isResolved && !isInProgress && (
-                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#3B82F6', marginRight: 10}]} onPress={() => handleStatusChange('In Lavorazione', 2)}>
+                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#3B82F6', marginRight: 10}]} onPress={handleTakeCharge}>
                                 <Ionicons name="construct" size={18} color="white" />
                                 <Text style={styles.opBtnText}>PRENDI IN CARICO</Text>
                             </TouchableOpacity>
                         )}
 
-                        {!isResolved ? (
-                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#10B981'}]} onPress={() => handleStatusChange('Risolto', 3)}>
+                        {isInProgress && (
+                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#10B981'}]} onPress={() => setReportModalVisible(true)}>
                                 <Ionicons name="checkmark-circle" size={18} color="white" />
                                 <Text style={styles.opBtnText}>RISOLTO</Text>
                             </TouchableOpacity>
-                        ) : (
+                        )}
+                        
+                        {isResolved && (
                             <Text style={{color:'#10B981', fontWeight:'bold', textAlign:'center', flex:1}}>
                                 <Ionicons name="lock-closed" size={14}/> Ticket Chiuso
                             </Text>
@@ -714,12 +713,8 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       )}
 
-      <Modal
-          animationType="slide"
-          transparent={true}
-          visible={reportModalVisible}
-          onRequestClose={() => setReportModalVisible(false)}
-      >
+      {/* MODALI RIMASTI INVARIATI */}
+      <Modal animationType="slide" transparent={true} visible={reportModalVisible} onRequestClose={() => setReportModalVisible(false)}>
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
                   <Text style={styles.modalTitle}>Rapporto di Intervento</Text>
@@ -760,12 +755,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       </Modal>
 
-      <Modal
-          animationType="fade"
-          transparent={true}
-          visible={assignModalVisible}
-          onRequestClose={() => setAssignModalVisible(false)}
-      >
+      <Modal animationType="fade" transparent={true} visible={assignModalVisible} onRequestClose={() => setAssignModalVisible(false)}>
           <View style={styles.modalOverlay}>
               <View style={[styles.modalContent, {maxHeight: '80%'}]}>
                   <Text style={styles.modalTitle}>Assegna a Operatore</Text>
@@ -792,12 +782,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       </Modal>
 
-      <Modal
-          animationType="fade"
-          transparent={true}
-          visible={editReplyModalVisible}
-          onRequestClose={() => setEditReplyModalVisible(false)}
-      >
+      <Modal animationType="fade" transparent={true} visible={editReplyModalVisible} onRequestClose={() => setEditReplyModalVisible(false)}>
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
                   <Text style={styles.modalTitle}>Modifica Messaggio</Text>

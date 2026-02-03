@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getAllTickets } from '../services/ticketService'; // Usa solo il servizio reale
+import { interventionService } from '../services/interventionService'; // CAMBIATO: Usa interventionService
 import { useAuth } from '../context/AuthContext';
 
 const COLORS = { primary: '#0077B6', bg: '#F3F4F6', card: '#FFF', accent: '#C06E52' };
@@ -10,18 +10,17 @@ const CitizenHomeScreen = ({ navigation }) => {
   const { user } = useAuth();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false); // Aggiunto pull-to-refresh
+  const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('active'); // 'active' o 'history'
 
   const loadTickets = async () => {
     try {
-      // NON usiamo più mockTicketStore. 
-      // Chiamiamo direttamente il backend.
-      const data = await getAllTickets();
-      setTickets(data);
+      if (!user?.id) return;
+      // CAMBIATO: Chiama i ticket specifici dell'utente loggato
+      const data = await interventionService.getUserInterventions(user.id);
+      setTickets(data || []);
     } catch (e) {
       console.warn('CitizenHomeScreen.load', e);
-      // Qui potresti mostrare un Alert se c'è errore di rete
     }
   };
 
@@ -29,12 +28,11 @@ const CitizenHomeScreen = ({ navigation }) => {
     setLoading(true);
     loadTickets().finally(() => setLoading(false));
 
-    // Ricarica quando la schermata torna in focus
     const unsubscribe = navigation.addListener('focus', () => {
        loadTickets();
     });
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, user]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -42,52 +40,45 @@ const CitizenHomeScreen = ({ navigation }) => {
     setRefreshing(false);
   };
 
-  // FILTRO LISTA: Attivi (Open/In Progress) vs Storico (Closed/Resolved)
+  // FILTRO LISTA: Attivi vs Storico basato sui nuovi stati (Aperto, In carico, Risolto)
   const filteredTickets = tickets.filter(t => {
-    // Normalizziamo lo stato per evitare problemi con maiuscole/minuscole
     const status = (t.status || '').toUpperCase();
-    const isClosed = status === 'RISOLTO' || status === 'CHIUSO' || status === 'CLOSED';
+    const isClosed = status === 'RISOLTO' || status === 'CHIUSO';
     
     if (activeTab === 'active') return !isClosed;
     return isClosed;
   });
 
   const renderTicket = ({ item }) => (
-    <TouchableOpacity style={styles.ticketCard} onPress={() => navigation.navigate('TicketDetail', { id: item.id })}>
+    <TouchableOpacity style={styles.ticketCard} onPress={() => navigation.navigate('TicketDetail', { ticket: item })}>
       <View style={styles.iconContainer}>
-        {/* Gestione sicura se categoria è null */}
-        <Ionicons name={(item.categoria || '').includes('Verde') ? 'leaf' : 'construct'} size={24} color="#555" />
+        <Ionicons name={(item.category || '').includes('Verde') ? 'leaf' : 'construct'} size={24} color="#555" />
       </View>
       <View style={{ flex: 1, marginLeft: 15 }}>
-        <Text style={styles.ticketTitle} numberOfLines={1}>{item.titolo || item.title || 'Segnalazione senza titolo'}</Text>
-        <Text style={styles.ticketSub}>#{item.id} • {item.data || item.creation_date || 'Data non disp.'}</Text>
-        <Text style={{fontSize:12, color:'#777'}} numberOfLines={1}>{item.indirizzo || 'Nessun indirizzo'}</Text>
+        <Text style={styles.ticketTitle} numberOfLines={1}>{item.description || 'Segnalazione senza titolo'}</Text>
+        <Text style={styles.ticketSub}>#{item.id?.substring(0,8)} • {item.creation_date ? new Date(item.creation_date).toLocaleDateString() : 'Data non disp.'}</Text>
+        <Text style={{fontSize:12, color:'#777'}} numberOfLines={1}>{item.location || 'Nessun indirizzo'}</Text>
       </View>
-      <View style={[styles.statusBadge, { backgroundColor: (item.status === 'Risolto' || item.status === 'CLOSED') ? '#D1E7DD' : '#FFF3CD' }]}>
-        <Text style={{ color: (item.status === 'Risolto' || item.status === 'CLOSED') ? '#0F5132' : '#856404', fontWeight: 'bold', fontSize: 10 }}>
+      <View style={[styles.statusBadge, { backgroundColor: item.status === 'Risolto' ? '#D1E7DD' : '#FFF3CD' }]}>
+        <Text style={{ color: item.status === 'Risolto' ? '#0F5132' : '#856404', fontWeight: 'bold', fontSize: 10 }}>
           {(item.status || 'APERTO').toUpperCase()}
         </Text>
       </View>
     </TouchableOpacity>
   );
 
-return (
+  return (
     <View style={styles.container}>
-      {/* Header Modificato */}
       <View style={styles.header}>
-        
-        {/* 1. Tasto Indietro Aggiunto */}
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
             <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
 
-        {/* 2. Testo di Benvenuto (ora dentro un container flex per allinearsi alla freccia) */}
         <View style={{ flex: 1 }}>
           <Text style={styles.welcomeText}>Ciao, {user?.name?.split(' ')[0] || 'Cittadino'}! 👋</Text>
           <Text style={styles.subText}>Ecco la situazione nel tuo comune.</Text>
         </View>
 
-        {/* 3. Tasto Notifiche (resta uguale) */}
         <TouchableOpacity style={styles.notifBtn} onPress={() => navigation.navigate('Notifications')}>
            <Ionicons name="notifications-outline" size={24} color="white" />
            <View style={styles.redDot} />
@@ -95,7 +86,6 @@ return (
       </View>
 
       <View style={styles.body}>
-        {/* Tab Switcher Funzionante */}
         <View style={styles.tabs}>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'active' && styles.activeTab]} 
@@ -111,7 +101,6 @@ return (
           </TouchableOpacity>
         </View>
 
-        {/* Lista Ticket */}
         {loading ? (
           <ActivityIndicator size="large" color={COLORS.primary} style={{marginTop: 50}} />
         ) : (
@@ -133,7 +122,6 @@ return (
         )}
       </View>
 
-      {/* FAB */}
       <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('CreateTicket')}>
         <Ionicons name="add" size={32} color="white" />
       </TouchableOpacity>
