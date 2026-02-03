@@ -1,44 +1,40 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, FlatList, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker'; 
+import * as ImagePicker from 'expo-image-picker'; // RIPRISTINATO
 import { AuthContext } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
 
 // IMPORT SERVIZI CORRETTI PER IL CICLO DI VITA
 import { 
-    getInterventionByTicketId, 
-    createIntervention,
-    updateIntervention, 
-    closeIntervention, 
-    deleteIntervention,
+    getAssignmentByTicketId, 
+    createAssignment,
+    deleteAssignment,
     sendFeedback, 
     getRating
 } from '../services/interventionService';
 
 import { 
-    getTicketById,
+    getTicket,
     getAllReplies, 
     postReply, 
     updateReply, 
     deleteReply, 
     updateTicketDetails,
+    updateTicketStatus,
     getCategories
 } from '../services/ticketService';
 
-import { getOperatorsByTenant, getAllUsers } from '../services/userService'; 
+import { getAllUsers } from '../services/userService'; 
 import { getAddressFromCoordinates } from '../services/nominatim';
 
 export default function TicketDetailScreen({ route, navigation }) {
   const { id, ticket: paramTicket } = route.params || {};
   const ticketId = id || paramTicket?.id;
 
-  // Il Context ha GIA' trasformato il ruolo numerico in stringa. 
-  // Quindi qui 'user.role' è una stringa sicura.
   const { user } = useContext(AuthContext);
   
   const [ticket, setTicket] = useState(null);
-  const [intervention, setIntervention] = useState(null); 
   const [replies, setReplies] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -62,12 +58,12 @@ export default function TicketDetailScreen({ route, navigation }) {
   // STATI PER LA CHIUSURA (Operatore)
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [interventionReport, setInterventionReport] = useState('');
-  const [reportImage, setReportImage] = useState(null); 
+  const [reportImage, setReportImage] = useState(null); // RIPRISTINATO
   
   // STATI PER LA MODIFICA TICKET
   const [isEditingTicket, setIsEditingTicket] = useState(false);
   const [editTitle, setEditTitle] = useState('');
-  const [editDesc, setEditDesc] = useState('');
+  const [editDesc, setEditDesc] = useState(''); // RIPRISTINATO
   const [editCategoryId, setEditCategoryId] = useState(null);
   const [allCategories, setAllCategories] = useState([]);
 
@@ -76,11 +72,11 @@ export default function TicketDetailScreen({ route, navigation }) {
       setLoading(true);
       
       try {
-        const freshTicket = await getTicketById(ticketId);
+        const freshTicket = await getTicket(ticketId);
         
-        if (freshTicket && (!freshTicket.indirizzo && !freshTicket.location) && freshTicket.latitude && freshTicket.longitude) {
+        if (freshTicket && freshTicket.lat && freshTicket.lon) {
             try {
-                const resolvedAddress = await getAddressFromCoordinates(freshTicket.latitude, freshTicket.longitude);
+                const resolvedAddress = await getAddressFromCoordinates(freshTicket.lat, freshTicket.lon);
                 freshTicket.location = resolvedAddress;
             } catch (err) {
                 console.warn("Impossibile risolvere indirizzo", err);
@@ -88,20 +84,20 @@ export default function TicketDetailScreen({ route, navigation }) {
         }
 
         setTicket(freshTicket);
-        setEditTitle(freshTicket?.description || ''); 
+        setEditTitle(freshTicket?.title || ''); 
         setEditDesc(freshTicket?.description || '');
 
+        // LOGICA CORRETTA PER L'ASSEGNAZIONE
         try {
-            const interventionData = await getInterventionByTicketId(ticketId);
-            setIntervention(interventionData);
-            
-            if(interventionData && interventionData.operator_id) {
+            const assignmentData = await getAssignmentByTicketId(ticketId);
+            if(assignmentData && assignmentData.id_user) {
                 const users = await getAllUsers();
-                const op = users.find(u => u.id === interventionData.operator_id);
-                setAssignedOperator(op || { id: interventionData.operator_id, name: 'Operatore', surname: '' });
+                const op = users.find(u => u.id === assignmentData.id_user);
+                setAssignedOperator(op || { id: assignmentData.id_user, name: 'Operatore', surname: '' });
+            } else {
+                setAssignedOperator(null);
             }
         } catch (e) {
-            setIntervention(null);
             setAssignedOperator(null);
         }
 
@@ -134,11 +130,11 @@ export default function TicketDetailScreen({ route, navigation }) {
     fetchData();
   }, [ticketId]);
 
-  const statusLabel = intervention ? intervention.status : (ticket?.status || 'Aperto');
-  const isResolved = statusLabel === 'risolto' || statusLabel === 'Risolto';
-  const isInProgress = statusLabel === 'in_corso' || statusLabel === 'In corso' || statusLabel === 'in_carico';
+  // STATI: 1: Ricevuto, 2: In Lavorazione, 3: Risolto, 4: Chiuso
+  const statusId = ticket?.id_status || 1;
+  const isResolved = statusId >= 3;
+  const isInProgress = statusId === 2;
   
-  // Grazie ad AuthContext, questi controlli a stringa FUNZIONANO sempre.
   const isOperator = user?.role === 'operatore';
   const isCitizen = !user || user?.role === 'cittadino';
   const isManager = user?.role === 'responsabile'; 
@@ -207,13 +203,14 @@ export default function TicketDetailScreen({ route, navigation }) {
     }
   };
 
+  // OPERATORE: PRENDE IN CARICO
   const handleTakeCharge = async () => {
-    Alert.alert("Inizia Lavoro", "Vuoi iniziare le operazioni per questo ticket?", [
+    Alert.alert("Inizia Lavoro", "Vuoi iniziare le operazioni per questo ticket? Lo stato passerà a 'In Lavorazione'.", [
         { text: "Annulla", style: "cancel" },
         { text: "Conferma", onPress: async () => {
             setActionLoading(true);
             try {
-                await updateIntervention(intervention.id, { status: 'in_corso' });
+                await updateTicketStatus(ticket.id, 2);
                 fetchData();
                 Alert.alert("Successo", "Intervento in corso.");
             } catch (error) {
@@ -225,6 +222,7 @@ export default function TicketDetailScreen({ route, navigation }) {
     ]);
   };
 
+  // RIPRISTINATA FUNZIONE IMMAGINE
   const pickReportImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -237,6 +235,7 @@ export default function TicketDetailScreen({ route, navigation }) {
     }
   };
 
+  // OPERATORE: CHIUSURA E REPORT
   const handleSubmitReportAndClose = async () => {
       if (!interventionReport.trim()) {
           Alert.alert("Attenzione", "Il rapporto di intervento testuale è obbligatorio.");
@@ -250,7 +249,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           const replyData = { body: `[RAPPORTO INTERVENTO]: ${interventionReport}`, type: 'REPORT' };
           await postReply(ticket.id, replyData, reportImage ? [reportImage] : []);
 
-          await updateIntervention(intervention.id, { status: 'risolto' });
+          await updateTicketStatus(ticket.id, 3);
 
           setInterventionReport('');
           setReportImage(null);
@@ -265,8 +264,8 @@ export default function TicketDetailScreen({ route, navigation }) {
 
   const toggleEditMode = () => {
       if (isEditingTicket) {
-          setEditTitle(ticket.description);
-          setEditDesc(ticket.description);
+          setEditTitle(ticket.title);
+          setEditDesc(ticket.description || "");
           setIsEditingTicket(false);
       } else {
           setIsEditingTicket(true);
@@ -305,7 +304,6 @@ export default function TicketDetailScreen({ route, navigation }) {
           setLoadingOperators(true);
           try {
               const users = await getAllUsers();
-              // GESTIONE INTELLIGENTE: Filtra sia se il ruolo è stringa 'operatore' sia se è numero 2
               const opList = users.filter(u => u.role === 'operatore' || u.role === 2);
               setOperators(opList || []);
           } catch (e) {
@@ -320,14 +318,12 @@ export default function TicketDetailScreen({ route, navigation }) {
       setAssignModalVisible(false);
       setActionLoading(true);
       try {
-          const newIntervention = await createIntervention({
-              ticket_id: ticketId,
-              operator_id: operatorId,
-              status: "in_carico"
-          });
-          if (newIntervention) {
+          const success = await createAssignment(ticket.id, operatorId);
+          if (success) {
               Alert.alert("Assegnato", "Il ticket è stato assegnato all'operatore.");
               fetchData(); 
+          } else {
+              Alert.alert("Errore", "Assegnazione fallita.");
           }
       } catch (error) {
           Alert.alert("Errore", "Assegnazione fallita.");
@@ -337,15 +333,15 @@ export default function TicketDetailScreen({ route, navigation }) {
   };
 
   const handleRemoveAssignment = () => {
-      Alert.alert("Rimuovi Assegnazione", "Vuoi rimuovere l'operatore? Eliminerà l'intervento in corso.", [
+      Alert.alert("Rimuovi Assegnazione", "Vuoi rimuovere l'operatore? L'intervento verrà interrotto.", [
           { text: "Annulla", style: "cancel" },
           { text: "Rimuovi", style: 'destructive', onPress: async () => {
               setActionLoading(true);
               try {
-                  await deleteIntervention(intervention.id);
+                  await deleteAssignment(ticket.id);
+                  await updateTicketStatus(ticket.id, 1);
                   Alert.alert("Successo", "Assegnazione rimossa.");
                   setAssignedOperator(null);
-                  setIntervention(null);
                   fetchData();
               } catch(e) {
                   Alert.alert("Errore", "Impossibile rimuovere l'assegnazione.");
@@ -356,15 +352,11 @@ export default function TicketDetailScreen({ route, navigation }) {
       ]);
   };
 
-  const handleDeleteTicket = () => {
-      Alert.alert("Elimina Ticket", "Funzionalità da implementare lato backend per l'eliminazione completa del ticket.");
-  };
-
   const openMap = () => {
-      if(ticket.latitude && ticket.longitude) {
+      if(ticket.lat && ticket.lon) {
           const url = Platform.select({
-            ios: `maps:0,0?q=${ticket.latitude},${ticket.longitude}`,
-            android: `geo:0,0?q=${ticket.latitude},${ticket.longitude}(Ticket)`
+            ios: `maps:0,0?q=${ticket.lat},${ticket.lon}`,
+            android: `geo:0,0?q=${ticket.lat},${ticket.lon}(Ticket)`
           });
           Linking.openURL(url);
       } else Alert.alert("Info", "Coordinate non disponibili");
@@ -398,6 +390,13 @@ export default function TicketDetailScreen({ route, navigation }) {
       );
   }
 
+  const getStatusText = () => {
+      if (statusId === 1) return "RICEVUTO";
+      if (statusId === 2) return "IN LAVORAZIONE";
+      if (statusId === 3) return "RISOLTO";
+      return "CHIUSO";
+  };
+
   const getStatusColor = () => {
      if (isResolved) return '#D1E7DD'; 
      if (isInProgress) return '#FFF3CD'; 
@@ -410,6 +409,8 @@ export default function TicketDetailScreen({ route, navigation }) {
      return '#721C24';
   };
 
+  const catLabel = (ticket.categories && ticket.categories.length > 0) ? ticket.categories[0].label : 'Generico';
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1, backgroundColor:'#F3F4F6'}}>
       
@@ -417,7 +418,7 @@ export default function TicketDetailScreen({ route, navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
            <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ticket #{ticket.id ? ticket.id.toString().slice(0,8) : '...'}</Text>
+        <Text style={styles.headerTitle}>Ticket #{ticket.id.toString().slice(0,8)}</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
@@ -434,13 +435,11 @@ export default function TicketDetailScreen({ route, navigation }) {
         <View style={styles.content}>
           <View style={styles.badgeRow}>
             <View style={styles.catBadge}>
-                <Text style={styles.catText}>
-                    {ticket.category || 'Generico'}
-                </Text>
+                <Text style={styles.catText}>{catLabel}</Text>
             </View>
             <View style={[styles.statusBadge, {backgroundColor: getStatusColor()}]}>
                 <Text style={{color: getStatusTextColor(), fontWeight:'bold'}}>
-                    {statusLabel.toUpperCase()}
+                    {getStatusText()}
                 </Text>
             </View>
           </View>
@@ -459,6 +458,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                       ))}
                   </ScrollView>
 
+                  {/* CAMPO DESCRIZIONE RIPRISTINATO */}
                   <Text style={styles.labelInput}>Modifica Descrizione:</Text>
                   <TextInput style={[styles.editInput, {height: 80, textAlignVertical:'top'}]} multiline value={editDesc} onChangeText={setEditDesc} />
                   
@@ -473,12 +473,12 @@ export default function TicketDetailScreen({ route, navigation }) {
               </View>
           ) : (
               <>
-                <Text style={styles.title}>{ticket.description}</Text>
+                <Text style={styles.title}>{ticket.title}</Text>
                 
                 <Text style={styles.address}>
                     <Ionicons name="location-outline" size={14} /> {ticket.location || 'Posizione non disponibile'}
                 </Text>
-                {ticket.latitude && ticket.longitude && (
+                {ticket.lat && ticket.lon && (
                     <TouchableOpacity onPress={openMap} style={{flexDirection:'row', alignItems:'center', marginBottom:15}}>
                         <Ionicons name="map" size={16} color={COLORS.primary} />
                         <Text style={{color: COLORS.primary, marginLeft:5, fontWeight:'bold', fontSize:14}}>Vedi su Mappa</Text>
@@ -489,6 +489,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                     <Text style={styles.metaText}>
                         <Ionicons name="calendar-outline" size={12} /> {ticket.creation_date ? new Date(ticket.creation_date).toLocaleDateString() : 'Data N/D'}
                     </Text>
+                    {/* INFO UTENTE RIPRISTINATE */}
                     <Text style={styles.metaText}>
                         <Ionicons name="person-outline" size={12} /> {ticket.creator_id || 'Utente'}
                     </Text>
@@ -503,27 +504,28 @@ export default function TicketDetailScreen({ route, navigation }) {
                     </View>
                 )}
 
+                {/* DESCRIZIONE RIPRISTINATA */}
                 <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
                 <Text style={styles.desc}>{ticket.description || "Nessuna descrizione."}</Text>
               </>
           )}
 
           {/* PANNELLO OPERATORE */}
-          {isOperator && intervention && user.id === intervention.operator_id && (
+          {isOperator && assignedOperator && user.id === assignedOperator.id && (
             <View style={styles.operatorPanel}>
                 <Text style={styles.opTitle}>Pannello Operatore</Text>
                 {actionLoading ? (
                     <ActivityIndicator color="#F59E0B" />
                 ) : (
                     <View style={styles.opButtons}>
-                        {intervention.status === 'in_carico' && (
+                        {statusId === 1 && (
                             <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#3B82F6', marginRight: 10}]} onPress={handleTakeCharge}>
                                 <Ionicons name="construct" size={18} color="white" />
                                 <Text style={styles.opBtnText}>INIZIA LAVORO</Text>
                             </TouchableOpacity>
                         )}
 
-                        {intervention.status === 'in_corso' && (
+                        {statusId === 2 && (
                             <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#10B981'}]} onPress={() => setReportModalVisible(true)}>
                                 <Ionicons name="checkmark-circle" size={18} color="white" />
                                 <Text style={styles.opBtnText}>RISOLTO</Text>
@@ -630,7 +632,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       )}
 
-      {/* MODALE REPORT */}
+      {/* MODALE REPORT RIPRISTINATO CON FOTO */}
       <Modal animationType="slide" transparent={true} visible={reportModalVisible} onRequestClose={() => setReportModalVisible(false)}>
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>

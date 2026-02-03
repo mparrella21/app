@@ -4,19 +4,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../styles/global';
 import { getOperators, updateOperator, deleteUser } from '../services/userService';
 import { getOperatorCategories, assignOperatorCategory } from '../services/interventionService';
-import { register } from '../services/authService'; // IMPORTATO PER LA CREAZIONE CORRETTA
+import { register } from '../services/authService'; 
 import { AuthContext } from '../context/AuthContext';
 
 export default function ManageOperatorsScreen({ navigation }) {
-  const { user } = useContext(AuthContext); // Ci serve per il tenant_id
+  const { user } = useContext(AuthContext); // Importante per prendere il tenant_id del responsabile
   const [operators, setOperators] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Dati dinamici per le categorie operatore
   const [categories, setCategories] = useState([]); 
   const [loadingCats, setLoadingCats] = useState(false);
 
-  // Stati Form (Create/Edit)
   const [modalFormVisible, setModalFormVisible] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -32,7 +30,6 @@ export default function ManageOperatorsScreen({ navigation }) {
 
   const fetchOperators = async () => {
     setLoading(true);
-    // Supponendo che getOperators filtri già per ruolo 'operatore', altrimenti filtriamo qui
     const data = await getOperators();
     setOperators(data);
     setLoading(false);
@@ -55,7 +52,6 @@ export default function ManageOperatorsScreen({ navigation }) {
     fetchCategories();
   }, []);
 
-  // Apre il form in modalità Creazione
   const openCreateMode = () => {
       setIsEditing(false);
       setEditingId(null);
@@ -63,7 +59,6 @@ export default function ManageOperatorsScreen({ navigation }) {
       setModalFormVisible(true);
   };
 
-  // Apre il form in modalità Modifica
   const openEditMode = (op) => {
       setIsEditing(true);
       setEditingId(op.id);
@@ -72,8 +67,7 @@ export default function ManageOperatorsScreen({ navigation }) {
       setOpEmail(op.email || '');
       setOpPassword(''); 
       
-      // GESTIONE INTELLIGENTE CATEGORIA: Cerca per ID (numero) o per Label (stringa)
-      const catObj = categories.find(c => c.id === op.category_id || c.id === op.category || c.label === op.category) || null;
+      const catObj = categories.find(c => c.id === op.category_id || c.label === op.category) || null;
       setSelectedCategory(catObj);
       setModalFormVisible(true);
   };
@@ -88,34 +82,43 @@ export default function ManageOperatorsScreen({ navigation }) {
 
     try {
         if (isEditing) {
-            // MODIFICA (Mantenuta la tua logica)
             const updateData = { name: opName, surname: opSurname, email: opEmail };
             if (opPassword) updateData.password = opPassword;
             const updated = await updateOperator(editingId, updateData);
             
             if (updated) {
-                // Passiamo selectedCategory.id (che è sempre il numero corretto)
-                await assignOperatorCategory(editingId, user.tenant_id, selectedCategory.id);
+                await assignOperatorCategory(user.tenant_id, editingId, selectedCategory.id);
                 Alert.alert("Successo", "Operatore aggiornato!");
                 setModalFormVisible(false);
                 fetchOperators();
             } else {
-                Alert.alert("Errore", "Impossibile aggiornare i dati dell'operatore.");
+                Alert.alert("Errore", "Impossibile aggiornare l'operatore.");
             }
         } else {
-            // CREAZIONE
-            const result = await register(opEmail, opPassword, user.tenant_id, 'operatore');
+            // CREAZIONE CORRETTA: Passiamo l'oggetto atteso da authService.js
+            const userData = {
+                email: opEmail,
+                password: opPassword,
+                name: opName,
+                surname: opSurname,
+                role: 'operatore',
+                tenant_id: user.tenant_id // Passiamo il tenant del responsabile
+            };
+
+            const result = await register(userData);
             
-            if (result && result.access_token) {
-                Alert.alert("Successo", "Operatore creato con successo! Ora la lista si aggiornerà.");
+            if (result && result.success) {
+                // Assegniamo la categoria al nuovo operatore
+                await assignOperatorCategory(user.tenant_id, result.user.id, selectedCategory.id);
+                Alert.alert("Successo", "Operatore creato con successo!");
                 setModalFormVisible(false);
                 fetchOperators();
             } else {
-                Alert.alert("Errore", "Impossibile creare l'operatore.");
+                Alert.alert("Errore", result.error || "Impossibile creare l'operatore.");
             }
         }
     } catch (e) {
-        Alert.alert("Errore", "Si è verificato un errore di rete o l'email è già in uso.");
+        Alert.alert("Errore", "Si è verificato un errore di rete.");
     } finally {
         setActionLoading(false);
     }
@@ -188,7 +191,7 @@ export default function ManageOperatorsScreen({ navigation }) {
           />
       )}
 
-      {/* MODALE FORM CREAZIONE / MODIFICA */}
+      {/* MODALE FORM */}
       <Modal visible={modalFormVisible} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
@@ -228,7 +231,7 @@ export default function ManageOperatorsScreen({ navigation }) {
           </View>
       </Modal>
 
-      {/* MODALE SELEZIONE CATEGORIA */}
+      {/* MODALE CATEGORIA */}
       <Modal visible={catModalVisible} transparent animationType="fade">
           <View style={styles.modalOverlay}>
               <View style={[styles.modalContent, {maxHeight: '50%'}]}>

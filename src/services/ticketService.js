@@ -133,7 +133,8 @@ export const deleteCategory = async (id, label) => {
 
 // --- TICKETS POST/PUT/DELETE ---
 
-export const postTicket = async (ticketData, photos = []) => {
+// MODIFICA: Inserito tenantId
+export const postTicket = async (ticketData, tenantId, photos = []) => {
   try {
     const userStr = await AsyncStorage.getItem('app_user');
     const userObj = userStr ? JSON.parse(userStr) : {};
@@ -146,7 +147,8 @@ export const postTicket = async (ticketData, photos = []) => {
         lat: parseFloat(ticketData.lat),
         lon: parseFloat(ticketData.lon),
         categories: categoryIds, 
-        user: userObj.id 
+        user: userObj.id,
+        tenant_id: tenantId // IL CITTADINO DEVE MANDARE IL TENANT
     };
 
     const response = await authenticatedFetch(`${API_BASE}/ticket`, {
@@ -234,6 +236,7 @@ export const updateTicketDetails = async (idTicket, details) => {
 
         const updatedBody = {
             title: details.title || currentTicket.title || currentTicket.titolo,
+            description: details.description || currentTicket.description, // MANTENUTA LA DESCRIZIONE
             categories: details.categories ? extractCategoryIds(details.categories) : extractCategoryIds(currentTicket.categories),
             lat: parseFloat(currentTicket.lat),
             lon: parseFloat(currentTicket.lon),
@@ -251,7 +254,8 @@ export const updateTicketDetails = async (idTicket, details) => {
     }
 };
 
-export const updateTicketStatus = async (idTicket, statusStr, statusId) => {
+// Funzione Allineata per modificare lo stato
+export const updateTicketStatus = async (idTicket, statusId) => {
   try {
     const currentTicket = await getTicket(idTicket);
     if (!currentTicket) return false;
@@ -296,6 +300,7 @@ export const deleteTicket = async (ticket) => {
     }
 };
 
+// Funzione mantenuta
 export const closeTicket = async (idTicket) => {
-  return await updateTicketStatus(idTicket, 'CLOSED', 3); 
+  return await updateTicketStatus(idTicket, 3); 
 };

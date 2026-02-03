@@ -1,10 +1,8 @@
-// mparrella21/app/app-main/src/services/interventionService.js
-
 import { API_BASE } from './config';
 import { authenticatedFetch } from './authService';
 
 // =====================================================================
-// --- CORE INTERVENTIONS (Ticket Base) - AGGIUNTE ORA ---
+// --- CORE INTERVENTIONS (Ticket Base) ---
 // =====================================================================
 
 export const getInterventions = async () => {
@@ -94,7 +92,7 @@ export const deleteIntervention = async (id) => {
 };
 
 // =====================================================================
-// --- ASSIGNMENT (Assegnazione Ticket a Operatore) - ORIGINALE ---
+// --- ASSIGNMENT (Assegnazione Ticket a Operatore) - CORRETTO PER IL TXT ---
 // =====================================================================
 
 export const getAssignments = async () => {
@@ -108,6 +106,20 @@ export const getAssignments = async () => {
     } catch (e) {
         console.error('interventionService.getAssignments', e);
         return [];
+    }
+};
+
+// NUOVA AGGIUNTA CHE SERVE AL TICKET DETAIL SCREEN
+export const getAssignmentByTicketId = async (ticketId) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/intervention/assignment/${ticketId}`, { method: 'GET' });
+        if (response.ok) {
+            const data = await response.json();
+            return data.length > 0 ? data[0] : null;
+        }
+        return null;
+    } catch (e) {
+        return null;
     }
 };
 
@@ -141,7 +153,7 @@ export const deleteAssignment = async (ticketId) => {
 };
 
 // =====================================================================
-// --- RATING (Valutazione Intervento) - ORIGINALE ---
+// --- RATING (Valutazione Intervento) - CORRETTO ---
 // =====================================================================
 
 export const getRating = async (ticketId) => {
@@ -149,6 +161,7 @@ export const getRating = async (ticketId) => {
         const response = await authenticatedFetch(`${API_BASE}/intervention/rating/${ticketId}`, { method: 'GET' });
         if (response.ok) {
             const data = await response.json();
+            // Il backend restituisce un oggetto singolo o array. Adattiamo.
             if (Array.isArray(data) && data.length > 0) return data[0];
             return data;
         }
