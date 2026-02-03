@@ -93,7 +93,6 @@ export const getOperatorCategories = async () => {
     }
 };
 
-// NUOVA: Crea una nuova categoria per operatore
 export const createOperatorCategory = async (label) => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/operator-categories`, {
@@ -107,7 +106,6 @@ export const createOperatorCategory = async (label) => {
     }
 };
 
-// NUOVA: Modifica una categoria operatore
 export const updateOperatorCategory = async (id, newLabel) => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/operator-categories/${id}`, {
@@ -121,7 +119,6 @@ export const updateOperatorCategory = async (id, newLabel) => {
     }
 };
 
-// NUOVA: Elimina una categoria operatore
 export const deleteOperatorCategory = async (id) => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/operator-categories/${id}`, {
@@ -134,6 +131,7 @@ export const deleteOperatorCategory = async (id) => {
     }
 };
 
+// MAPPATURA: UTENTE -> CATEGORIA OPERATORE (Specializzazione)
 export const getOperatorMappings = async () => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/mappings/user-operator`, { method: 'GET' });
@@ -163,7 +161,6 @@ export const assignOperatorCategory = async (userId, tenantId, categoryId) => {
     }
 };
 
-// NUOVA: Rimuove la mappatura (specializzazione) di un operatore
 export const removeOperatorCategory = async (userId, tenantId, categoryId) => {
     try {
         const payload = {
@@ -179,5 +176,18 @@ export const removeOperatorCategory = async (userId, tenantId, categoryId) => {
     } catch (e) {
         console.error('interventionService.removeOperatorCategory', e);
         return false;
+    }
+};
+
+// NUOVA: MAPPATURA CATEGORIA OPERATORE -> CATEGORIA TICKET
+// N.B. La creazione/modifica spetta all'Admin sul web. In app serve solo la lettura (GET) per filtrare.
+export const getOperatorTicketMappings = async () => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/intervention/mappings/operator-ticket`, { method: 'GET' });
+        if (response.ok) return await response.json();
+        return [];
+    } catch (e) {
+        console.error('interventionService.getOperatorTicketMappings', e);
+        return [];
     }
 };

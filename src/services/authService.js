@@ -25,6 +25,7 @@ const mapRoleToString = (roleId) => {
     }
 };
 
+// --- FUNZIONE DI LOGIN STANDARD ---
 export const login = async (email, password, tenant_id) => {
   try {
     const response = await fetch(`${AUTH_URL}/login`, {
@@ -39,7 +40,6 @@ export const login = async (email, password, tenant_id) => {
       const token = data.token || data.access_token;
       const refreshToken = data.refresh_token; 
       
-      // Salviamo token e anche il tenant_id attuale per futuri refresh
       await AsyncStorage.setItem('app_auth_token', token);
       if (refreshToken) await AsyncStorage.setItem('app_refresh_token', refreshToken);
       if (tenant_id) await AsyncStorage.setItem('app_tenant_id', tenant_id);
@@ -56,7 +56,6 @@ export const login = async (email, password, tenant_id) => {
       };
 
       try {
-        // Usiamo authenticatedFetch anche qui per coerenza, o fetch diretto col token appena preso
         const userResp = await fetch(`${API_BASE}/user/${user.id}`, {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${token}` }
@@ -84,6 +83,48 @@ export const login = async (email, password, tenant_id) => {
   }
 };
 
+// --- NUOVA FUNZIONE: LOGIN CON GOOGLE ---
+// Adattata dal sito web (google_login.php) per funzionare in App
+export const googleLogin = async (googleAccessToken, tenant_id) => {
+    try {
+        // Questa chiamata invia il token Google al backend che verifica l'utente
+        // e restituisce il token JWT del sistema (o registra l'utente se non esiste)
+        const response = await fetch(`${AUTH_URL}/google-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ token: googleAccessToken, tenant_id: tenant_id })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && (data.token || data.access_token)) {
+            const token = data.token || data.access_token;
+            await AsyncStorage.setItem('app_auth_token', token);
+            if (tenant_id) await AsyncStorage.setItem('app_tenant_id', tenant_id);
+
+            const decoded = decodeJWT(token);
+            
+            // Un utente loggato con Google è di default un Cittadino
+            const user = {
+                id: decoded?.sub || 'unknown-id',
+                role: 'cittadino', 
+                email: decoded?.email || 'Google User',
+                name: decoded?.name || 'Utente',
+                surname: decoded?.surname || 'Google',
+                tenant_id: decoded?.tid || tenant_id
+            };
+
+            return { success: true, token: token, user: user };
+        }
+
+        return { success: false, error: 'Autenticazione Google fallita sul server' };
+    } catch (e) {
+        console.error('AuthService.googleLogin', e);
+        return { success: false, error: 'Errore di connessione a Google' };
+    }
+};
+
+// --- REGISTRAZIONE ---
 export const register = async (userData) => {
   try {
     const authPayload = {
@@ -103,7 +144,6 @@ export const register = async (userData) => {
     if (response.ok) {
         const token = data.token || data.access_token;
         if (token) {
-            // Salviamo il token per le chiamate successive
             await AsyncStorage.setItem('app_auth_token', token);
             await AsyncStorage.setItem('app_tenant_id', userData.tenant_id);
 
@@ -153,7 +193,7 @@ export const logout = async () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
         });
-        await AsyncStorage.clear(); // Pulisce tutto (token, user, tenant)
+        await AsyncStorage.clear();
     } catch (e) {
         console.warn('Logout API failed', e);
         await AsyncStorage.clear();
@@ -164,7 +204,6 @@ export const logout = async () => {
 const performRefreshToken = async () => {
     try {
         const refresh = await AsyncStorage.getItem('app_refresh_token');
-        // Recuperiamo il tenant_id salvato al login
         const tenant_id = await AsyncStorage.getItem('app_tenant_id');
 
         if (!refresh || !tenant_id) return null;
@@ -191,12 +230,10 @@ const performRefreshToken = async () => {
     }
 };
 
-// --- NUOVA FUNZIONE CENTRALE PER LE CHIAMATE ---
-// Usa questa funzione negli altri service invece di fetch()
+// --- FUNZIONE CENTRALE PER LE CHIAMATE ---
 export const authenticatedFetch = async (url, options = {}) => {
     let token = await AsyncStorage.getItem('app_auth_token');
     
-    // Imposta headers di default
     const headers = {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -209,19 +246,14 @@ export const authenticatedFetch = async (url, options = {}) => {
 
     let response = await fetch(url, { ...options, headers });
 
-    // Se riceviamo 401 (Unauthorized), proviamo a fare refresh
     if (response.status === 401) {
         console.log("Ricevuto 401, provo refresh...");
         const newToken = await performRefreshToken();
         
         if (newToken) {
             console.log("Refresh OK, ripeto richiesta.");
-            // Aggiorna header con nuovo token
             headers['Authorization'] = `Bearer ${newToken}`;
             response = await fetch(url, { ...options, headers });
-        } else {
-            console.log("Refresh fallito o token mancante.");
-            // Opzionale: Qui si potrebbe forzare il logout o lanciare un evento
         }
     }
 

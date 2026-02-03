@@ -3,6 +3,7 @@
     "name": "Civitas",
     "slug": "Civitas",
     "version": "1.0.0",
+    "scheme": "manutenzioneurbana",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -24,6 +25,9 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }
