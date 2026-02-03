@@ -17,9 +17,10 @@ import {
     updateTicketDetails,
     getCategories
 } from '../services/ticketService';
-// MODIFICA: Importato createAssignment da interventionService invece che da ticketService
-import { sendFeedback, getRating, createAssignment } from '../services/interventionService';
-import { getOperatorsByTenant } from '../services/userService'; 
+
+// FIX: Importati getAssignments e deleteAssignment per la gestione completa dell'assegnazione
+import { sendFeedback, getRating, createAssignment, getAssignments, deleteAssignment } from '../services/interventionService';
+import { getOperatorsByTenant, getAllUsers } from '../services/userService'; 
 import { getAddressFromCoordinates } from '../services/nominatim';
 
 export default function TicketDetailScreen({ route, navigation }) {
@@ -34,6 +35,9 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
   
+  // Assegnazione info
+  const [assignedOperator, setAssignedOperator] = useState(null);
+
   const [rating, setRating] = useState(0); 
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
@@ -90,6 +94,17 @@ export default function TicketDetailScreen({ route, navigation }) {
            
            if(freshTicket.categories && freshTicket.categories.length > 0) {
                setEditCategoryId(freshTicket.categories[0].id || freshTicket.categories[0]);
+           }
+
+           // Controlla se è assegnato e a chi
+           const assignments = await getAssignments();
+           const thisTicketAssignment = assignments.find(a => a.id_ticket === ticketId);
+           if (thisTicketAssignment) {
+               const users = await getAllUsers();
+               const op = users.find(u => u.id === thisTicketAssignment.id_user);
+               setAssignedOperator(op || { id: thisTicketAssignment.id_user, name: 'Operatore', surname: 'Sconosciuto' });
+           } else {
+               setAssignedOperator(null);
            }
 
            try {
@@ -322,7 +337,6 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  // MODIFICA: Ora chiama createAssignment da interventionService
   const handleAssignOperator = async (operatorId) => {
       setAssignModalVisible(false);
       setActionLoading(true);
@@ -340,6 +354,25 @@ export default function TicketDetailScreen({ route, navigation }) {
       } finally {
           setActionLoading(false);
       }
+  };
+
+  // FIX: Funzione per rimuovere l'assegnazione
+  const handleRemoveAssignment = () => {
+      Alert.alert("Rimuovi Assegnazione", "Vuoi rimuovere l'operatore assegnato da questo ticket?", [
+          { text: "Annulla", style: "cancel" },
+          { text: "Rimuovi", style: 'destructive', onPress: async () => {
+              setActionLoading(true);
+              const success = await deleteAssignment(ticket.id);
+              setActionLoading(false);
+              if (success) {
+                  Alert.alert("Successo", "Assegnazione rimossa.");
+                  setAssignedOperator(null);
+                  fetchData();
+              } else {
+                  Alert.alert("Errore", "Impossibile rimuovere l'assegnazione.");
+              }
+          }}
+      ]);
   };
 
   const handleDeleteTicket = () => {
@@ -534,6 +567,16 @@ export default function TicketDetailScreen({ route, navigation }) {
                     </Text>
                 </View>
 
+                {/* Mostra Info Assegnazione se esiste */}
+                {assignedOperator && (
+                    <View style={styles.assignedBox}>
+                        <Ionicons name="person-circle" size={20} color="#6366F1" />
+                        <Text style={styles.assignedText}>
+                            Assegnato a: <Text style={{fontWeight:'bold'}}>{assignedOperator.name} {assignedOperator.surname}</Text>
+                        </Text>
+                    </View>
+                )}
+
                 <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
                 <Text style={styles.desc}>{ticket.descrizione || ticket.description || ticket.desc || "Nessuna descrizione."}</Text>
               </>
@@ -576,10 +619,17 @@ export default function TicketDetailScreen({ route, navigation }) {
                 ) : (
                     <View style={{gap: 10}}>
                         <View style={styles.opButtons}>
-                            {!isResolved && (
+                            {!isResolved && !assignedOperator && (
                                 <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#6366F1', marginRight: 10}]} onPress={openAssignModal}>
                                     <Ionicons name="person-add" size={18} color="white" />
                                     <Text style={styles.opBtnText}>ASSEGNA</Text>
+                                </TouchableOpacity>
+                            )}
+
+                            {assignedOperator && !isResolved && (
+                                <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#B91C1C', marginRight: 10}]} onPress={handleRemoveAssignment}>
+                                    <Ionicons name="person-remove" size={18} color="white" />
+                                    <Text style={styles.opBtnText}>RIMUOVI OP.</Text>
                                 </TouchableOpacity>
                             )}
 
@@ -794,6 +844,9 @@ const styles = StyleSheet.create({
   
   metaInfo: { flexDirection: 'row', marginBottom: 20, borderBottomWidth:1, borderBottomColor:'#eee', paddingBottom:10 },
   metaText: { fontSize: 12, color: '#888', marginRight: 15 },
+
+  assignedBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E0E7FF', padding: 10, borderRadius: 8, marginBottom: 15 },
+  assignedText: { color: '#3730A3', marginLeft: 8, fontSize: 14 },
 
   sectionTitle: { fontSize: 14, fontWeight: 'bold', color: '#999', marginBottom: 10, marginTop: 10, letterSpacing: 1 },
   desc: { fontSize: 16, color: '#333', lineHeight: 24 },

@@ -2,8 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Buffer } from 'buffer';
 import { API_BASE } from './config'; 
 
-const AUTH_URL = "http://192.168.72.107:32413/auth";
-
+//const AUTH_URL = "http://192.168.72.107:32413/auth";
+const AUTH_URL = "http://192.168.1.106:32413/auth";
 // Helper per decodificare JWT
 const decodeJWT = (token) => {
     try {

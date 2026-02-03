@@ -17,7 +17,6 @@ export const getAssignments = async () => {
     }
 };
 
-// MODIFICATO: Allineato esattamente ai parametri richiesti dall'API 
 export const createAssignment = async (ticketId, userId) => {
     try {
         const payload = {
@@ -59,11 +58,10 @@ export const getRating = async (ticketId) => {
         }
         return null;
     } catch (e) {
-        return null; // 404 è normale se non c'è rating
+        return null; 
     }
 };
 
-// MODIFICATO: Allineato al corpo richiesto per la POST rating
 export const sendFeedback = async (ticketId, vote, comment = "") => {
     try {
         const payload = {
@@ -95,6 +93,47 @@ export const getOperatorCategories = async () => {
     }
 };
 
+// NUOVA: Crea una nuova categoria per operatore
+export const createOperatorCategory = async (label) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/intervention/operator-categories`, {
+            method: 'POST',
+            body: JSON.stringify({ label })
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('interventionService.createOperatorCategory', e);
+        return false;
+    }
+};
+
+// NUOVA: Modifica una categoria operatore
+export const updateOperatorCategory = async (id, newLabel) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/intervention/operator-categories/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ label: newLabel })
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('interventionService.updateOperatorCategory', e);
+        return false;
+    }
+};
+
+// NUOVA: Elimina una categoria operatore
+export const deleteOperatorCategory = async (id) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/intervention/operator-categories/${id}`, {
+            method: 'DELETE'
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('interventionService.deleteOperatorCategory', e);
+        return false;
+    }
+};
+
 export const getOperatorMappings = async () => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/mappings/user-operator`, { method: 'GET' });
@@ -120,6 +159,25 @@ export const assignOperatorCategory = async (userId, tenantId, categoryId) => {
         return response.ok;
     } catch (e) {
         console.error('interventionService.assignOperatorCategory', e);
+        return false;
+    }
+};
+
+// NUOVA: Rimuove la mappatura (specializzazione) di un operatore
+export const removeOperatorCategory = async (userId, tenantId, categoryId) => {
+    try {
+        const payload = {
+            tenant_id: tenantId,
+            id_user: userId,
+            id_operator_category: categoryId
+        };
+        const response = await authenticatedFetch(`${API_BASE}/intervention/mappings/user-operator`, {
+            method: 'DELETE',
+            body: JSON.stringify(payload)
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('interventionService.removeOperatorCategory', e);
         return false;
     }
 };

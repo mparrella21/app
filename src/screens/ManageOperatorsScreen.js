@@ -3,18 +3,22 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, TextInput, A
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../styles/global';
 import { getOperators, createOperator, updateOperator, deleteUser } from '../services/userService';
-import { getCategories } from '../services/ticketService';
+// FIX: Importiamo le categorie operatore da interventionService invece che da ticketService
+import { getOperatorCategories, assignOperatorCategory } from '../services/interventionService';
+import { useAuth } from '../context/AuthContext';
 
 export default function ManageOperatorsScreen({ navigation }) {
+  const { user } = useAuth(); // Ci serve per il tenant_id
   const [operators, setOperators] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Dati dinamici
+  // Dati dinamici per le categorie operatore
   const [categories, setCategories] = useState([]); 
   const [loadingCats, setLoadingCats] = useState(false);
 
   // Stati Form (Create/Edit)
   const [modalFormVisible, setModalFormVisible] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
@@ -22,7 +26,7 @@ export default function ManageOperatorsScreen({ navigation }) {
   const [opSurname, setOpSurname] = useState('');
   const [opEmail, setOpEmail] = useState('');
   const [opPassword, setOpPassword] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(null); // Ora è un oggetto {id, label}
   
   const [catModalVisible, setCatModalVisible] = useState(false);
 
@@ -36,9 +40,9 @@ export default function ManageOperatorsScreen({ navigation }) {
   const fetchCategories = async () => {
       setLoadingCats(true);
       try {
-          const cats = await getCategories();
-          const normalized = cats.map(c => (typeof c === 'object' ? c.label : c));
-          setCategories(normalized);
+          // FIX: Prende le categorie operatore
+          const cats = await getOperatorCategories();
+          setCategories(cats || []);
       } catch (e) {
           console.error("Errore fetch categorie operatori", e);
       } finally {
@@ -55,55 +59,77 @@ export default function ManageOperatorsScreen({ navigation }) {
   const openCreateMode = () => {
       setIsEditing(false);
       setEditingId(null);
-      setOpName(''); setOpSurname(''); setOpEmail(''); setOpPassword(''); setSelectedCategory('');
+      setOpName(''); setOpSurname(''); setOpEmail(''); setOpPassword(''); setSelectedCategory(null);
       setModalFormVisible(true);
   };
 
-  // Apre il form in modalità Modifica (UC-12)
+  // Apre il form in modalità Modifica
   const openEditMode = (op) => {
       setIsEditing(true);
       setEditingId(op.id);
       setOpName(op.name || '');
       setOpSurname(op.surname || '');
       setOpEmail(op.email || '');
-      setOpPassword(''); // La password si lascia vuota se non la si vuole cambiare
-      setSelectedCategory(op.category || '');
+      setOpPassword(''); 
+      // Cerca la categoria attuale dell'operatore per preselezionarla
+      const catObj = categories.find(c => c.label === op.category) || null;
+      setSelectedCategory(catObj);
       setModalFormVisible(true);
   };
 
   const handleSave = async () => {
-    // Validazione base
     if (!opName || !opEmail || (!isEditing && !opPassword) || !selectedCategory) {
       Alert.alert("Errore", "Compila i campi obbligatori (Nome, Email, Password, Categoria).");
       return;
     }
 
-    const operatorData = {
-      name: opName,
-      surname: opSurname || '',
-      email: opEmail,
-      category: selectedCategory,
-      role: 'Operatore'
-    };
+    setActionLoading(true);
 
-    // Se stiamo creando o se l'utente ha inserito una nuova password in modifica
-    if (opPassword) {
-        operatorData.password = opPassword;
-    }
+    try {
+        if (isEditing) {
+            // 1. Aggiorna dati anagrafici base
+            const updateData = { name: opName, surname: opSurname, email: opEmail };
+            if (opPassword) updateData.password = opPassword;
+            const updated = await updateOperator(editingId, updateData);
+            
+            // 2. Aggiorna Mappatura Categoria (se andata a buon fine l'anagrafica)
+            if (updated) {
+                await assignOperatorCategory(editingId, user.tenant_id, selectedCategory.id);
+                Alert.alert("Successo", "Operatore aggiornato!");
+                setModalFormVisible(false);
+                fetchOperators();
+            } else {
+                Alert.alert("Errore", "Impossibile aggiornare i dati dell'operatore.");
+            }
+        } else {
+            // CREAZIONE
+            const newOpData = {
+              name: opName,
+              surname: opSurname,
+              email: opEmail,
+              password: opPassword
+            };
 
-    let success = false;
-    if (isEditing) {
-        success = await updateOperator(editingId, operatorData);
-    } else {
-        success = await createOperator(operatorData);
-    }
-    
-    if (success) {
-      Alert.alert("Successo", isEditing ? "Operatore aggiornato!" : "Operatore creato!");
-      setModalFormVisible(false);
-      fetchOperators();
-    } else {
-      Alert.alert("Errore", "Operazione fallita. Verifica i dati o la connessione.");
+            const result = await createOperator(newOpData);
+            
+            if (result.success && result.id) {
+                // Assegna la categoria al nuovo operatore creato
+                const mapped = await assignOperatorCategory(result.id, user.tenant_id, selectedCategory.id);
+                if (mapped) {
+                    Alert.alert("Successo", "Operatore creato e assegnato con successo!");
+                    setModalFormVisible(false);
+                    fetchOperators();
+                } else {
+                    Alert.alert("Attenzione", "Operatore creato, ma c'è stato un errore nell'assegnare la categoria.");
+                }
+            } else {
+                Alert.alert("Errore", "Impossibile creare l'operatore.");
+            }
+        }
+    } catch (e) {
+        Alert.alert("Errore", "Si è verificato un errore di rete.");
+    } finally {
+        setActionLoading(false);
     }
   };
 
@@ -114,11 +140,13 @@ export default function ManageOperatorsScreen({ navigation }) {
           [
               { text: "Annulla", style: "cancel" },
               { text: "Elimina", style: 'destructive', onPress: async () => {
+                  setLoading(true);
                   const success = await deleteUser(op.id);
                   if (success) {
                       Alert.alert("Eliminato", "Operatore rimosso.");
                       fetchOperators();
                   } else {
+                      setLoading(false);
                       Alert.alert("Errore", "Impossibile eliminare l'operatore.");
                   }
               }}
@@ -139,7 +167,6 @@ export default function ManageOperatorsScreen({ navigation }) {
         </View>
       </View>
       
-      {/* Bottoni Azione */}
       <View style={{flexDirection:'row'}}>
           <TouchableOpacity onPress={() => openEditMode(item)} style={{padding:8, marginRight:5}}>
               <Ionicons name="create-outline" size={24} color="#F59E0B" />
@@ -192,20 +219,20 @@ export default function ManageOperatorsScreen({ navigation }) {
                     <Text style={styles.label}>{isEditing ? "Nuova Password (opzionale)" : "Password *"}</Text>
                     <TextInput style={styles.input} value={opPassword} onChangeText={setOpPassword} placeholder="Password" secureTextEntry />
                     
-                    <Text style={styles.label}>Categoria *</Text>
+                    <Text style={styles.label}>Categoria Operatore *</Text>
                     <TouchableOpacity style={styles.catSelector} onPress={() => setCatModalVisible(true)}>
                         <Text style={{color: selectedCategory ? '#333' : '#999'}}>
-                            {selectedCategory || "Seleziona Categoria..."}
+                            {selectedCategory ? selectedCategory.label : "Seleziona Categoria..."}
                         </Text>
                         <Ionicons name="chevron-down" size={20} color="#666" />
                     </TouchableOpacity>
 
                     <View style={styles.formButtons}>
-                        <TouchableOpacity style={[styles.btn, styles.btnCancel]} onPress={() => setModalFormVisible(false)}>
+                        <TouchableOpacity style={[styles.btn, styles.btnCancel]} onPress={() => setModalFormVisible(false)} disabled={actionLoading}>
                             <Text style={styles.btnTextCancel}>Annulla</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.btn, styles.btnSave]} onPress={handleSave}>
-                            <Text style={styles.btnTextSave}>Salva</Text>
+                        <TouchableOpacity style={[styles.btn, styles.btnSave]} onPress={handleSave} disabled={actionLoading}>
+                            {actionLoading ? <ActivityIndicator color="white" /> : <Text style={styles.btnTextSave}>Salva</Text>}
                         </TouchableOpacity>
                     </View>
                   </ScrollView>
@@ -220,12 +247,14 @@ export default function ManageOperatorsScreen({ navigation }) {
                   <Text style={styles.modalTitle}>Scegli Categoria</Text>
                   {loadingCats ? (
                       <ActivityIndicator color={COLORS.primary} />
+                  ) : categories.length === 0 ? (
+                      <Text style={{textAlign:'center', color:'#666'}}>Nessuna categoria disponibile.</Text>
                   ) : (
                     <ScrollView>
-                        {categories.map((cat, index) => (
-                            <TouchableOpacity key={index} style={styles.catOption} onPress={() => { setSelectedCategory(cat); setCatModalVisible(false); }}>
-                                <Text style={styles.catOptionText}>{cat}</Text>
-                                {selectedCategory === cat && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
+                        {categories.map((cat) => (
+                            <TouchableOpacity key={cat.id} style={styles.catOption} onPress={() => { setSelectedCategory(cat); setCatModalVisible(false); }}>
+                                <Text style={styles.catOptionText}>{cat.label}</Text>
+                                {selectedCategory?.id === cat.id && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
                             </TouchableOpacity>
                         ))}
                     </ScrollView>
@@ -253,7 +282,6 @@ const styles = StyleSheet.create({
   opCat: { color: '#007BFF', fontSize: 12, marginTop: 2, fontWeight:'600' },
   avatarPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#E0E0E0', justifyContent: 'center', alignItems: 'center'},
   
-  // Modale Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { width: '90%', backgroundColor: 'white', borderRadius: 12, padding: 20, elevation: 5, maxHeight: '80%' },
   modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 20, color: '#333', textAlign:'center' },

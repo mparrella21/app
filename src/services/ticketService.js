@@ -75,6 +75,8 @@ export const getTicket = async (id) => {
   }
 };
 
+// --- CATEGORIES ---
+
 export const getCategories = async () => {
   try {
     const response = await authenticatedFetch(`${API_BASE}/ticket/categories`, { method: 'GET' });
@@ -86,6 +88,50 @@ export const getCategories = async () => {
     return [];
   }
 };
+
+// NUOVA: Creazione Categoria Ticket
+export const createCategory = async (label) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/ticket/categories`, {
+            method: 'POST',
+            body: JSON.stringify({ label })
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('ticketService.createCategory', e);
+        return false;
+    }
+};
+
+// NUOVA: Modifica Categoria Ticket
+export const updateCategory = async (id, label) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/ticket/categories/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ label })
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('ticketService.updateCategory', e);
+        return false;
+    }
+};
+
+// NUOVA: Elimina Categoria Ticket
+export const deleteCategory = async (id, label) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/ticket/categories/${id}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ label })
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('ticketService.deleteCategory', e);
+        return false;
+    }
+};
+
+// --- TICKETS POST/PUT/DELETE ---
 
 export const postTicket = async (ticketData, photos = []) => {
   try {

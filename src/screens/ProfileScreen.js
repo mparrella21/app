@@ -3,31 +3,28 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { updateUserProfile } from '../services/userService';
+// FIX: Importata la funzione corretta
+import { updateProfile } from '../services/userService';
 
 export default function ProfileScreen({ navigation }) {
   const { user, logout, setUser } = useAuth(); 
   
-  // Stati per la modalità modifica
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  // Campi form
   const [editName, setEditName] = useState(user ? user.name : '');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // --- FIX RUOLI: Normalizza il ruolo (gestisce numeri e stringhe) ---
   const getNormalizedRole = () => {
     if (!user || !user.role) return '';
     const r = String(user.role).toLowerCase();
     if (r === '1') return 'cittadino';
     if (r === '2') return 'operatore';
-    if (r === '3' || r === '4') return 'responsabile'; // 3=Resp, 4=Admin
+    if (r === '3' || r === '4') return 'responsabile'; 
     return r;
   };
   const currentRole = getNormalizedRole();
-  // -----------------------------------------------------------------
 
   const handleLogout = () => {
     Alert.alert(
@@ -82,16 +79,17 @@ export default function ProfileScreen({ navigation }) {
         password: newPassword ? newPassword : undefined 
     };
 
-    const result = await updateUserProfile(user.id, payload);
+    // FIX: Chiamata alla funzione corretta `updateProfile`
+    const success = await updateProfile(user.id, payload);
 
     setIsLoading(false);
 
-    if (result.success) {
+    if (success) {
         Alert.alert("Successo", "Profilo aggiornato correttamente.");
         setUser({ ...user, name: editName });
         setIsEditing(false);
     } else {
-        Alert.alert("Errore", result.message || "Impossibile aggiornare il profilo.");
+        Alert.alert("Errore", "Impossibile aggiornare il profilo.");
     }
   };
 
@@ -116,7 +114,6 @@ export default function ProfileScreen({ navigation }) {
 
       <ScrollView contentContainerStyle={styles.scroll}>
         
-        {/* CARD UTENTE */}
         <View style={styles.profileCard}>
             <View style={styles.avatarCircle}>
                 <Text style={styles.avatarText}>
@@ -138,7 +135,6 @@ export default function ProfileScreen({ navigation }) {
                 <Text style={styles.userName}>{user.name}</Text>
             )}
 
-            {/* FIX: Mostriamo il ruolo normalizzato in maiuscolo */}
             <Text style={styles.userRole}>
                 {currentRole ? currentRole.toUpperCase() : 'OSPITE'}
             </Text>
@@ -178,10 +174,8 @@ export default function ProfileScreen({ navigation }) {
             )}
         </View>
 
-        {/* --- MENU (Visibili solo se NON si è in modifica) --- */}
         {!isEditing && (
         <>
-            {/* --- MENU CITTADINO --- */}
             {currentRole === 'cittadino' && (
                 <View style={styles.menuGroup}>
                     <Text style={styles.menuTitle}>Le tue attività</Text>
@@ -195,7 +189,6 @@ export default function ProfileScreen({ navigation }) {
                 </View>
             )}
 
-            {/* --- MENU OPERATORE --- */}
             {currentRole === 'operatore' && (
                 <View style={styles.menuGroup}>
                     <Text style={styles.menuTitle}>Gestione Operativa</Text>
@@ -209,7 +202,6 @@ export default function ProfileScreen({ navigation }) {
                 </View>
             )}
 
-            {/* --- MENU RESPONSABILE --- */}
             {(currentRole === 'responsabile' || currentRole === 'admin') && (
                 <View style={styles.menuGroup}>
                     <Text style={styles.menuTitle}>Amministrazione</Text>
@@ -235,7 +227,6 @@ export default function ProfileScreen({ navigation }) {
         </>
         )}
 
-        {/* DETTAGLI ACCOUNT */}
         {!isEditing && (
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dettagli Account</Text>
