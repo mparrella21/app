@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, TextInput, ActivityIndicator, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../styles/global';
-import { getOperators, createOperator, updateOperator, deleteUser } from '../services/userService';
-// FIX: Importiamo le categorie operatore da interventionService invece che da ticketService
+import { getOperators, updateOperator, deleteUser } from '../services/userService';
 import { getOperatorCategories, assignOperatorCategory } from '../services/interventionService';
-import { useAuth } from '../context/AuthContext';
+import { register } from '../services/authService'; // IMPORTATO PER LA CREAZIONE CORRETTA
+import { AuthContext } from '../context/AuthContext';
 
 export default function ManageOperatorsScreen({ navigation }) {
-  const { user } = useAuth(); // Ci serve per il tenant_id
+  const { user } = useContext(AuthContext); // Ci serve per il tenant_id
   const [operators, setOperators] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -26,12 +26,13 @@ export default function ManageOperatorsScreen({ navigation }) {
   const [opSurname, setOpSurname] = useState('');
   const [opEmail, setOpEmail] = useState('');
   const [opPassword, setOpPassword] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState(null); // Ora è un oggetto {id, label}
+  const [selectedCategory, setSelectedCategory] = useState(null); 
   
   const [catModalVisible, setCatModalVisible] = useState(false);
 
   const fetchOperators = async () => {
     setLoading(true);
+    // Supponendo che getOperators filtri già per ruolo 'operatore', altrimenti filtriamo qui
     const data = await getOperators();
     setOperators(data);
     setLoading(false);
@@ -40,7 +41,6 @@ export default function ManageOperatorsScreen({ navigation }) {
   const fetchCategories = async () => {
       setLoadingCats(true);
       try {
-          // FIX: Prende le categorie operatore
           const cats = await getOperatorCategories();
           setCategories(cats || []);
       } catch (e) {
@@ -71,8 +71,9 @@ export default function ManageOperatorsScreen({ navigation }) {
       setOpSurname(op.surname || '');
       setOpEmail(op.email || '');
       setOpPassword(''); 
-      // Cerca la categoria attuale dell'operatore per preselezionarla
-      const catObj = categories.find(c => c.label === op.category) || null;
+      
+      // GESTIONE INTELLIGENTE CATEGORIA: Cerca per ID (numero) o per Label (stringa)
+      const catObj = categories.find(c => c.id === op.category_id || c.id === op.category || c.label === op.category) || null;
       setSelectedCategory(catObj);
       setModalFormVisible(true);
   };
@@ -87,13 +88,13 @@ export default function ManageOperatorsScreen({ navigation }) {
 
     try {
         if (isEditing) {
-            // 1. Aggiorna dati anagrafici base
+            // MODIFICA (Mantenuta la tua logica)
             const updateData = { name: opName, surname: opSurname, email: opEmail };
             if (opPassword) updateData.password = opPassword;
             const updated = await updateOperator(editingId, updateData);
             
-            // 2. Aggiorna Mappatura Categoria (se andata a buon fine l'anagrafica)
             if (updated) {
+                // Passiamo selectedCategory.id (che è sempre il numero corretto)
                 await assignOperatorCategory(editingId, user.tenant_id, selectedCategory.id);
                 Alert.alert("Successo", "Operatore aggiornato!");
                 setModalFormVisible(false);
@@ -103,31 +104,18 @@ export default function ManageOperatorsScreen({ navigation }) {
             }
         } else {
             // CREAZIONE
-            const newOpData = {
-              name: opName,
-              surname: opSurname,
-              email: opEmail,
-              password: opPassword
-            };
-
-            const result = await createOperator(newOpData);
+            const result = await register(opEmail, opPassword, user.tenant_id, 'operatore');
             
-            if (result.success && result.id) {
-                // Assegna la categoria al nuovo operatore creato
-                const mapped = await assignOperatorCategory(result.id, user.tenant_id, selectedCategory.id);
-                if (mapped) {
-                    Alert.alert("Successo", "Operatore creato e assegnato con successo!");
-                    setModalFormVisible(false);
-                    fetchOperators();
-                } else {
-                    Alert.alert("Attenzione", "Operatore creato, ma c'è stato un errore nell'assegnare la categoria.");
-                }
+            if (result && result.access_token) {
+                Alert.alert("Successo", "Operatore creato con successo! Ora la lista si aggiornerà.");
+                setModalFormVisible(false);
+                fetchOperators();
             } else {
                 Alert.alert("Errore", "Impossibile creare l'operatore.");
             }
         }
     } catch (e) {
-        Alert.alert("Errore", "Si è verificato un errore di rete.");
+        Alert.alert("Errore", "Si è verificato un errore di rete o l'email è già in uso.");
     } finally {
         setActionLoading(false);
     }

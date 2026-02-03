@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Location from 'expo-location'; 
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 
 import { useAuth } from '../context/AuthContext';
 import { register, login as loginApi, googleLogin } from '../services/authService'; 
-import { searchTenantByCoordinates } from '../services/tenantService';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -20,7 +18,6 @@ export default function AuthModal({ navigation }) {
   
   // Configurazione Google Auth
   const [request, response, promptAsync] = Google.useAuthRequest({
-    // N.B. Inserire i Client ID reali forniti dalla Google Cloud Console del progetto
     expoClientId: 'YOUR_EXPO_CLIENT_ID.apps.googleusercontent.com',
     iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
     androidClientId: 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com',
@@ -44,39 +41,10 @@ export default function AuthModal({ navigation }) {
     }
   }, [response]);
 
-  const getTenantFromLocation = async () => {
-    try {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert("Permessi negati", "Abbiamo bisogno della posizione per identificare il tuo Comune.");
-        return null;
-      }
-
-      let location = await Location.getCurrentPositionAsync({});
-      const result = await searchTenantByCoordinates(location.coords.latitude, location.coords.longitude);
-      
-      if (result && result.tenant && result.tenant.id) {
-        return result.tenant.id;
-      } else {
-        Alert.alert("Zona non coperta", `La tua posizione non è associata a un Comune gestito.`);
-        return null;
-      }
-    } catch (e) {
-      console.error(e);
-      Alert.alert("Errore Posizione", "Impossibile determinare il Comune dalla posizione.");
-      return null;
-    }
-  };
-
   const handleGoogleAuth = async (googleToken) => {
       setIsLoading(true);
-      const currentTenantId = await getTenantFromLocation();
-      if (!currentTenantId) {
-        setIsLoading(false);
-        return;
-      }
-
-      const result = await googleLogin(googleToken, currentTenantId);
+      // Niente più check del tenant qui
+      const result = await googleLogin(googleToken);
       setIsLoading(false);
 
       if (result.success) {
@@ -89,12 +57,6 @@ export default function AuthModal({ navigation }) {
 
   const handleAuthAction = async () => {
     setIsLoading(true);
-    
-    const currentTenantId = await getTenantFromLocation();
-    if (!currentTenantId) {
-      setIsLoading(false);
-      return;
-    }
 
     try {
         if (activeTab === 'login') {
@@ -104,7 +66,8 @@ export default function AuthModal({ navigation }) {
                 return;
             }
             
-            const result = await loginApi(email, password, currentTenantId);
+            // Login senza tenant
+            const result = await loginApi(email, password);
             
             if (result.success) {
                  if (result.token && result.user) {
@@ -136,7 +99,7 @@ export default function AuthModal({ navigation }) {
             }
 
             const userData = {
-                tenant_id: currentTenantId,
+                // Niente tenant_id qui
                 name: nome,
                 surname: cognome,
                 email: email,

@@ -1,72 +1,95 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { login as loginService, logout as logoutService } from '../services/authService';
+import React, { createContext, useState, useEffect, useContext } from 'react';
+import { login as apiLogin, register as apiRegister } from '../services/authService';
+import { setAuthTokens, clearAuthTokens, getAuthTokens } from '../services/authStorage';
+import jwtDecode from 'jwt-decode'; 
 
-const AuthContext = createContext();
+export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Al riavvio dell'app, controlliamo se c'è un utente salvato
-  useEffect(() => {
-    loadStorageData();
-  }, []);
-
-  const loadStorageData = async () => {
+  const extractUserFromToken = (token) => {
     try {
-      const storedUser = await AsyncStorage.getItem('app_user');
-      const storedToken = await AsyncStorage.getItem('app_auth_token');
+      const decoded = jwtDecode(token);
       
-      if (storedUser && storedToken) {
-        setUser(JSON.parse(storedUser));
+      const rawRole = decoded.role;
+      let mappedRole = 'cittadino'; 
+
+      if (typeof rawRole === 'string') {
+          mappedRole = rawRole.toLowerCase();
+      } else if (typeof rawRole === 'number') {
+          if (rawRole === 2) mappedRole = 'operatore';
+          else if (rawRole === 3) mappedRole = 'responsabile';
+          else mappedRole = 'cittadino'; 
+      }
+
+      return {
+        id: decoded.sub,
+        email: decoded.email,
+        role: mappedRole, 
+        // Sarà null per i cittadini, e pieno per operatori/responsabili. Perfetto.
+        tenant_id: decoded.tid 
+      };
+    } catch (e) {
+      console.error("Errore decodifica token", e);
+      return null;
+    }
+  };
+
+  const checkLoggedIn = async () => {
+    try {
+      const tokens = await getAuthTokens();
+      if (tokens && tokens.access_token) {
+        const userData = extractUserFromToken(tokens.access_token);
+        setUser(userData);
       }
     } catch (e) {
-      console.error("Errore caricamento sessione", e);
+      console.error('Error checking auth', e);
     } finally {
       setLoading(false);
     }
   };
 
-  // Funzione helper per salvare la sessione (usata da login e post-registrazione)
-  const handleSessionSuccess = async (token, userData) => {
-      try {
-        await AsyncStorage.setItem('app_auth_token', token);
-        await AsyncStorage.setItem('app_user', JSON.stringify(userData));
-        setUser(userData);
-        return { success: true };
-      } catch (e) {
-          return { success: false, error: "Errore salvataggio dati" };
-      }
-  };
+  useEffect(() => {
+    checkLoggedIn();
+  }, []);
 
   const login = async (email, password) => {
-    const result = await loginService(email, password);
-
-    if (result.success && result.token && result.user) {
-      return await handleSessionSuccess(result.token, result.user);
-    } else {
-      return { success: false, error: result.error || "Credenziali non valide" };
+    try {
+      // Non serve più il tenant_id qui
+      const response = await apiLogin(email, password);
+      if (response.access_token) {
+          await setAuthTokens(response.access_token, response.refresh_token);
+          const userData = extractUserFromToken(response.access_token);
+          setUser(userData);
+          return true;
+      }
+      return false;
+    } catch (e) {
+      console.error('Login error', e);
+      return false;
     }
   };
 
-  // Permette di loggare l'utente direttamente (es. dopo registrazione)
-  const setDirectLogin = async (token, userData) => {
-      return await handleSessionSuccess(token, userData);
+  // Niente più tenant_id
+  const register = async (email, password) => {
+    try {
+      await apiRegister({ email, password });
+      return await login(email, password);
+    } catch (e) {
+      console.error('Registration error', e);
+      return false;
+    }
   };
 
   const logout = async () => {
-    // Chiama l'API per invalidare il token (Diagramma 04)
-    await logoutService();
-    
-    // Pulizia locale
-    await AsyncStorage.removeItem('app_auth_token');
-    await AsyncStorage.removeItem('app_user');
+    await clearAuthTokens();
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, setDirectLogin, logout, loading }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

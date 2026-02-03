@@ -5,10 +5,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 
-// Manteniamo getCategories dal vecchio servizio (per le categorie dinamiche)
 import { getCategories } from '../services/ticketService'; 
-// Usiamo il nuovo servizio per l'invio effettivo del ticket
 import { interventionService } from '../services/interventionService'; 
+import { searchTenantByCoordinates } from '../services/tenantService'; // IMPORTIAMO LA RICERCA TENANT
 import { useAuth } from '../context/AuthContext';
 
 export default function CreateTicketScreen({ navigation, route }) {
@@ -20,7 +19,6 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   
-  // RIPRISTINATO: Categorie dinamiche dal backend
   const [categories, setCategories] = useState([]);
   const [selectedCatId, setSelectedCatId] = useState(null);
   const [loadingCats, setLoadingCats] = useState(false);
@@ -33,7 +31,7 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    // A. Gestione Posizione (Invariata dal tuo originale)
+    // Gestione Posizione (Uguale a prima)
     if (initialLat && initialLng) {
       setCoords({ lat: initialLat, lng: initialLng });
       fetchAddress(initialLat, initialLng);
@@ -48,7 +46,7 @@ export default function CreateTicketScreen({ navigation, route }) {
       })();
     }
 
-    // B. RIPRISTINATO: Caricamento Categorie da API
+    // Caricamento Categorie da API
     loadCategories();
   }, [initialLat, initialLng]);
 
@@ -58,7 +56,7 @@ export default function CreateTicketScreen({ navigation, route }) {
           const apiCats = await getCategories();
           if (Array.isArray(apiCats) && apiCats.length > 0) {
               setCategories(apiCats);
-              setSelectedCatId(apiCats[0].id); // Seleziona la prima di default
+              setSelectedCatId(apiCats[0].id); 
           } else {
               Alert.alert("Attenzione", "Impossibile caricare le categorie dal server.");
           }
@@ -98,7 +96,6 @@ export default function CreateTicketScreen({ navigation, route }) {
   };
 
   const pickImage = async () => {
-    // RISOLTO WARNING: Sostituito MediaTypeOptions.Images (deprecato) con ['images']
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'], 
       allowsEditing: true,
@@ -114,38 +111,49 @@ export default function CreateTicketScreen({ navigation, route }) {
   const handleSubmit = async () => {
     if (!title || !desc) return Alert.alert("Attenzione", "Inserisci titolo e descrizione!");
     if (!selectedCatId) return Alert.alert("Attenzione", "Seleziona una categoria!");
-    if (!coords.lat || !coords.lng) return Alert.alert("Attenzione", "Posizione non rilevata.");
+    if (!coords.lat || !coords.lng) return Alert.alert("Attenzione", "Posizione non rilevata, impossibile localizzare il comune.");
 
     setIsSubmitting(true);
 
-    // Recuperiamo la label della categoria selezionata
-    const selectedCategoryLabel = categories.find(c => c.id === selectedCatId)?.label || 'Altro';
-
-    // PAYLOAD PER IL NUOVO BACKEND (Intervention Service)
-    const ticketData = {
-      tenant_id: user.tenant_id,
-      creator_id: user.id,
-      category: selectedCategoryLabel, 
-      description: `${title} - ${desc}`, 
-      location: address,
-      latitude: coords.lat,
-      longitude: coords.lng,
-      status: 'Aperto'
-    };
-
     try {
-      // CHIAMA IL NUOVO SERVIZIO UNIFICATO
+      // 1. RICERCA DEL COMUNE (TENANT) TRAMITE COORDINATE
+      // Poiché il cittadino non ha tenant fisso, capiamo dove si trova ora.
+      const tenantData = await searchTenantByCoordinates(coords.lat, coords.lng);
+
+      if (!tenantData || !tenantData.tenant || !tenantData.tenant.id) {
+        Alert.alert("Zona non coperta", "Impossibile creare una segnalazione: il comune in cui ti trovi non utilizza ancora questo servizio.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 2. CREAZIONE DEL PAYLOAD
+      const currentTenantId = tenantData.tenant.id;
+      const selectedCategoryLabel = categories.find(c => c.id === selectedCatId)?.label || 'Altro';
+
+      const ticketData = {
+        tenant_id: currentTenantId,      // <-- ID DEL COMUNE CALCOLATO DALLE COORDINATE
+        creator_id: user.id,             // <-- ID DEL CITTADINO
+        category_id: selectedCatId,      // <-- ID DELLA CATEGORIA (Gestito dai numeri)
+        category: selectedCategoryLabel, 
+        description: `${title} - ${desc}`, 
+        location: address,
+        latitude: coords.lat,
+        longitude: coords.lng,
+        status: 'Aperto'
+      };
+
+      // 3. INVIO AL SERVER
       const success = await interventionService.createIntervention(ticketData);
       
       if (success) {
-        Alert.alert("Successo", "Segnalazione inviata correttamente!");
+        Alert.alert("Successo", `Segnalazione inviata correttamente al comune di: ${tenantData.tenant.name}`);
         navigation.goBack();
       } else {
         throw new Error("Errore backend");
       }
     } catch (error) {
       console.error(error);
-      Alert.alert("Errore", "Impossibile inviare la segnalazione al momento.");
+      Alert.alert("Errore", "Impossibile inviare la segnalazione al momento. Riprova più tardi.");
     } finally {
       setIsSubmitting(false);
     }
@@ -192,7 +200,7 @@ export default function CreateTicketScreen({ navigation, route }) {
           </View>
           
           <View style={styles.chipsRow}>
-            {categories.map((cat, index) => {
+            {categories.map((cat) => {
                return (
                  <TouchableOpacity 
                    key={cat.id} 

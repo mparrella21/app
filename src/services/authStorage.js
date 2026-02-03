@@ -1,59 +1,39 @@
-/*
-su file di login fare tipo---------------
-
-import { login } from '../services/authService';
-import { saveAuth } from '../services/authStorage';
-
-const onLogin = async () => {
-  const result = await login(email, password);
-
-  if (result.error) {
-    Alert.alert('Errore', result.error);
-    return;
-  }
-
-  await saveAuth(result.token, result.user); //salva utente in storage locale
-  navigation.replace('Home');
-};
-
-su file per logout fare tipo------------------------------
-import { logout } from '../services/authStorage';
-
-await logout();
-navigation.replace('Login');
-[...]
-
-
-//quando una schermata richiede info su utente----------------
-import { getCurrentUser } from '../services/authStorage';
-const user = await getCurrentUser();
- [...]
-
-
-
-*/
-
-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const KEY_TOKEN = 'app_auth_token';
-const KEY_USER = 'app_user';
+const KEY_ACCESS_TOKEN = 'app_access_token';
+const KEY_REFRESH_TOKEN = 'app_refresh_token';
 
-export const saveAuth = async (token, user) => {
-  await AsyncStorage.setItem(KEY_TOKEN, token);
-  await AsyncStorage.setItem(KEY_USER, JSON.stringify(user));
+// Salva entrambi i token (Accesso e Refresh) inviati dal server
+export const setAuthTokens = async (accessToken, refreshToken) => {
+  try {
+    await AsyncStorage.setItem(KEY_ACCESS_TOKEN, accessToken);
+    if (refreshToken) {
+      await AsyncStorage.setItem(KEY_REFRESH_TOKEN, refreshToken);
+    }
+  } catch (e) {
+    console.error("Errore nel salvataggio dei token", e);
+  }
 };
 
-export const getToken = async () => {
-  return AsyncStorage.getItem(KEY_TOKEN);
+// Recupera i token salvati (usato all'avvio dell'app)
+export const getAuthTokens = async () => {
+  try {
+    const access_token = await AsyncStorage.getItem(KEY_ACCESS_TOKEN);
+    const refresh_token = await AsyncStorage.getItem(KEY_REFRESH_TOKEN);
+    
+    return { access_token, refresh_token };
+  } catch (e) {
+    console.error("Errore nel recupero dei token", e);
+    return null;
+  }
 };
 
-export const getCurrentUser = async () => {
-  const user = await AsyncStorage.getItem(KEY_USER);
-  return user ? JSON.parse(user) : null;
-};
-
-export const logout = async () => {
-  await AsyncStorage.removeItem(KEY_TOKEN);
-  await AsyncStorage.removeItem(KEY_USER);
+// Elimina i token (usato per il Logout)
+export const clearAuthTokens = async () => {
+  try {
+    await AsyncStorage.removeItem(KEY_ACCESS_TOKEN);
+    await AsyncStorage.removeItem(KEY_REFRESH_TOKEN);
+  } catch (e) {
+    console.error("Errore durante la pulizia dei token", e);
+  }
 };

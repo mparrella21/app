@@ -4,6 +4,7 @@ import { API_BASE } from './config';
 
 const AUTH_URL = "http://192.168.72.107:32413/auth";
 //const AUTH_URL = "http://192.168.1.106:32413/auth";
+
 // Helper per decodificare JWT
 const decodeJWT = (token) => {
     try {
@@ -25,13 +26,13 @@ const mapRoleToString = (roleId) => {
     }
 };
 
-// --- FUNZIONE DI LOGIN STANDARD ---
-export const login = async (email, password, tenant_id) => {
+// --- FUNZIONE DI LOGIN (Senza tenant_id) ---
+export const login = async (email, password) => {
   try {
     const response = await fetch(`${AUTH_URL}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ email, password, tenant_id })
+      body: JSON.stringify({ email, password }) // Niente tenant_id
     });
 
     const data = await response.json();
@@ -42,7 +43,7 @@ export const login = async (email, password, tenant_id) => {
       
       await AsyncStorage.setItem('app_auth_token', token);
       if (refreshToken) await AsyncStorage.setItem('app_refresh_token', refreshToken);
-      if (tenant_id) await AsyncStorage.setItem('app_tenant_id', tenant_id);
+      // Niente più salvataggio di app_tenant_id per il login base
 
       const decoded = decodeJWT(token);
       
@@ -52,7 +53,8 @@ export const login = async (email, password, tenant_id) => {
           email: email,
           name: email.split('@')[0], 
           surname: '',
-          tenant_id: decoded?.tid || tenant_id
+          // Lasciamo che lo prenda dal token (utile per Operatori/Responsabili, per i cittadini sarà undefined)
+          tenant_id: decoded?.tid 
       };
 
       try {
@@ -83,16 +85,13 @@ export const login = async (email, password, tenant_id) => {
   }
 };
 
-// --- NUOVA FUNZIONE: LOGIN CON GOOGLE ---
-// Adattata dal sito web (google_login.php) per funzionare in App
-export const googleLogin = async (googleAccessToken, tenant_id) => {
+// --- LOGIN CON GOOGLE (Senza tenant_id) ---
+export const googleLogin = async (googleAccessToken) => {
     try {
-        // Questa chiamata invia il token Google al backend che verifica l'utente
-        // e restituisce il token JWT del sistema (o registra l'utente se non esiste)
         const response = await fetch(`${AUTH_URL}/google-login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({ token: googleAccessToken, tenant_id: tenant_id })
+            body: JSON.stringify({ token: googleAccessToken }) // Niente tenant_id
         });
 
         const data = await response.json();
@@ -100,18 +99,16 @@ export const googleLogin = async (googleAccessToken, tenant_id) => {
         if (response.ok && (data.token || data.access_token)) {
             const token = data.token || data.access_token;
             await AsyncStorage.setItem('app_auth_token', token);
-            if (tenant_id) await AsyncStorage.setItem('app_tenant_id', tenant_id);
 
             const decoded = decodeJWT(token);
             
-            // Un utente loggato con Google è di default un Cittadino
             const user = {
                 id: decoded?.sub || 'unknown-id',
                 role: 'cittadino', 
                 email: decoded?.email || 'Google User',
                 name: decoded?.name || 'Utente',
                 surname: decoded?.surname || 'Google',
-                tenant_id: decoded?.tid || tenant_id
+                tenant_id: decoded?.tid
             };
 
             return { success: true, token: token, user: user };
@@ -124,14 +121,22 @@ export const googleLogin = async (googleAccessToken, tenant_id) => {
     }
 };
 
-// --- REGISTRAZIONE ---
+// --- REGISTRAZIONE (Senza tenant_id per Cittadini) ---
 export const register = async (userData) => {
   try {
+    // Payload base (sempre presente)
     const authPayload = {
-        tenant_id: userData.tenant_id,
         email: userData.email,
         password: userData.password
     };
+
+    // SE è un Responsabile che crea un Operatore, aggiungiamo Tenant e Ruolo
+    if (userData.tenant_id) {
+        authPayload.tenant_id = userData.tenant_id;
+    }
+    if (userData.role) {
+        authPayload.role = userData.role;
+    }
 
     const response = await fetch(`${AUTH_URL}/register`, {
       method: 'POST',
@@ -144,16 +149,21 @@ export const register = async (userData) => {
     if (response.ok) {
         const token = data.token || data.access_token;
         if (token) {
-            await AsyncStorage.setItem('app_auth_token', token);
-            await AsyncStorage.setItem('app_tenant_id', userData.tenant_id);
+            // Salviamo il token se è un cittadino che entra subito dopo
+            if (!userData.role || userData.role === 'cittadino') {
+                await AsyncStorage.setItem('app_auth_token', token);
+            }
 
+            // Chiamata per salvare i dati anagrafici (Nome, Cognome)
             try {
                 const userProfileData = {
-                    name: userData.name,
-                    surname: userData.surname,
-                    birth_date: userData.birth_date,
-                    phonenumber: userData.phoneNumber
+                    name: userData.name || '',
+                    surname: userData.surname || '',
+                    birth_date: userData.birth_date || null,
+                    phonenumber: userData.phoneNumber || ''
                 };
+                
+                // Usiamo il token appena creato per salvare i dati dell'utente
                 await fetch(`${API_BASE}/user`, {
                     method: 'POST', 
                     headers: { 
@@ -166,13 +176,13 @@ export const register = async (userData) => {
                 console.error("Eccezione fetch User:", err);
             }
 
+            // Ritorniamo l'utente creato
             const user = {
                 id: decodeJWT(token)?.sub,
                 email: userData.email,
                 name: userData.name,
                 surname: userData.surname,
-                phoneNumber: userData.phoneNumber,
-                role: 'cittadino' 
+                role: userData.role || 'cittadino' 
             };
             return { success: true, token: token, user: user };
         }
@@ -200,19 +210,18 @@ export const logout = async () => {
     }
 };
 
-// Funzione interna per refresh
+// --- REFRESH TOKEN (Senza tenant_id) ---
 const performRefreshToken = async () => {
     try {
         const refresh = await AsyncStorage.getItem('app_refresh_token');
-        const tenant_id = await AsyncStorage.getItem('app_tenant_id');
 
-        if (!refresh || !tenant_id) return null;
+        if (!refresh) return null;
 
         console.log("Tentativo Refresh Token...");
         const response = await fetch(`${AUTH_URL}/refresh`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tenant_id, refresh_token: refresh })
+            body: JSON.stringify({ refresh_token: refresh }) // Solo il token di refresh
         });
         
         const data = await response.json();
@@ -230,7 +239,6 @@ const performRefreshToken = async () => {
     }
 };
 
-// --- FUNZIONE CENTRALE PER LE CHIAMATE ---
 export const authenticatedFetch = async (url, options = {}) => {
     let token = await AsyncStorage.getItem('app_auth_token');
     
