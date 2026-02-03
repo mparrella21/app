@@ -257,19 +257,28 @@ export default function ProfileScreen({ navigation }) {
         {!isEditing && (
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dettagli Account</Text>
+            
+            {/* Riga Email */}
             <View style={styles.infoRow}>
                 <Ionicons name="mail-outline" size={20} color="#666" />
                 <View style={styles.infoTextContainer}>
                     <Text style={styles.label}>Email</Text>
-                    <Text style={styles.value}>{user.email}</Text>
+                    <Text style={styles.value}>{user.email || 'Non disponibile'}</Text>
                 </View>
             </View>
+            
             <View style={styles.divider} />
+            
+            {/* Riga Comune - Dinamica in base al ruolo */}
             <View style={styles.infoRow}>
                 <Ionicons name="business-outline" size={20} color="#666" />
                 <View style={styles.infoTextContainer}>
-                    <Text style={styles.label}>Comune</Text>
-                    <Text style={styles.value}>{user.municipality || 'Comune di Fisciano (Demo)'}</Text>
+                    <Text style={styles.label}>Comune di competenza</Text>
+                    <Text style={styles.value}>
+                        {currentRole === 'cittadino' 
+                            ? 'Ovunque (tramite GPS)' 
+                            : (user.tenant_id ? `Codice Comune: ${user.tenant_id}` : 'Non assegnato')}
+                    </Text>
                 </View>
             </View>
         </View>

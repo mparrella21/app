@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export const searchTenantByCoordinates = async (lat, lon) => {
   try {
     const token = await AsyncStorage.getItem('app_access_token');
-    const url = `${API_BASE}/search?lat=${lat}&lon=${lon}`;
+    const url = `${API_BASE}/tenant/search?lat=${lat}&lon=${lon}`;
 
     const headers = { Accept: 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -89,7 +89,7 @@ export const getRegions = async () => {
 // Recupera i confini specifici di un tenant (Endpoint AGGIORNATO a /api/boundaries/)
 export const getTenantBoundary = async (istatCode) => {
     try {
-        const response = await fetch(`${API_BASE}/boundaries/${istatCode}`, { method: 'GET' });
+        const response = await fetch(`${API_BASE}/tenant/boundaries/${istatCode}`, { method: 'GET' });
         if (response.ok) {
             const data = await response.json();
             return {

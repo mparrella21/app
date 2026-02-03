@@ -9,6 +9,7 @@ import { getAllTickets } from '../services/ticketService';
 import { searchTenantByCoordinates } from '../services/tenantService'; 
 import { getAddressFromCoordinates, searchCity } from '../services/nominatim';
 import SearchBar from '../component/SearchBar';
+import { useAuth } from '../context/AuthContext';
 
 export default function MapScreen({ navigation }) {
   const mapRef = useRef(null);
@@ -57,17 +58,19 @@ export default function MapScreen({ navigation }) {
 
   const fetchExistingTickets = async () => {
       try {
-          const tickets = await getAllTickets();
+          // <--- 2. CONTROLLO DI SICUREZZA
+          if (!user?.tenant_id) return; 
+
+          // <--- 3. PASSA IL TENANT_ID QUI
+          const tickets = await getAllTickets(user.tenant_id); 
           
-          // --- FIX CRASH QUI ---
-          // Se tickets è null o undefined, usiamo un array vuoto [] per evitare l'errore su .filter
           const safeTickets = Array.isArray(tickets) ? tickets : [];
           const validTickets = safeTickets.filter(t => t.lat && t.lon);
           
           setExistingTickets(validTickets);
       } catch (e) {
           console.warn("Errore caricamento pin mappa:", e);
-          setExistingTickets([]); // Reset in caso di errore
+          setExistingTickets([]); 
       }
   };
 

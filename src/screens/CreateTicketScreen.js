@@ -69,7 +69,13 @@ export default function CreateTicketScreen({ navigation, route }) {
   const fetchAddress = async (lat, lon) => {
     setLoadingAddr(true);
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      // AGGIUNTA DELL'HEADER USER-AGENT OBBLIGATORIO PER NOMINATIM
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`, {
+        headers: {
+          'User-Agent': 'CivitasApp/1.0 (tuamail@example.com)' // Metti un nome fittizio per la tua app
+        }
+      });
+      
       const data = await response.json();
       if (data && data.display_name) {
         const shortAddr = data.address.road ? `${data.address.road}, ${data.address.city || data.address.town}` : data.display_name.split(',')[0];

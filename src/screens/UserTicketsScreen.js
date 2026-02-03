@@ -15,13 +15,13 @@ export default function UserTicketsScreen({ navigation }) {
   const [filterStatus, setFilterStatus] = useState('Tutti');
 
   const loadTickets = async () => {
-    if (!user) return;
+    if (!user || !user.tenant_id) return; // Controllo di sicurezza
     setLoading(true);
     try {
-      // Chiama il servizio filtrato per utente (Corretto per Requisito IF-2.4)
-      const tickets = await getUserTickets(user.id);
+      // CORREZIONE: Aggiunto user.tenant_id come secondo parametro
+      const tickets = await getUserTickets(user.id, user.tenant_id);
       setMyTickets(tickets);
-      setFilteredTickets(tickets); // Di default mostra tutti
+      setFilteredTickets(tickets); 
       setFilterStatus('Tutti');
     } catch (error) {
       console.error("Errore caricamento ticket personali:", error);

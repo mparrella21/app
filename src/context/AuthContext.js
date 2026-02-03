@@ -1,9 +1,10 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { login as apiLogin, register as apiRegister } from '../services/authService';
 import { setAuthTokens, clearAuthTokens, getAuthTokens } from '../services/authStorage';
-import jwtDecode from 'jwt-decode'; 
-
+import AsyncStorage from '@react-native-async-storage/async-storage'; 
+import { jwtDecode } from 'jwt-decode';
 export const AuthContext = createContext();
+import { API_BASE } from '../services/config';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -28,7 +29,6 @@ export const AuthProvider = ({ children }) => {
         id: decoded.sub,
         email: decoded.email,
         role: mappedRole, 
-        // Sarà null per i cittadini, e pieno per operatori/responsabili. Perfetto.
         tenant_id: decoded.tid 
       };
     } catch (e) {
@@ -41,7 +41,29 @@ export const AuthProvider = ({ children }) => {
     try {
       const tokens = await getAuthTokens();
       if (tokens && tokens.access_token) {
+        // 1. Estrae i dati base dal token (ID, Email, Ruolo)
         const userData = extractUserFromToken(tokens.access_token);
+        const savedEmail = await AsyncStorage.getItem('user_email');
+        userData.email = savedEmail || 'Nessuna email';
+        // 2. RECUPERA IL NOME DAL DATABASE (Nuovo codice!)
+        try {
+          const response = await fetch(`${API_BASE}/user/${userData.id}`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${tokens.access_token}` }
+          });
+          if (response.ok) {
+            const profileData = await response.json();
+            const realUser = Array.isArray(profileData) ? profileData[0] : (profileData.user || profileData);
+            if (realUser) {
+              userData.name = realUser.name || userData.name;
+              userData.surname = realUser.surname || userData.surname;
+            }
+          }
+        } catch(err) {
+          console.log("Errore nel recupero del nome al riavvio", err);
+        }
+
+        // 3. Salva l'utente COMPLETO di nome
         setUser(userData);
       }
     } catch (e) {
@@ -51,19 +73,22 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const setDirectLogin = async (token, userData) => {
+    setUser(userData);
+  };
+
   useEffect(() => {
     checkLoggedIn();
   }, []);
 
   const login = async (email, password) => {
     try {
-      // Non serve più il tenant_id qui
       const response = await apiLogin(email, password);
-      if (response.access_token) {
-          await setAuthTokens(response.access_token, response.refresh_token);
-          const userData = extractUserFromToken(response.access_token);
-          setUser(userData);
-          return true;
+      
+      if (response.success) {
+        await setAuthTokens(response.token, response.refreshToken); 
+        setUser(response.user); 
+        return true;
       }
       return false;
     } catch (e) {
@@ -72,7 +97,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Niente più tenant_id
   const register = async (email, password) => {
     try {
       await apiRegister({ email, password });
@@ -89,7 +113,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, setDirectLogin }}>
       {children}
     </AuthContext.Provider>
   );

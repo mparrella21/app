@@ -2,8 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Buffer } from 'buffer';
 import { API_BASE } from './config'; 
 
-const AUTH_URL = "http://192.168.72.107:32413/auth";
-//const AUTH_URL = "http://192.168.1.105:32413/auth";
+//const AUTH_URL = "http://192.168.72.107:32413/auth";
+const AUTH_URL = "http://127.0.0.1:32413/auth";
 const decodeJWT = (token) => {
     try {
         const part = token.split('.')[1];
@@ -38,6 +38,7 @@ export const login = async (email, password) => {
       const refreshToken = data.refresh_token; 
       
       await setAuthTokens(token, refreshToken);
+      await AsyncStorage.setItem('user_email', email);
       const decoded = decodeJWT(token);
       let user = {
           id: decoded?.sub || 'unknown-id',
@@ -69,7 +70,8 @@ export const login = async (email, password) => {
     }
     return { success: false, error: data.message || 'Login fallito' };
   } catch (e) {
-    return { success: false, error: 'Errore di rete' };
+    console.error("ERRORE REALE:", e); 
+    return { success: false, error: 'Errore di rete o di codice' };
   }
 };
 
@@ -223,4 +225,24 @@ export const authenticatedFetch = async (url, options = {}) => {
         }
     }
     return response;
+};
+
+const setAuthTokens = async (token, refreshToken) => {
+    try {
+        await AsyncStorage.setItem('app_access_token', token);
+        if (refreshToken) {
+            await AsyncStorage.setItem('app_refresh_token', refreshToken);
+        }
+    } catch (e) {
+        console.error("Errore salvataggio token", e);
+    }
+};
+
+const clearAuthTokens = async () => {
+    try {
+        await AsyncStorage.removeItem('app_access_token');
+        await AsyncStorage.removeItem('app_refresh_token');
+    } catch (e) {
+        console.error("Errore rimozione token", e);
+    }
 };

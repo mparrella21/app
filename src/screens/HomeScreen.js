@@ -50,8 +50,10 @@ export default function HomeScreen({ navigation }) {
 
   const fetchTickets = async () => {
     try {
-        const allData = await getAllTickets();
-        setTickets(allData);
+      if (!user?.tenant_id) return; // Se l'utente non ha un tenant, la mappa resta vuota
+      // CORREZIONE: Passiamo il tenant_id dell'utente
+      const allData = await getAllTickets(user.tenant_id);
+      setTickets(allData);
     } catch (e) { console.error(e); }
   };
 

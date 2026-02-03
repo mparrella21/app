@@ -167,7 +167,7 @@ export const deleteReply = async (idTicket, idReply, tenantId, userId) => {
 
 export const getCategories = async () => {
   try {
-    const response = await authenticatedFetch(`${API_BASE}/categories`, { method: 'GET' });
+    const response = await authenticatedFetch(`${API_BASE}/ticket/categories`, { method: 'GET' });
     const data = await response.json();
     return response.ok ? data : [];
   } catch (e) { return []; }
@@ -176,7 +176,7 @@ export const getCategories = async () => {
 // RIPRISTINATO: Creazione Categoria Ticket (Per Admin)
 export const createCategory = async (label) => {
     try {
-        const response = await authenticatedFetch(`${API_BASE}/categories`, {
+        const response = await authenticatedFetch(`${API_BASE}/ticket/categories`, {
             method: 'POST',
             body: JSON.stringify({ label })
         });
@@ -187,7 +187,7 @@ export const createCategory = async (label) => {
 // RIPRISTINATO: Modifica Categoria Ticket (Per Admin)
 export const updateCategory = async (id, label) => {
     try {
-        const response = await authenticatedFetch(`${API_BASE}/categories/${id}`, {
+        const response = await authenticatedFetch(`${API_BASE}/ticket/categories/${id}`, {
             method: 'PUT',
             body: JSON.stringify({ label })
         });
@@ -198,7 +198,7 @@ export const updateCategory = async (id, label) => {
 // RIPRISTINATO: Elimina Categoria Ticket (Per Admin)
 export const deleteCategory = async (id) => {
     try {
-        const response = await authenticatedFetch(`${API_BASE}/categories/${id}`, {
+        const response = await authenticatedFetch(`${API_BASE}/ticket/categories/${id}`, {
             method: 'DELETE'
         });
         return response.ok;

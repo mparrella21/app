@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { interventionService } from '../services/interventionService'; // CAMBIATO: Usa interventionService
+import { getUserTickets } from '../services/ticketService';
 import { useAuth } from '../context/AuthContext';
 
 const COLORS = { primary: '#0077B6', bg: '#F3F4F6', card: '#FFF', accent: '#C06E52' };
@@ -15,9 +15,9 @@ const CitizenHomeScreen = ({ navigation }) => {
 
   const loadTickets = async () => {
     try {
-      if (!user?.id) return;
-      // CAMBIATO: Chiama i ticket specifici dell'utente loggato
-      const data = await interventionService.getUserInterventions(user.id);
+      if (!user?.id || !user?.tenant_id) return;
+      // CAMBIATO: Usa getUserTickets passando ID e TENANT_ID (richiesto dall'API)
+      const data = await getUserTickets(user.id, user.tenant_id);
       setTickets(data || []);
     } catch (e) {
       console.warn('CitizenHomeScreen.load', e);
