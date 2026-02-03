@@ -1,11 +1,11 @@
 import { API_BASE } from './config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Endpoint: GET /api/tenant/search?lat=...&lon=...
+// Endpoint AGGIORNATO (secondo la nuova API): GET /api/search?lat=...&lon=...
 export const searchTenantByCoordinates = async (lat, lon) => {
   try {
-    const token = await AsyncStorage.getItem('app_auth_token');
-    const url = `${API_BASE}/tenant/search?lat=${lat}&lon=${lon}`;
+    const token = await AsyncStorage.getItem('app_access_token');
+    const url = `${API_BASE}/search?lat=${lat}&lon=${lon}`;
 
     const headers = { Accept: 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -60,6 +60,7 @@ export const getAllTenants = async () => {
     }
 };
 
+
 // Recupera province
 export const getProvinces = async () => {
     try {
@@ -84,18 +85,18 @@ export const getRegions = async () => {
     }
 };
 
-// Recupera i confini specifici di un tenant (per ISTAT code o ID)
-export const getTenantBoundary = async (idOrIstat) => {
+
+// Recupera i confini specifici di un tenant (Endpoint AGGIORNATO a /api/boundaries/)
+export const getTenantBoundary = async (istatCode) => {
     try {
-        const response = await fetch(`${API_BASE}/tenant/boundaries/${idOrIstat}`, { method: 'GET' });
+        const response = await fetch(`${API_BASE}/boundaries/${istatCode}`, { method: 'GET' });
         if (response.ok) {
             const data = await response.json();
-            // Impacchetta in GeoJSON FeatureCollection per coerenza con la mappa
             return {
                 type: "FeatureCollection",
                 features: [{
                     type: "Feature",
-                    properties: { istat_code: data.istat_code },
+                    properties: { istat_code: istatCode },
                     geometry: data.geometry
                 }]
             };

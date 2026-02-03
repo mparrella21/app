@@ -2,7 +2,9 @@ import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, TextInput, ActivityIndicator, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../styles/global';
-import { getOperators, updateOperator, deleteUser } from '../services/userService';
+
+// IMPORT SERVIZI AGGIORNATI
+import { getOperatorsByTenant, updateProfile, deleteUser } from '../services/userService';
 import { getOperatorCategories, assignOperatorCategory } from '../services/interventionService';
 import { register } from '../services/authService'; 
 import { AuthContext } from '../context/AuthContext';
@@ -30,8 +32,11 @@ export default function ManageOperatorsScreen({ navigation }) {
 
   const fetchOperators = async () => {
     setLoading(true);
-    const data = await getOperators();
-    setOperators(data);
+    // MODIFICA: Ora prende gli operatori specifici del tenant
+    if (user?.tenant_id) {
+        const data = await getOperatorsByTenant(user.tenant_id);
+        setOperators(data);
+    }
     setLoading(false);
   };
 
@@ -50,7 +55,7 @@ export default function ManageOperatorsScreen({ navigation }) {
   useEffect(() => {
     fetchOperators();
     fetchCategories();
-  }, []);
+  }, [user]);
 
   const openCreateMode = () => {
       setIsEditing(false);
@@ -82,12 +87,12 @@ export default function ManageOperatorsScreen({ navigation }) {
 
     try {
         if (isEditing) {
-            const updateData = { name: opName, surname: opSurname, email: opEmail };
-            if (opPassword) updateData.password = opPassword;
-            const updated = await updateOperator(editingId, updateData);
+            // MODIFICA: Utilizzo della nuova funzione di update profile e di ri-assegnazione categoria
+            const updateData = { name: opName, surname: opSurname, phonenumber: "0000000000" }; // Email e pass non si cambiano via profile
+            const updated = await updateProfile(editingId, updateData);
             
             if (updated) {
-                await assignOperatorCategory(user.tenant_id, editingId, selectedCategory.id);
+                await assignOperatorCategory(editingId, user.tenant_id, selectedCategory.id);
                 Alert.alert("Successo", "Operatore aggiornato!");
                 setModalFormVisible(false);
                 fetchOperators();
@@ -95,7 +100,7 @@ export default function ManageOperatorsScreen({ navigation }) {
                 Alert.alert("Errore", "Impossibile aggiornare l'operatore.");
             }
         } else {
-            // CREAZIONE CORRETTA: Passiamo l'oggetto atteso da authService.js
+            // CREAZIONE: Passiamo l'oggetto atteso dal nuovo authService.js
             const userData = {
                 email: opEmail,
                 password: opPassword,
@@ -107,9 +112,9 @@ export default function ManageOperatorsScreen({ navigation }) {
 
             const result = await register(userData);
             
-            if (result && result.success) {
-                // Assegniamo la categoria al nuovo operatore
-                await assignOperatorCategory(user.tenant_id, result.user.id, selectedCategory.id);
+            if (result && result.success && result.user) {
+                // MODIFICA: Assegniamo la categoria al nuovo operatore con il tenant_id corretto
+                await assignOperatorCategory(result.user.id, user.tenant_id, selectedCategory.id);
                 Alert.alert("Successo", "Operatore creato con successo!");
                 setModalFormVisible(false);
                 fetchOperators();
@@ -191,7 +196,7 @@ export default function ManageOperatorsScreen({ navigation }) {
           />
       )}
 
-      {/* MODALE FORM */}
+      {/* MODALE FORM RIPRISTINATO */}
       <Modal visible={modalFormVisible} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
@@ -231,7 +236,7 @@ export default function ManageOperatorsScreen({ navigation }) {
           </View>
       </Modal>
 
-      {/* MODALE CATEGORIA */}
+      {/* MODALE CATEGORIA RIPRISTINATO */}
       <Modal visible={catModalVisible} transparent animationType="fade">
           <View style={styles.modalOverlay}>
               <View style={[styles.modalContent, {maxHeight: '50%'}]}>
@@ -261,6 +266,7 @@ export default function ManageOperatorsScreen({ navigation }) {
   );
 }
 
+// STILI ORIGINALI INTATTI
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: COLORS.bg || '#F5F5F5' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },

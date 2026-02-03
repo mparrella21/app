@@ -7,300 +7,200 @@ const extractCategoryIds = (categories) => {
     return categories.map(c => (typeof c === 'object' && c.id ? c.id : c));
 };
 
-export const getAllTickets = async () => {
+// =====================================================================
+// --- GESTIONE TICKET ---
+// =====================================================================
+
+export const getAllTickets = async (tenantId) => {
   try {
-    const response = await authenticatedFetch(`${API_BASE}/ticket`, { method: 'GET' });
-    if (!response.ok) throw new Error(`Status: ${response.status}`);
+    if (!tenantId) return [];
+    const response = await authenticatedFetch(`${API_BASE}/ticket?tenant_id=${tenantId}`, { method: 'GET' });
     const data = await response.json();
-    if (data.success && Array.isArray(data.tickets)) return data.tickets;
-    if (Array.isArray(data)) return data; 
+    if (response.ok) return Array.isArray(data) ? data : (data.tickets || []);
     return [];
-  } catch (e) {
-    console.error('ticketService.getAllTickets', e);
-    return [];
-  }
+  } catch (e) { return []; }
 };
 
-export const getUserTickets = async (userId) => {
+export const getUserTickets = async (userId, tenantId) => {
   try {
-    const allTickets = await getAllTickets();
-    const myTickets = allTickets.filter(t => 
-        t.user === userId || 
-        t.id_creator_user === userId || 
-        t.user_id === userId
-    );
-    return myTickets; 
-  } catch (e) {
-    console.error('ticketService.getUserTickets', e);
-    return [];
-  }
+    const allTickets = await getAllTickets(tenantId);
+    return allTickets.filter(t => t.user_id === userId || t.creator_id === userId);
+  } catch (e) { return []; }
 };
 
-export const getOperatorTickets = async (operatorId) => {
+export const getOperatorTickets = async (operatorId, tenantId) => {
   try {
-    if (!operatorId) return [];
+    if (!operatorId || !tenantId) return [];
     let assignedTicketIds = [];
-    try {
-        const assignResponse = await authenticatedFetch(`${API_BASE}/intervention/assignment`, { method: 'GET' });
-        if (assignResponse.ok) {
-            const assignData = await assignResponse.json();
-            const assignments = assignData.assignments || assignData || [];
-            assignedTicketIds = assignments.filter(a => a.id_user === operatorId).map(a => a.id_ticket);
-        }
-    } catch (assignError) {
-        console.warn("Impossibile recuperare assegnazioni", assignError);
-    }
-    const allTickets = await getAllTickets();
-    const myTasks = allTickets.filter(t => {
-        const isInAssignments = assignedTicketIds.includes(t.id);
-        const isActive = (t.id_status !== 3 && t.id_status !== 4); 
-        return isInAssignments && isActive;
-    });
-    return myTasks; 
-  } catch (e) {
-    console.error('ticketService.getOperatorTickets', e);
-    return [];
-  }
-};
-
-export const getTicket = async (id) => {
-  try {
-    const response = await authenticatedFetch(`${API_BASE}/ticket/${id}`, { method: 'GET' });
-    const data = await response.json();
-    if (response.ok) return data.ticket || data; 
-    return null; 
-  } catch (e) {
-    console.error('ticketService.getTicket', e);
-    throw e;
-  }
-};
-
-// --- CATEGORIES ---
-
-export const getCategories = async () => {
-  try {
-    const response = await authenticatedFetch(`${API_BASE}/ticket/categories`, { method: 'GET' });
-    const data = await response.json();
-    if (response.ok) return data.categories || data || [];
-    return []; 
-  } catch (e) {
-    console.error('ticketService.getCategories', e);
-    return [];
-  }
-};
-
-// NUOVA: Creazione Categoria Ticket
-export const createCategory = async (label) => {
-    try {
-        const response = await authenticatedFetch(`${API_BASE}/ticket/categories`, {
-            method: 'POST',
-            body: JSON.stringify({ label })
-        });
-        return response.ok;
-    } catch (e) {
-        console.error('ticketService.createCategory', e);
-        return false;
-    }
-};
-
-// NUOVA: Modifica Categoria Ticket
-export const updateCategory = async (id, label) => {
-    try {
-        const response = await authenticatedFetch(`${API_BASE}/ticket/categories/${id}`, {
-            method: 'PUT',
-            body: JSON.stringify({ label })
-        });
-        return response.ok;
-    } catch (e) {
-        console.error('ticketService.updateCategory', e);
-        return false;
-    }
-};
-
-// NUOVA: Elimina Categoria Ticket
-export const deleteCategory = async (id, label) => {
-    try {
-        const response = await authenticatedFetch(`${API_BASE}/ticket/categories/${id}`, {
-            method: 'DELETE',
-            body: JSON.stringify({ label })
-        });
-        return response.ok;
-    } catch (e) {
-        console.error('ticketService.deleteCategory', e);
-        return false;
-    }
-};
-
-// --- TICKETS POST/PUT/DELETE ---
-
-// MODIFICA: Inserito tenantId - IL CITTADINO LO INVIA CORRETTAMENTE QUI
-export const postTicket = async (ticketData, tenantId, photos = []) => {
-  try {
-    const userStr = await AsyncStorage.getItem('app_user');
-    const userObj = userStr ? JSON.parse(userStr) : {};
     
-    const categoryIds = extractCategoryIds(ticketData.categories);
+    const assignResponse = await authenticatedFetch(`${API_BASE}/intervention/assignment?tenant_id=${tenantId}`, { method: 'GET' });
+    if (assignResponse.ok) {
+        const assignData = await assignResponse.json();
+        const assignments = assignData.assignments || assignData || [];
+        assignedTicketIds = assignments.filter(a => a.id_user === operatorId).map(a => a.id_ticket);
+    }
 
+    const allTickets = await getAllTickets(tenantId);
+    return allTickets.filter(t => assignedTicketIds.includes(t.id) && t.id_status !== 3 && t.id_status !== 4); 
+  } catch (e) { return []; }
+};
+
+export const getTicket = async (id, tenantId) => {
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/ticket/${id}?tenant_id=${tenantId}`, { method: 'GET' });
+    const data = await response.json();
+    return response.ok ? (data.ticket || data) : null;
+  } catch (e) { return null; }
+};
+
+export const postTicket = async (ticketData, tenantId) => {
+  try {
+    const categoryIds = extractCategoryIds(ticketData.categories);
     const finalPayload = {
-        title: ticketData.title || ticketData.descrizione,
+        tenant_id: tenantId,
+        title: ticketData.title,
         id_status: 1, 
         lat: parseFloat(ticketData.lat),
         lon: parseFloat(ticketData.lon),
-        categories: categoryIds, 
-        user: userObj.id,
-        tenant_id: tenantId 
+        categories: categoryIds
     };
-
     const response = await authenticatedFetch(`${API_BASE}/ticket`, {
       method: 'POST',
       body: JSON.stringify(finalPayload)
     });
     return response.ok;
-  } catch (e) {
-    console.error('ticketService.postTicket', e);
-    return false;
-  }
+  } catch (e) { return false; }
 };
 
-// --- REPLIES & MESSAGES ---
-
-export const getAllReplies = async (idTicket) => {
+export const updateTicket = async (id, tenantId, updateData) => {
   try {
-    const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply`, { method: 'GET' });
+    const payload = { tenant_id: tenantId, ...updateData };
+    const response = await authenticatedFetch(`${API_BASE}/ticket/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+    return response.ok;
+  } catch (e) { return false; }
+};
+
+export const updateTicketDetails = async (idTicket, tenantId, details) => {
+    const currentTicket = await getTicket(idTicket, tenantId);
+    if (!currentTicket) return false;
+
+    return await updateTicket(idTicket, tenantId, {
+        title: details.title || currentTicket.title,
+        categories: details.categories ? extractCategoryIds(details.categories) : currentTicket.categories,
+        lat: parseFloat(currentTicket.lat),
+        lon: parseFloat(currentTicket.lon),
+        id_status: currentTicket.id_status
+    });
+};
+
+export const updateTicketStatus = async (idTicket, tenantId, statusId) => {
+  return await updateTicket(idTicket, tenantId, { id_status: statusId });
+};
+
+export const closeTicket = async (idTicket, tenantId) => {
+  return await updateTicketStatus(idTicket, tenantId, 3); 
+};
+
+// RIPRISTINATO: Eliminazione Ticket (Per Admin)
+export const deleteTicket = async (ticketId, tenantId) => {
+    try {
+        const payload = { tenant_id: tenantId };
+        const response = await authenticatedFetch(`${API_BASE}/ticket/${ticketId}`, {
+            method: 'DELETE',
+            body: JSON.stringify(payload)
+        });
+        return response.ok;
+    } catch (e) { return false; }
+};
+
+// =====================================================================
+// --- REPLIES (Messaggi) ---
+// =====================================================================
+
+export const getAllReplies = async (idTicket, tenantId) => {
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply?tenant_id=${tenantId}`, { method: 'GET' });
     const data = await response.json();
-    if (response.ok) return data.replies || data || [];
-    return [];
-  } catch (e) {
-    console.error('ticketService.getAllReplies', e);
-    return [];
-  }
+    return response.ok ? (data.replies || data || []) : [];
+  } catch (e) { return []; }
 };
 
-export const postReply = async (idTicket, replyData, files = []) => {
+export const postReply = async (idTicket, tenantId, userId, bodyText) => {
   try {
-    const userStr = await AsyncStorage.getItem('app_user');
-    const userObj = userStr ? JSON.parse(userStr) : {};
-
-    const payload = {
-        body: replyData.body || replyData.text,
-        type: replyData.type || 'USER',
-        user: userObj.id
-    };
-
+    const payload = { tenant_id: tenantId, user_id: userId, body: bodyText };
     const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply`, {
       method: 'POST',
       body: JSON.stringify(payload)
     });
-
     return response.ok;
-  } catch (e) {
-    console.error('ticketService.postReply', e);
-    return false;
-  }
+  } catch (e) { return false; }
 };
 
-export const updateReply = async (idTicket, idReply, newBodyText) => {
+export const updateReply = async (idTicket, idReply, tenantId, newBodyText) => {
     try {
-        const payload = { body: newBodyText };
+        const payload = { tenant_id: tenantId, body: newBodyText };
         const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply/${idReply}`, {
             method: 'PUT',
             body: JSON.stringify(payload)
         });
         return response.ok;
-    } catch (e) {
-        console.error('ticketService.updateReply', e);
-        return false;
-    }
+    } catch (e) { return false; }
 };
 
-export const deleteReply = async (idTicket, idReply, currentBodyText = "") => {
+export const deleteReply = async (idTicket, idReply, tenantId, userId) => {
     try {
-        const payload = { body: currentBodyText };
+        const payload = { tenant_id: tenantId, user_id: userId };
         const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/reply/${idReply}`, {
             method: 'DELETE',
             body: JSON.stringify(payload)
         });
         return response.ok;
-    } catch (e) {
-        console.error('ticketService.deleteReply', e);
-        return false;
-    }
+    } catch (e) { return false; }
 };
 
-// --- UPDATE & MANAGEMENT ---
+// =====================================================================
+// --- CATEGORIES (Per Ticket) ---
+// =====================================================================
 
-export const updateTicketDetails = async (idTicket, details) => {
-    try {
-        const currentTicket = await getTicket(idTicket);
-        if (!currentTicket) return false;
-
-        const updatedBody = {
-            title: details.title || currentTicket.title || currentTicket.titolo,
-            description: details.description || currentTicket.description, // MANTENUTA LA DESCRIZIONE
-            categories: details.categories ? extractCategoryIds(details.categories) : extractCategoryIds(currentTicket.categories),
-            lat: parseFloat(currentTicket.lat),
-            lon: parseFloat(currentTicket.lon),
-            id_status: currentTicket.id_status
-        };
-
-        const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}`, {
-            method: 'PUT',
-            body: JSON.stringify(updatedBody)
-        });
-        return response.ok;
-    } catch (e) {
-        console.error('ticketService.updateTicketDetails', e);
-        return false;
-    }
-};
-
-// Funzione Allineata per modificare lo stato
-export const updateTicketStatus = async (idTicket, statusId) => {
+export const getCategories = async () => {
   try {
-    const currentTicket = await getTicket(idTicket);
-    if (!currentTicket) return false;
-
-    const updatedBody = {
-        title: currentTicket.title || currentTicket.titolo,
-        categories: extractCategoryIds(currentTicket.categories),
-        lat: parseFloat(currentTicket.lat),
-        lon: parseFloat(currentTicket.lon),
-        id_status: statusId 
-    };
-
-    const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}`, {
-      method: 'PUT',
-      body: JSON.stringify(updatedBody)
-    });
-    return response.ok;
-  } catch (e) {
-    console.error('ticketService.updateTicketStatus', e);
-    return false;
-  }
+    const response = await authenticatedFetch(`${API_BASE}/categories`, { method: 'GET' });
+    const data = await response.json();
+    return response.ok ? data : [];
+  } catch (e) { return []; }
 };
 
-export const deleteTicket = async (ticket) => {
+// RIPRISTINATO: Creazione Categoria Ticket (Per Admin)
+export const createCategory = async (label) => {
     try {
-        const payload = {
-            title: ticket.title || ticket.titolo,
-            categories: extractCategoryIds(ticket.categories),
-            lat: parseFloat(ticket.lat),
-            lon: parseFloat(ticket.lon),
-            id_status: ticket.id_status
-        };
-
-        const response = await authenticatedFetch(`${API_BASE}/ticket/${ticket.id}`, {
-            method: 'DELETE',
-            body: JSON.stringify(payload)
+        const response = await authenticatedFetch(`${API_BASE}/categories`, {
+            method: 'POST',
+            body: JSON.stringify({ label })
         });
         return response.ok;
-    } catch (e) {
-        console.error('ticketService.deleteTicket', e);
-        return false;
-    }
+    } catch (e) { return false; }
 };
 
-// Funzione mantenuta
-export const closeTicket = async (idTicket) => {
-  return await updateTicketStatus(idTicket, 3); 
+// RIPRISTINATO: Modifica Categoria Ticket (Per Admin)
+export const updateCategory = async (id, label) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/categories/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ label })
+        });
+        return response.ok;
+    } catch (e) { return false; }
+};
+
+// RIPRISTINATO: Elimina Categoria Ticket (Per Admin)
+export const deleteCategory = async (id) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/categories/${id}`, {
+            method: 'DELETE'
+        });
+        return response.ok;
+    } catch (e) { return false; }
 };

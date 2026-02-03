@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker'; // RIPRISTINATO
 import { AuthContext } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
 
-// IMPORT SERVIZI CORRETTI PER IL CICLO DI VITA
+// IMPORT SERVIZI (Ora aggiornati al Multi-Tenant)
 import { 
     getAssignmentByTicketId, 
     createAssignment,
@@ -45,34 +45,38 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [selectedReply, setSelectedReply] = useState(null);
   const [editReplyText, setEditReplyText] = useState('');
   
-  // STATI PER L'ASSEGNAZIONE (Responsabile)
+  // STATI PER L'ASSEGNAZIONE
   const [assignedOperator, setAssignedOperator] = useState(null);
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [operators, setOperators] = useState([]);
   const [loadingOperators, setLoadingOperators] = useState(false);
 
-  // STATI PER IL RATING (Cittadino)
+  // STATI PER IL RATING
   const [rating, setRating] = useState(0); 
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
-  // STATI PER LA CHIUSURA (Operatore)
+  // STATI PER LA CHIUSURA E REPORT
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [interventionReport, setInterventionReport] = useState('');
-  const [reportImage, setReportImage] = useState(null); // RIPRISTINATO
+  const [reportImage, setReportImage] = useState(null); 
   
   // STATI PER LA MODIFICA TICKET
   const [isEditingTicket, setIsEditingTicket] = useState(false);
   const [editTitle, setEditTitle] = useState('');
-  const [editDesc, setEditDesc] = useState(''); // RIPRISTINATO
+  const [editDesc, setEditDesc] = useState(''); 
   const [editCategoryId, setEditCategoryId] = useState(null);
   const [allCategories, setAllCategories] = useState([]);
 
+  // LOGICA MULTI-TENANT
+  const effectiveTenantId = ticket?.tenant_id || user?.tenant_id;
+
   const fetchData = async () => {
-      if (!ticketId) return;
+      if (!ticketId || (!effectiveTenantId && !user?.tenant_id)) return;
+      const tenantToUse = effectiveTenantId || user?.tenant_id;
       setLoading(true);
       
       try {
-        const freshTicket = await getTicket(ticketId);
+        const freshTicket = await getTicket(ticketId, tenantToUse);
         
         if (freshTicket && freshTicket.lat && freshTicket.lon) {
             try {
@@ -87,9 +91,8 @@ export default function TicketDetailScreen({ route, navigation }) {
         setEditTitle(freshTicket?.title || ''); 
         setEditDesc(freshTicket?.description || '');
 
-        // LOGICA CORRETTA PER L'ASSEGNAZIONE
         try {
-            const assignmentData = await getAssignmentByTicketId(ticketId);
+            const assignmentData = await getAssignmentByTicketId(ticketId, tenantToUse);
             if(assignmentData && assignmentData.id_user) {
                 const users = await getAllUsers();
                 const op = users.find(u => u.id === assignmentData.id_user);
@@ -102,16 +105,14 @@ export default function TicketDetailScreen({ route, navigation }) {
         }
 
         try {
-            const fetchedRating = await getRating(ticketId);
+            const fetchedRating = await getRating(ticketId, tenantToUse);
             if (fetchedRating && fetchedRating.vote) {
                 setRating(fetchedRating.vote);
                 setRatingSubmitted(true);
             }
-        } catch (e) {
-            console.log("Nessun rating o errore fetch", e);
-        }
+        } catch (e) { console.log("Nessun rating", e); }
 
-        const fetchedReplies = await getAllReplies(ticketId);
+        const fetchedReplies = await getAllReplies(ticketId, tenantToUse);
         setReplies(fetchedReplies);
 
         if (user?.role === 'responsabile' || user?.role === 'operatore') {
@@ -126,11 +127,8 @@ export default function TicketDetailScreen({ route, navigation }) {
       }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [ticketId]);
+  useEffect(() => { fetchData(); }, [ticketId, effectiveTenantId]);
 
-  // STATI: 1: Ricevuto, 2: In Lavorazione, 3: Risolto, 4: Chiuso
   const statusId = ticket?.id_status || 1;
   const isResolved = statusId >= 3;
   const isInProgress = statusId === 2;
@@ -139,13 +137,13 @@ export default function TicketDetailScreen({ route, navigation }) {
   const isCitizen = !user || user?.role === 'cittadino';
   const isManager = user?.role === 'responsabile'; 
 
+  // FUNZIONI RIPRISTINATE: Modifica/Eliminazione Reply
   const handleLongPressReply = (reply) => {
       const isMyReply = reply.id_creator_user === user?.id;
       if (!isMyReply) return;
 
       Alert.alert(
-          "Gestione Messaggio",
-          "Cosa vuoi fare?",
+          "Gestione Messaggio", "Cosa vuoi fare?",
           [
               { text: "Annulla", style: "cancel" },
               { text: "Modifica", onPress: () => openEditReplyModal(reply) },
@@ -164,7 +162,7 @@ export default function TicketDetailScreen({ route, navigation }) {
       if (!selectedReply || !editReplyText.trim()) return;
       setEditReplyModalVisible(false);
       setActionLoading(true);
-      const success = await updateReply(ticket.id, selectedReply.id, editReplyText);
+      const success = await updateReply(ticket.id, selectedReply.id, effectiveTenantId, editReplyText);
       setActionLoading(false);
       if (success) fetchData(); 
       else Alert.alert("Errore", "Impossibile modificare il messaggio.");
@@ -172,14 +170,12 @@ export default function TicketDetailScreen({ route, navigation }) {
 
   const confirmDeleteReply = (reply) => {
       Alert.alert(
-          "Elimina Messaggio",
-          "Sei sicuro di voler eliminare questo messaggio?",
+          "Elimina Messaggio", "Sei sicuro di voler eliminare questo messaggio?",
           [
               { text: "Annulla", style: "cancel" },
               { text: "Elimina", style: "destructive", onPress: async () => {
                   setActionLoading(true);
-                  const bodyText = reply.body || reply.text || reply.messaggio;
-                  const success = await deleteReply(ticket.id, reply.id, bodyText);
+                  const success = await deleteReply(ticket.id, reply.id, effectiveTenantId, user.id);
                   setActionLoading(false);
                   if (success) fetchData();
                   else Alert.alert("Errore", "Impossibile eliminare il messaggio.");
@@ -191,38 +187,31 @@ export default function TicketDetailScreen({ route, navigation }) {
   const handleSendComment = async () => {
     if(!newComment.trim()) return;
     setActionLoading(true);
-    const replyData = { body: newComment, type: 'USER' };
-    const success = await postReply(ticket.id, replyData);
+    const success = await postReply(ticket.id, effectiveTenantId, user.id, newComment);
     setActionLoading(false);
 
     if (success) {
         setNewComment('');
         fetchData(); 
-    } else {
-        Alert.alert("Errore", "Impossibile inviare il messaggio.");
-    }
+    } else Alert.alert("Errore", "Impossibile inviare il messaggio.");
   };
 
-  // OPERATORE: PRENDE IN CARICO
   const handleTakeCharge = async () => {
     Alert.alert("Inizia Lavoro", "Vuoi iniziare le operazioni per questo ticket? Lo stato passerà a 'In Lavorazione'.", [
         { text: "Annulla", style: "cancel" },
         { text: "Conferma", onPress: async () => {
             setActionLoading(true);
             try {
-                await updateTicketStatus(ticket.id, 2);
+                await updateTicketStatus(ticket.id, effectiveTenantId, 2);
                 fetchData();
                 Alert.alert("Successo", "Intervento in corso.");
-            } catch (error) {
-                Alert.alert("Errore", "Impossibile aggiornare lo stato.");
-            } finally {
-                setActionLoading(false);
-            }
+            } catch (error) { Alert.alert("Errore", "Impossibile aggiornare lo stato."); } 
+            finally { setActionLoading(false); }
         }}
     ]);
   };
 
-  // RIPRISTINATA FUNZIONE IMMAGINE
+  // FUNZIONE IMMAGINE REPORT RIPRISTINATA
   const pickReportImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -230,26 +219,21 @@ export default function TicketDetailScreen({ route, navigation }) {
       aspect: [4, 3],
       quality: 0.5,
     });
-    if (!result.canceled) {
-        setReportImage(result.assets[0]);
-    }
+    if (!result.canceled) setReportImage(result.assets[0]);
   };
 
-  // OPERATORE: CHIUSURA E REPORT
   const handleSubmitReportAndClose = async () => {
       if (!interventionReport.trim()) {
           Alert.alert("Attenzione", "Il rapporto di intervento testuale è obbligatorio.");
           return;
       }
-
       setReportModalVisible(false);
       setActionLoading(true);
 
       try {
-          const replyData = { body: `[RAPPORTO INTERVENTO]: ${interventionReport}`, type: 'REPORT' };
-          await postReply(ticket.id, replyData, reportImage ? [reportImage] : []);
-
-          await updateTicketStatus(ticket.id, 3);
+          const bodyText = `[RAPPORTO INTERVENTO]: ${interventionReport}`;
+          await postReply(ticket.id, effectiveTenantId, user.id, bodyText); // Foto mockata per ora
+          await updateTicketStatus(ticket.id, effectiveTenantId, 3);
 
           setInterventionReport('');
           setReportImage(null);
@@ -257,9 +241,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           Alert.alert("Ticket Chiuso", "L'intervento è stato registrato come risolto.");
       } catch (e) {
           Alert.alert("Errore", "Si è verificato un problema durante la chiusura.");
-      } finally {
-          setActionLoading(false);
-      }
+      } finally { setActionLoading(false); }
   };
 
   const toggleEditMode = () => {
@@ -267,17 +249,14 @@ export default function TicketDetailScreen({ route, navigation }) {
           setEditTitle(ticket.title);
           setEditDesc(ticket.description || "");
           setIsEditingTicket(false);
-      } else {
-          setIsEditingTicket(true);
-      }
+      } else setIsEditingTicket(true);
   };
 
   const handleSaveTicketDetails = async () => {
       if (!editTitle.trim()) return;
-
       setActionLoading(true);
       try {
-          const success = await updateTicketDetails(ticket.id, {
+          const success = await updateTicketDetails(ticket.id, effectiveTenantId, {
               title: editTitle,
               description: editDesc,
               categories: editCategoryId ? [editCategoryId] : []
@@ -288,16 +267,10 @@ export default function TicketDetailScreen({ route, navigation }) {
               setIsEditingTicket(false);
               fetchData();
           } else Alert.alert("Errore", "Aggiornamento fallito.");
-      } catch (e) {
-          Alert.alert("Errore", "Errore di connessione.");
-      } finally {
-          setActionLoading(false);
-      }
+      } catch (e) { Alert.alert("Errore", "Errore di connessione."); } 
+      finally { setActionLoading(false); }
   };
   
-  // ==========================================
-  // AZIONI RESPONSABILE: Assegnazione
-  // ==========================================
   const openAssignModal = async () => {
       setAssignModalVisible(true);
       if (operators.length === 0) {
@@ -306,11 +279,8 @@ export default function TicketDetailScreen({ route, navigation }) {
               const users = await getAllUsers();
               const opList = users.filter(u => u.role === 'operatore' || u.role === 2);
               setOperators(opList || []);
-          } catch (e) {
-              Alert.alert("Errore", "Impossibile caricare gli operatori.");
-          } finally {
-              setLoadingOperators(false);
-          }
+          } catch (e) { Alert.alert("Errore", "Impossibile caricare gli operatori."); } 
+          finally { setLoadingOperators(false); }
       }
   };
 
@@ -318,18 +288,13 @@ export default function TicketDetailScreen({ route, navigation }) {
       setAssignModalVisible(false);
       setActionLoading(true);
       try {
-          const success = await createAssignment(ticket.id, operatorId);
+          const success = await createAssignment(ticket.id, operatorId, effectiveTenantId);
           if (success) {
               Alert.alert("Assegnato", "Il ticket è stato assegnato all'operatore.");
               fetchData(); 
-          } else {
-              Alert.alert("Errore", "Assegnazione fallita.");
-          }
-      } catch (error) {
-          Alert.alert("Errore", "Assegnazione fallita.");
-      } finally {
-          setActionLoading(false);
-      }
+          } else Alert.alert("Errore", "Assegnazione fallita.");
+      } catch (error) { Alert.alert("Errore", "Assegnazione fallita."); } 
+      finally { setActionLoading(false); }
   };
 
   const handleRemoveAssignment = () => {
@@ -338,16 +303,13 @@ export default function TicketDetailScreen({ route, navigation }) {
           { text: "Rimuovi", style: 'destructive', onPress: async () => {
               setActionLoading(true);
               try {
-                  await deleteAssignment(ticket.id);
-                  await updateTicketStatus(ticket.id, 1);
+                  await deleteAssignment(ticket.id, assignedOperator.id, effectiveTenantId);
+                  await updateTicketStatus(ticket.id, effectiveTenantId, 1);
                   Alert.alert("Successo", "Assegnazione rimossa.");
                   setAssignedOperator(null);
                   fetchData();
-              } catch(e) {
-                  Alert.alert("Errore", "Impossibile rimuovere l'assegnazione.");
-              } finally {
-                  setActionLoading(false);
-              }
+              } catch(e) { Alert.alert("Errore", "Impossibile rimuovere l'assegnazione."); } 
+              finally { setActionLoading(false); }
           }}
       ]);
   };
@@ -370,7 +332,8 @@ export default function TicketDetailScreen({ route, navigation }) {
         { text: "Invia", onPress: async () => {
             setRating(stars);
             setActionLoading(true);
-            const success = await sendFeedback(ticket.id, stars);
+            const reportReplyId = replies.length > 0 ? replies[replies.length - 1].id : null; 
+            const success = await sendFeedback(ticket.id, effectiveTenantId, stars, reportReplyId);
             setActionLoading(false);
             
             if (success) {
@@ -423,6 +386,7 @@ export default function TicketDetailScreen({ route, navigation }) {
 
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
         
+        {/* IMMAGINE DI COPERTINA RIPRISTINATA */}
         {ticket.images && ticket.images.length > 0 ? (
           <Image source={{ uri: ticket.images[0] }} style={styles.coverImg} />
         ) : (
@@ -458,7 +422,6 @@ export default function TicketDetailScreen({ route, navigation }) {
                       ))}
                   </ScrollView>
 
-                  {/* CAMPO DESCRIZIONE RIPRISTINATO */}
                   <Text style={styles.labelInput}>Modifica Descrizione:</Text>
                   <TextInput style={[styles.editInput, {height: 80, textAlignVertical:'top'}]} multiline value={editDesc} onChangeText={setEditDesc} />
                   
@@ -487,9 +450,8 @@ export default function TicketDetailScreen({ route, navigation }) {
 
                 <View style={styles.metaInfo}>
                     <Text style={styles.metaText}>
-                        <Ionicons name="calendar-outline" size={12} /> {ticket.creation_date ? new Date(ticket.creation_date).toLocaleDateString() : 'Data N/D'}
+                        <Ionicons name="calendar-outline" size={12} /> {ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : 'Data N/D'}
                     </Text>
-                    {/* INFO UTENTE RIPRISTINATE */}
                     <Text style={styles.metaText}>
                         <Ionicons name="person-outline" size={12} /> {ticket.creator_id || 'Utente'}
                     </Text>
@@ -504,7 +466,6 @@ export default function TicketDetailScreen({ route, navigation }) {
                     </View>
                 )}
 
-                {/* DESCRIZIONE RIPRISTINATA */}
                 <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
                 <Text style={styles.desc}>{ticket.description || "Nessuna descrizione."}</Text>
               </>
@@ -616,7 +577,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                         {r.user_name || (r.id_creator_user === user?.id ? 'Tu' : 'Utente')}
                     </Text>
                     <Text style={styles.msgText}>{r.body || r.text || r.messaggio}</Text>
-                    <Text style={styles.msgDate}>{r.date ? new Date(r.date).toLocaleDateString() : ''}</Text>
+                    <Text style={styles.msgDate}>{r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</Text>
                 </TouchableOpacity>
               ))
           )}
@@ -632,7 +593,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           </View>
       )}
 
-      {/* MODALE REPORT RIPRISTINATO CON FOTO */}
+      {/* MODALE REPORT */}
       <Modal animationType="slide" transparent={true} visible={reportModalVisible} onRequestClose={() => setReportModalVisible(false)}>
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
@@ -717,6 +678,7 @@ export default function TicketDetailScreen({ route, navigation }) {
   );
 }
 
+// STILI ORIGINALI INTATTI
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { paddingTop: 40, paddingBottom: 15, paddingHorizontal: 15, backgroundColor: COLORS.primary || '#D32F2F', flexDirection: 'row', alignItems: 'center', elevation: 4 },

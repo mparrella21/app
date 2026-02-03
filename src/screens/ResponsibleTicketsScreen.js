@@ -1,14 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView, Modal, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getAllTickets, closeTicket, getCategories } from '../services/ticketService';
-import { getOperators } from '../services/userService'; 
-import { createAssignment } from '../services/interventionService';
 import { COLORS } from '../styles/global';
-import { OFFLINE_MODE } from '../services/config';
+
+// IMPORT SERVIZI AGGIORNATI
+import { getAllTickets, closeTicket, getCategories } from '../services/ticketService';
+import { getOperatorsByTenant } from '../services/userService'; 
+import { createAssignment } from '../services/interventionService';
+import { AuthContext } from '../context/AuthContext';
 import EmptyState from '../component/EmptyState';
 
 export default function ResponsibleTicketsScreen({ navigation }) {
+  const { user } = useContext(AuthContext); // Importante per prendere il tenant_id
+
   const [allTickets, setAllTickets] = useState([]);
   const [filteredTickets, setFilteredTickets] = useState([]);
   
@@ -27,7 +31,7 @@ export default function ResponsibleTicketsScreen({ navigation }) {
       total: 0, 
       open: 0, 
       closed: 0, 
-      avgResolutionDays: 0 // Aggiunto per IF-3.7
+      avgResolutionDays: 0 // IF-3.7
   });
 
   // Stati Modale Assegnazione
@@ -37,22 +41,21 @@ export default function ResponsibleTicketsScreen({ navigation }) {
   const loadData = async () => {
     setLoading(true);
     try {
-      // 1. Carica Ticket
-      let t = await getAllTickets();
-      setAllTickets(t);
-      calculateStats(t); // Calcolo Stats complete
-      
-      // 2. Carica Operatori
-      if (!OFFLINE_MODE) {
-          const ops = await getOperators();
+      if (user?.tenant_id) {
+          // 1. Carica Ticket (Passando il tenant_id)
+          let t = await getAllTickets(user.tenant_id);
+          setAllTickets(t);
+          calculateStats(t); 
+          
+          // 2. Carica Operatori (Passando il tenant_id)
+          const ops = await getOperatorsByTenant(user.tenant_id);
           setOperators(ops);
+
+          // 3. Carica Categorie
+          const cats = await getCategories();
+          const catList = cats.map(c => (typeof c === 'object' ? c.label : c));
+          setCategories(['Tutte', ...catList]);
       }
-
-      // 3. Carica Categorie
-      const cats = await getCategories();
-      const catList = cats.map(c => (typeof c === 'object' ? c.label : c));
-      setCategories(['Tutte', ...catList]);
-
     } catch (e) {
       console.error("Errore caricamento responsabile:", e);
     } finally {
@@ -62,14 +65,14 @@ export default function ResponsibleTicketsScreen({ navigation }) {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [user]);
 
-  // FIX: Dashboard Statistiche (IF-3.7) - Calcolo Tempo Medio
+  // Dashboard Statistiche (IF-3.7) - Calcolo Tempo Medio
   const calculateStats = (tickets) => {
       const total = tickets.length;
-      const open = tickets.filter(t => ['OPEN', 'APERTO', 'RICEVUTO'].includes((t.status||'').toUpperCase())).length;
-      
-      const closedTickets = tickets.filter(t => ['CLOSED', 'RISOLTO', 'CHIUSO'].includes((t.status||'').toUpperCase()));
+      // Adattiamo lo status_id (1=Aperto, 2=In Lavorazione, 3=Risolto)
+      const open = tickets.filter(t => t.id_status === 1 || t.id_status === 2).length;
+      const closedTickets = tickets.filter(t => t.id_status === 3 || t.id_status === 4);
       const closed = closedTickets.length;
 
       // Calcolo Tempo Medio Risoluzione (Giorni)
@@ -77,10 +80,8 @@ export default function ResponsibleTicketsScreen({ navigation }) {
       let countWithDates = 0;
 
       closedTickets.forEach(t => {
-          // Nota: Si assume che il backend aggiorni 'updated_at' o fornisca 'closed_at' alla chiusura.
-          // In mancanza, usiamo l'ultima data disponibile o ignoriamo se mancano dati.
-          const start = new Date(t.creation_date || t.timestamp);
-          const end = t.closed_at ? new Date(t.closed_at) : (t.updated_at ? new Date(t.updated_at) : new Date());
+          const start = new Date(t.created_at || t.timestamp);
+          const end = t.updated_at ? new Date(t.updated_at) : new Date();
           
           if (!isNaN(start) && !isNaN(end) && end > start) {
               const diffTime = Math.abs(end - start);
@@ -99,25 +100,21 @@ export default function ResponsibleTicketsScreen({ navigation }) {
   useEffect(() => {
     let result = allTickets;
 
-    // 1. Filtro per Stato
+    // 1. Filtro per Stato (Adattato ai nuovi ID di stato)
     if (filterStatus !== 'Tutti') {
-      let targetStatus = filterStatus;
-      if (filterStatus === 'Aperti') targetStatus = 'OPEN';
       result = result.filter(t => {
-         const s = (t.status || '').toUpperCase();
-         // Mappatura semplificata per UI
-         if (filterStatus === 'Aperti') return ['OPEN', 'APERTO', 'RICEVUTO'].includes(s);
-         if (filterStatus === 'Risolti') return ['CLOSED', 'RISOLTO', 'CHIUSO'].includes(s);
-         if (filterStatus === 'In Corso') return ['WORKING', 'IN CORSO', 'ASSEGNATO'].includes(s);
-         return s === targetStatus.toUpperCase();
+         if (filterStatus === 'Aperti') return t.id_status === 1;
+         if (filterStatus === 'In Corso') return t.id_status === 2;
+         if (filterStatus === 'Risolti') return t.id_status === 3 || t.id_status === 4;
+         return true;
       });
     }
 
     // 2. Filtro per Categoria
     if (filterCategory !== 'Tutte') {
       result = result.filter(t => {
-         const c = t.category || t.categoria || '';
-         return c.toLowerCase() === filterCategory.toLowerCase();
+         const catName = (t.categories && t.categories.length > 0) ? t.categories[0].label : 'Generico';
+         return catName.toLowerCase() === filterCategory.toLowerCase();
       });
     }
 
@@ -125,7 +122,7 @@ export default function ResponsibleTicketsScreen({ navigation }) {
     if (filterTime !== 'Tutto') {
         const now = new Date();
         result = result.filter(t => {
-            const tDate = new Date(t.creation_date || t.timestamp || t.date);
+            const tDate = new Date(t.created_at || t.timestamp);
             const diffTime = Math.abs(now - tDate);
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
             
@@ -145,9 +142,9 @@ export default function ResponsibleTicketsScreen({ navigation }) {
   };
 
   const handleAssign = async (operatorId) => {
-      if (!selectedTicket) return;
-      // Assegnazione tramite Intervention Service (coerente con Architettura)
-      const success = await createAssignment(selectedTicket.id, operatorId);
+      if (!selectedTicket || !user?.tenant_id) return;
+      // MODIFICA: Assegnazione con tenant_id
+      const success = await createAssignment(selectedTicket.id, operatorId, user.tenant_id);
       if (success) {
           Alert.alert("Successo", "Intervento assegnato!");
           setModalVisible(false);
@@ -158,7 +155,8 @@ export default function ResponsibleTicketsScreen({ navigation }) {
   };
 
   const handleClose = async (id) => {
-    const ok = await closeTicket(id);
+    // MODIFICA: Chiusura con tenant_id
+    const ok = await closeTicket(id, user.tenant_id);
     if (ok) {
       loadData();
       Alert.alert('Successo', 'Ticket chiuso con successo');
@@ -187,7 +185,7 @@ export default function ResponsibleTicketsScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* DASHBOARD STATISTICHE (IF-3.7 & Project Assignment p.6) */}
+      {/* DASHBOARD STATISTICHE (IF-3.7) RIPRISTINATA */}
       <View style={styles.statsContainer}>
           <View style={styles.statBox}>
               <Text style={styles.statNumber}>{stats.total}</Text>
@@ -201,14 +199,13 @@ export default function ResponsibleTicketsScreen({ navigation }) {
               <Text style={[styles.statNumber, {color: 'green'}]}>{stats.closed}</Text>
               <Text style={styles.statLabel}>Risolti</Text>
           </View>
-          {/* Nuovo Box Tempo Medio */}
           <View style={styles.statBox}>
               <Text style={[styles.statNumber, {color: '#F59E0B'}]}>{stats.avgResolutionDays}g</Text>
               <Text style={styles.statLabel}>T. Medio</Text>
           </View>
       </View>
       
-      {/* Area Filtri */}
+      {/* AREA FILTRI RIPRISTINATA */}
       <View style={styles.filtersWrapper}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollFilters}>
           <FilterTab label="Tutti" selected={filterStatus} onSelect={setFilterStatus} />
@@ -237,44 +234,49 @@ export default function ResponsibleTicketsScreen({ navigation }) {
             data={filteredTickets} 
             keyExtractor={i => String(i.id)} 
             contentContainerStyle={{paddingBottom: 20}}
-            renderItem={({item}) => (
-            <View style={styles.cardWrapper}>
-                <TouchableOpacity style={styles.card} onPress={()=> navigation.navigate('TicketDetail', { ticketId: item.id })}>
-                <View style={styles.cardHeader}>
-                    <Text style={styles.itemTitle}>{item.title}</Text>
-                    <View style={[styles.statusBadge, {backgroundColor: getStatusColor(item.status)}]}>
-                    <Text style={styles.statusText}>{item.status}</Text>
-                    </View>
-                </View>
-                <View style={{flexDirection:'row', justifyContent:'space-between', marginTop: 4}}>
-                    <Text style={styles.itemSub}>{new Date(item.creation_date || item.timestamp).toLocaleDateString()}</Text>
-                    <Text style={[styles.itemSub, {fontWeight:'bold', color: COLORS.primary}]}>
-                        {item.category || 'N/A'}
-                    </Text>
-                </View>
-                <Text style={styles.itemSub}>{item.author || 'Cittadino'}</Text>
-                </TouchableOpacity>
-                
-                <View style={styles.actionRow}>
-                    {(['OPEN', 'APERTO', 'RICEVUTO'].includes((item.status||'').toUpperCase())) && (
-                        <TouchableOpacity style={[styles.btnSmall, {backgroundColor: '#007BFF', marginRight: 8}]} onPress={() => openAssignModal(item)}>
-                            <Text style={styles.btnTextSmall}>Assegna</Text>
+            renderItem={({item}) => {
+                const statusText = item.id_status === 1 ? 'APERTO' : item.id_status === 2 ? 'IN CORSO' : 'RISOLTO';
+                const catName = (item.categories && item.categories.length > 0) ? item.categories[0].label : 'Generico';
+
+                return (
+                    <View style={styles.cardWrapper}>
+                        <TouchableOpacity style={styles.card} onPress={()=> navigation.navigate('TicketDetail', { id: item.id })}>
+                        <View style={styles.cardHeader}>
+                            <Text style={styles.itemTitle}>{item.title}</Text>
+                            <View style={[styles.statusBadge, {backgroundColor: getStatusColor(item.id_status)}]}>
+                            <Text style={styles.statusText}>{statusText}</Text>
+                            </View>
+                        </View>
+                        <View style={{flexDirection:'row', justifyContent:'space-between', marginTop: 4}}>
+                            <Text style={styles.itemSub}>{new Date(item.created_at).toLocaleDateString()}</Text>
+                            <Text style={[styles.itemSub, {fontWeight:'bold', color: COLORS.primary}]}>
+                                {catName}
+                            </Text>
+                        </View>
+                        <Text style={styles.itemSub}>{item.creator_id || 'Cittadino'}</Text>
                         </TouchableOpacity>
-                    )}
-                    
-                    {!['RISOLTO', 'CHIUSO', 'CLOSED'].includes((item.status||'').toUpperCase()) && (
-                    <TouchableOpacity style={[styles.btnSmall, {backgroundColor: COLORS.primary}]} onPress={() => handleClose(item.id)}>
-                        <Text style={styles.btnTextSmall}>Chiudi</Text>
-                    </TouchableOpacity>
-                    )}
-                </View>
-            </View>
-            )} 
+                        
+                        <View style={styles.actionRow}>
+                            {item.id_status === 1 && (
+                                <TouchableOpacity style={[styles.btnSmall, {backgroundColor: '#007BFF', marginRight: 8}]} onPress={() => openAssignModal(item)}>
+                                    <Text style={styles.btnTextSmall}>Assegna</Text>
+                                </TouchableOpacity>
+                            )}
+                            
+                            {item.id_status !== 3 && item.id_status !== 4 && (
+                            <TouchableOpacity style={[styles.btnSmall, {backgroundColor: COLORS.primary}]} onPress={() => handleClose(item.id)}>
+                                <Text style={styles.btnTextSmall}>Chiudi</Text>
+                            </TouchableOpacity>
+                            )}
+                        </View>
+                    </View>
+                );
+            }} 
             ListEmptyComponent={<EmptyState text="Nessun ticket trovato con questi filtri" />} 
         />
       )}
 
-      {/* MODAL ASSEGNAZIONE */}
+      {/* MODAL ASSEGNAZIONE RIPRISTINATA */}
       <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
@@ -292,8 +294,8 @@ export default function ResponsibleTicketsScreen({ navigation }) {
                             <Ionicons name="person-circle-outline" size={36} color={COLORS.primary} />
                             <View style={{marginLeft: 12}}>
                                 <Text style={styles.operatorName}>{item.name} {item.surname}</Text>
-                                <Text style={styles.operatorRole}>{item.role || 'Operatore'}</Text>
-                                {/* IF-3.5: Visualizziamo la categoria dell'operatore per aiutare l'assegnazione */}
+                                <Text style={styles.operatorRole}>Operatore</Text>
+                                {/* IF-3.5: Categoria operatore */}
                                 <Text style={styles.operatorCat}>{item.category || 'Generico'}</Text>
                             </View>
                             <Ionicons name="chevron-forward" size={20} color="#ccc" style={{marginLeft:'auto'}} />
@@ -311,12 +313,11 @@ export default function ResponsibleTicketsScreen({ navigation }) {
   )
 }
 
-const getStatusColor = (s) => {
-  if(!s) return '#999';
-  const status = s.toUpperCase();
-  if(status === 'RISOLTO' || status === 'CHIUSO' || status === 'CLOSED') return '#4CAF50'; 
-  if(status === 'IN CORSO' || status === 'WORKING' || status === 'ASSEGNATO') return '#F59E0B'; 
-  return '#D32F2F'; 
+// Helpers e Stili originali intatti
+const getStatusColor = (statusId) => {
+  if(statusId === 3 || statusId === 4) return '#4CAF50'; // Risolto
+  if(statusId === 2) return '#F59E0B'; // In Corso
+  return '#D32F2F'; // Aperto
 };
 
 const styles = StyleSheet.create({

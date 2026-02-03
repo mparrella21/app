@@ -2,12 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Image, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
+import * as ImagePicker from 'expo-image-picker'; // RIPRISTINATO
 import * as Location from 'expo-location';
 
-import { getCategories } from '../services/ticketService'; 
-import { interventionService } from '../services/interventionService'; 
-import { searchTenantByCoordinates } from '../services/tenantService'; // IMPORTIAMO LA RICERCA TENANT
+import { getCategories, postTicket } from '../services/ticketService'; 
+import { searchTenantByCoordinates } from '../services/tenantService'; 
 import { useAuth } from '../context/AuthContext';
 
 export default function CreateTicketScreen({ navigation, route }) {
@@ -31,7 +30,7 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    // Gestione Posizione (Uguale a prima)
+    // Gestione Posizione
     if (initialLat && initialLng) {
       setCoords({ lat: initialLat, lng: initialLng });
       fetchAddress(initialLat, initialLng);
@@ -117,7 +116,6 @@ export default function CreateTicketScreen({ navigation, route }) {
 
     try {
       // 1. RICERCA DEL COMUNE (TENANT) TRAMITE COORDINATE
-      // Poiché il cittadino non ha tenant fisso, capiamo dove si trova ora.
       const tenantData = await searchTenantByCoordinates(coords.lat, coords.lng);
 
       if (!tenantData || !tenantData.tenant || !tenantData.tenant.id) {
@@ -126,24 +124,16 @@ export default function CreateTicketScreen({ navigation, route }) {
         return;
       }
 
-      // 2. CREAZIONE DEL PAYLOAD
-      const currentTenantId = tenantData.tenant.id;
-      const selectedCategoryLabel = categories.find(c => c.id === selectedCatId)?.label || 'Altro';
-
+      // 2. CREAZIONE DEL PAYLOAD (usando il servizio aggiornato)
       const ticketData = {
-        tenant_id: currentTenantId,      // <-- ID DEL COMUNE CALCOLATO DALLE COORDINATE
-        creator_id: user.id,             // <-- ID DEL CITTADINO
-        category_id: selectedCatId,      // <-- ID DELLA CATEGORIA (Gestito dai numeri)
-        category: selectedCategoryLabel, 
-        description: `${title} - ${desc}`, 
-        location: address,
-        latitude: coords.lat,
-        longitude: coords.lng,
-        status: 'Aperto'
+        title: `${title} - ${desc}`,
+        lat: coords.lat,
+        lon: coords.lng,
+        categories: [selectedCatId]
       };
 
-      // 3. INVIO AL SERVER
-      const success = await interventionService.createIntervention(ticketData);
+      // 3. INVIO AL SERVER (usando postTicket con tenant_id)
+      const success = await postTicket(ticketData, tenantData.tenant.id);
       
       if (success) {
         Alert.alert("Successo", `Segnalazione inviata correttamente al comune di: ${tenantData.tenant.name}`);
@@ -259,6 +249,7 @@ export default function CreateTicketScreen({ navigation, route }) {
   );
 }
 
+// STILI ORIGINALI INTATTI
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, backgroundColor: 'white', elevation: 2 },
