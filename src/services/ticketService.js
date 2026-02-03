@@ -133,7 +133,7 @@ export const deleteCategory = async (id, label) => {
 
 // --- TICKETS POST/PUT/DELETE ---
 
-// MODIFICA: Inserito tenantId
+// MODIFICA: Inserito tenantId - IL CITTADINO LO INVIA CORRETTAMENTE QUI
 export const postTicket = async (ticketData, tenantId, photos = []) => {
   try {
     const userStr = await AsyncStorage.getItem('app_user');
@@ -148,7 +148,7 @@ export const postTicket = async (ticketData, tenantId, photos = []) => {
         lon: parseFloat(ticketData.lon),
         categories: categoryIds, 
         user: userObj.id,
-        tenant_id: tenantId // IL CITTADINO DEVE MANDARE IL TENANT
+        tenant_id: tenantId 
     };
 
     const response = await authenticatedFetch(`${API_BASE}/ticket`, {

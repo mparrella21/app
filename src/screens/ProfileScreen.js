@@ -3,8 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-// FIX: Importata la funzione corretta
-import { updateProfile } from '../services/userService';
+import { updateProfile, deleteUser } from '../services/userService';
 
 export default function ProfileScreen({ navigation }) {
   const { user, logout, setUser } = useAuth(); 
@@ -49,6 +48,34 @@ export default function ProfileScreen({ navigation }) {
     );
   };
 
+  // NUOVA FUNZIONE: ELIMINA ACCOUNT (Requisito Profilo)
+  const handleDeleteAccount = () => {
+    Alert.alert(
+        "Elimina Account",
+        "ATTENZIONE: Questa operazione è irreversibile. Tutti i tuoi dati e i ticket aperti verranno scollegati o eliminati. Vuoi procedere?",
+        [
+            { text: "Annulla", style: "cancel" },
+            { 
+                text: "Sì, Elimina", 
+                style: "destructive", 
+                onPress: async () => {
+                    setIsLoading(true);
+                    const success = await deleteUser(user.id);
+                    setIsLoading(false);
+
+                    if (success) {
+                        Alert.alert("Account Eliminato", "Il tuo account è stato rimosso con successo.");
+                        logout();
+                        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                    } else {
+                        Alert.alert("Errore", "Impossibile eliminare l'account. Riprova più tardi.");
+                    }
+                }
+            }
+        ]
+    );
+  };
+
   const toggleEdit = () => {
     if (!isEditing) {
         setEditName(user.name);
@@ -79,7 +106,7 @@ export default function ProfileScreen({ navigation }) {
         password: newPassword ? newPassword : undefined 
     };
 
-    // FIX: Chiamata alla funzione corretta `updateProfile`
+    // Chiamata alla funzione corretta updateProfile
     const success = await updateProfile(user.id, payload);
 
     setIsLoading(false);
@@ -252,6 +279,17 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.logoutText}>ESCI</Text>
         </TouchableOpacity>
 
+        {/* NUOVO: ZONA PERICOLOSA ELIMINAZIONE ACCOUNT */}
+        {isEditing && (
+            <View style={styles.dangerZone}>
+                <Text style={styles.dangerTitle}>Zona Pericolosa</Text>
+                <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteAccount} disabled={isLoading}>
+                    <Ionicons name="trash-outline" size={20} color="white" style={{marginRight: 8}} />
+                    <Text style={styles.deleteText}>ELIMINA ACCOUNT DEFINITIVAMENTE</Text>
+                </TouchableOpacity>
+            </View>
+        )}
+
       </ScrollView>
     </View>
   );
@@ -286,5 +324,11 @@ const styles = StyleSheet.create({
   value: { fontSize: 15, color: '#333', fontWeight: '500' },
   divider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 10 },
   logoutBtn: { backgroundColor: '#ffebee', padding: 15, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#ffcdd2', marginTop: 10, marginBottom: 30 },
-  logoutText: { color: '#d32f2f', fontWeight: 'bold', fontSize: 16 }
+  logoutText: { color: '#d32f2f', fontWeight: 'bold', fontSize: 16 },
+  
+  // Stili per Zona Pericolosa
+  dangerZone: { marginTop: 20, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#FECACA' },
+  dangerTitle: { color: '#DC2626', fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
+  deleteBtn: { flexDirection: 'row', backgroundColor: '#DC2626', padding: 15, borderRadius: 10, justifyContent: 'center', alignItems: 'center', elevation: 2 },
+  deleteText: { color: 'white', fontWeight: 'bold', fontSize: 14 }
 });

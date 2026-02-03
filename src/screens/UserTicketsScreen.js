@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext'; 
@@ -8,7 +8,11 @@ import { getUserTickets } from '../services/ticketService';
 export default function UserTicketsScreen({ navigation }) {
   const { user } = useAuth(); 
   const [myTickets, setMyTickets] = useState([]);
+  const [filteredTickets, setFilteredTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  // NUOVO: Stato per il filtro attivo
+  const [filterStatus, setFilterStatus] = useState('Tutti');
 
   const loadTickets = async () => {
     if (!user) return;
@@ -17,6 +21,8 @@ export default function UserTicketsScreen({ navigation }) {
       // Chiama il servizio filtrato per utente (Corretto per Requisito IF-2.4)
       const tickets = await getUserTickets(user.id);
       setMyTickets(tickets);
+      setFilteredTickets(tickets); // Di default mostra tutti
+      setFilterStatus('Tutti');
     } catch (error) {
       console.error("Errore caricamento ticket personali:", error);
     } finally {
@@ -31,6 +37,22 @@ export default function UserTicketsScreen({ navigation }) {
     return unsubscribe;
   }, [navigation, user]);
 
+  // NUOVO: Effetto per filtrare la lista in base al tab selezionato
+  useEffect(() => {
+    if (filterStatus === 'Tutti') {
+      setFilteredTickets(myTickets);
+    } else {
+      const filtered = myTickets.filter(ticket => {
+        const s = (ticket.status || ticket.stato || '').toLowerCase();
+        if (filterStatus === 'Aperti') return s === 'aperto' || s === 'open' || s === 'ricevuto';
+        if (filterStatus === 'In Lavorazione') return s === 'in corso' || s === 'in_progress' || s === 'assegnato' || s === 'working';
+        if (filterStatus === 'Risolti') return s === 'risolto' || s === 'resolved' || s === 'chiuso' || s === 'closed';
+        return false;
+      });
+      setFilteredTickets(filtered);
+    }
+  }, [filterStatus, myTickets]);
+
   const getStatusColor = (status) => {
     const s = status ? String(status).toLowerCase() : '';
     if (s === 'aperto' || s === 'open') return '#D32F2F'; 
@@ -38,6 +60,18 @@ export default function UserTicketsScreen({ navigation }) {
     if (s === 'risolto' || s === 'resolved' || s === 'chiuso') return '#4CAF50'; 
     return '#999';
   };
+
+  // NUOVO: Componente per i Tab di Filtro
+  const FilterTab = ({ label }) => (
+    <TouchableOpacity 
+      style={[styles.filterTab, filterStatus === label && styles.activeFilterTab]} 
+      onPress={() => setFilterStatus(label)}
+    >
+      <Text style={[styles.filterText, filterStatus === label && styles.activeFilterText]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
 
   const renderItem = ({ item }) => (
     <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('TicketDetail', { id: item.id })}>
@@ -75,6 +109,16 @@ export default function UserTicketsScreen({ navigation }) {
         </View>
       </SafeAreaView>
 
+      {/* NUOVO: Barra dei filtri orizzontale */}
+      <View style={styles.filtersWrapper}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scrollFilters}>
+          <FilterTab label="Tutti" />
+          <FilterTab label="Aperti" /> 
+          <FilterTab label="In Lavorazione" />
+          <FilterTab label="Risolti" />
+        </ScrollView>
+      </View>
+
       {loading ? (
         <View style={{flex:1, justifyContent:'center', alignItems:'center'}}>
             <ActivityIndicator size="large" color="#467599" />
@@ -82,7 +126,7 @@ export default function UserTicketsScreen({ navigation }) {
         </View>
       ) : (
         <FlatList
-          data={myTickets}
+          data={filteredTickets}
           renderItem={renderItem}
           keyExtractor={item => item.id ? item.id.toString() : Math.random().toString()}
           contentContainerStyle={styles.listContent}
@@ -91,7 +135,9 @@ export default function UserTicketsScreen({ navigation }) {
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={50} color="#ccc" />
-              <Text style={styles.emptyText}>Non hai ancora inviato segnalazioni.</Text>
+              <Text style={styles.emptyText}>
+                {filterStatus === 'Tutti' ? "Non hai ancora inviato segnalazioni." : `Nessuna segnalazione "${filterStatus}".`}
+              </Text>
             </View>
           }
         />
@@ -105,6 +151,15 @@ const styles = StyleSheet.create({
   header: { backgroundColor: '#1F2937', paddingBottom: 15, elevation: 5 },
   headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: 'white' },
+  
+  // NUOVO: Stili per i filtri
+  filtersWrapper: { backgroundColor: 'white', paddingVertical: 10, elevation: 2 },
+  scrollFilters: { paddingHorizontal: 15 },
+  filterTab: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#E0E0E0', marginRight: 8, justifyContent:'center' },
+  activeFilterTab: { backgroundColor: '#467599' },
+  filterText: { color: '#333', fontWeight: '600', fontSize: 13 },
+  activeFilterText: { color: 'white' },
+
   listContent: { padding: 15 },
   
   // Ripristinate le ombreggiature più ricche per iOS (shadow*)
