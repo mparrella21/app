@@ -14,9 +14,21 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.marcoparrella.civitas",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Civitas ha bisogno di accedere alla fotocamera per permetterti di scattare foto alle segnalazioni.",
+        "NSLocationWhenInUseUsageDescription": "Civitas utilizza la tua posizione per localizzare con precisione l'intervento di manutenzione."
+      }
     },
     "android": {
+      "package": "com.mparrella21.civitas",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "FOREGROUND_SERVICE"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -27,7 +39,24 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-web-browser"
-    ]
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Consenti a Civitas di utilizzare la fotocamera."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Consenti a Civitas di utilizzare la tua posizione."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "cb986715-92b1-46aa-a83a-988a81630fe5"
+      }
+    }
   }
 }

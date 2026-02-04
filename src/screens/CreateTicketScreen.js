@@ -19,7 +19,6 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [desc, setDesc] = useState('');
   
   const [categories, setCategories] = useState([]);
-  // MODIFICA: Ora è un array per gestire selezione multipla
   const [selectedCatIds, setSelectedCatIds] = useState([]); 
   const [loadingCats, setLoadingCats] = useState(false);
 
@@ -53,8 +52,6 @@ export default function CreateTicketScreen({ navigation, route }) {
           const apiCats = await getCategories();
           if (Array.isArray(apiCats) && apiCats.length > 0) {
               setCategories(apiCats);
-              // Opzionale: Se vuoi preselezionare la prima categoria, scommenta sotto
-              // setSelectedCatIds([apiCats[0].id]); 
           } else {
               Alert.alert("Attenzione", "Impossibile caricare le categorie dal server.");
           }
@@ -65,13 +62,10 @@ export default function CreateTicketScreen({ navigation, route }) {
       }
   };
 
-  // Funzione per gestire la selezione/deselezione multipla
   const toggleCategory = (id) => {
       if (selectedCatIds.includes(id)) {
-          // Se c'è già, lo rimuovo
           setSelectedCatIds(prev => prev.filter(cId => cId !== id));
       } else {
-          // Se non c'è, lo aggiungo
           setSelectedCatIds(prev => [...prev, id]);
       }
   };
@@ -94,7 +88,6 @@ export default function CreateTicketScreen({ navigation, route }) {
     }
   };
 
-  // RIPRISTINATO: Gestione menu foto (Galleria/Annulla)
   const handlePhotoAction = async () => {
     Alert.alert(
       "Aggiungi Foto",
@@ -115,13 +108,12 @@ export default function CreateTicketScreen({ navigation, route }) {
     });
     if (!result.canceled) {
         setImages([result.assets[0]]);
-        Alert.alert("Info", "Al momento il server non supporta il caricamento foto. La foto non verrà inviata.");
     } 
   };
 
+  // --- LOGICA DI INVIO AGGIORNATA (3 STEP SEQUENZIALI) ---
   const handleSubmit = async () => {
     if (!title) return Alert.alert("Attenzione", "Inserisci almeno il titolo!");
-    // MODIFICA: Controllo se l'array è vuoto
     if (selectedCatIds.length === 0) return Alert.alert("Attenzione", "Seleziona almeno una categoria!");
     if (!coords.lat || !coords.lng) return Alert.alert("Attenzione", "Posizione non rilevata.");
 
@@ -139,8 +131,7 @@ export default function CreateTicketScreen({ navigation, route }) {
 
       const tenantId = tenantData.tenant.id;
 
-      // 2. CREA IL TICKET 
-      // Inviamo l'array di categorie selezionate
+      // 2. CREA IL TICKET (Metadato)
       const ticketPayload = {
         title: title, 
         lat: coords.lat,
@@ -151,12 +142,21 @@ export default function CreateTicketScreen({ navigation, route }) {
       const createdTicket = await postTicket(ticketPayload, tenantId);
       
       if (createdTicket) {
-          // 3. SE C'È UNA DESCRIZIONE, CREA LA PRIMA REPLY
+          const ticketId = createdTicket.id || createdTicket.insertId; 
+
+          // 3a. REPLY 1: TITOLO (Sempre, come richiesto)
+          // Usiamo await per garantire l'ordine
+          await postReply(ticketId, tenantId, user.id, title);
+
+          // 3b. REPLY 2: DESCRIZIONE (Solo se c'è testo aggiuntivo)
           if (desc && desc.trim().length > 0) {
-              const ticketId = createdTicket.id || createdTicket.insertId; 
-              if(ticketId) {
-                  await postReply(ticketId, tenantId, user.id, desc);
-              }
+             await postReply(ticketId, tenantId, user.id, desc);
+          }
+
+          // 3c. REPLY 3: FOTO (Solo se c'è foto) - Inviata separatamente
+          if (images.length > 0) {
+             // Manda la foto. La stringa vuota "" serve perché il body è obbligatorio nel FormData
+             await postReply(ticketId, tenantId, user.id, "", images);
           }
 
           Alert.alert("Successo", `Segnalazione inviata a: ${tenantData.tenant.name}`);
@@ -184,7 +184,6 @@ export default function CreateTicketScreen({ navigation, route }) {
         </View>
 
         <ScrollView contentContainerStyle={styles.formContainer}>
-          {/* RIPRISTINATO: onPress chiama handlePhotoAction */}
           <TouchableOpacity style={styles.photoBox} onPress={handlePhotoAction}>
             {images.length > 0 ? (
               <Image source={{ uri: images[0].uri }} style={styles.previewImage} />
@@ -216,7 +215,6 @@ export default function CreateTicketScreen({ navigation, route }) {
           
           <View style={styles.chipsRow}>
             {categories.map((cat) => {
-               // Verifica se l'ID è nell'array dei selezionati
                const isSelected = selectedCatIds.includes(cat.id);
                return (
                    <TouchableOpacity 

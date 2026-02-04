@@ -15,14 +15,16 @@ export const AuthProvider = ({ children }) => {
       const decoded = jwtDecode(token);
       
       const rawRole = decoded.role;
-      let mappedRole = 'cittadino'; 
+      let mappedRole = 'cittadino'; // Default se manca il ruolo
 
       if (typeof rawRole === 'string') {
           mappedRole = rawRole.toLowerCase();
       } else if (typeof rawRole === 'number') {
-          if (rawRole === 2) mappedRole = 'operatore';
-          else if (rawRole === 3) mappedRole = 'responsabile';
-          else mappedRole = 'cittadino'; 
+          // LOGICA CORRETTA BASATA SULLA TUA DESCRIZIONE
+          if (rawRole === 1) mappedRole = 'operatore';
+          else if (rawRole === 2) mappedRole = 'responsabile'; 
+          else if (rawRole === 3) mappedRole = 'admin'; 
+          // Se è null, undefined o altro numero -> cittadino
       }
 
       return {

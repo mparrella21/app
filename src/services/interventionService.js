@@ -23,7 +23,8 @@ export const getAssignmentByTicketId = async (ticketId, tenantId) => {
 
 export const createAssignment = async (ticketId, userId, tenantId) => {
     try {
-        const payload = { id_user: userId, tenant_id: tenantId, ticket_id: ticketId };
+        // MODIFICA: id_user -> user_id
+        const payload = { user_id: userId, tenant_id: tenantId, ticket_id: ticketId };
         const response = await authenticatedFetch(`${API_BASE}/intervention/assignment`, {
             method: 'POST',
             body: JSON.stringify(payload)
@@ -34,7 +35,8 @@ export const createAssignment = async (ticketId, userId, tenantId) => {
 
 export const deleteAssignment = async (ticketId, userId, tenantId) => {
     try {
-        const payload = { id_user: userId, tenant_id: tenantId };
+        // MODIFICA: id_user -> user_id
+        const payload = { user_id: userId, tenant_id: tenantId };
         const response = await authenticatedFetch(`${API_BASE}/intervention/assignment/${ticketId}`, {
             method: 'DELETE',
             body: JSON.stringify(payload)
@@ -67,7 +69,7 @@ export const sendFeedback = async (ticketId, tenantId, vote, replyId) => {
 };
 
 // =====================================================================
-// --- OPERATOR CATEGORIES (Gestione Categorie) - RIPRISTINATO ---
+// --- OPERATOR CATEGORIES (Gestione Categorie) ---
 // =====================================================================
 
 export const getOperatorCategories = async () => {
@@ -78,7 +80,6 @@ export const getOperatorCategories = async () => {
     } catch (e) { return []; }
 };
 
-// RIPRISTINATO: Creazione Categoria Operatore (Per Admin)
 export const createOperatorCategory = async (label) => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/operator-categories`, {
@@ -89,7 +90,6 @@ export const createOperatorCategory = async (label) => {
     } catch (e) { return false; }
 };
 
-// RIPRISTINATO: Modifica Categoria Operatore (Per Admin)
 export const updateOperatorCategory = async (id, newLabel) => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/operator-categories/${id}`, {
@@ -100,7 +100,6 @@ export const updateOperatorCategory = async (id, newLabel) => {
     } catch (e) { return false; }
 };
 
-// RIPRISTINATO: Eliminazione Categoria Operatore (Per Admin)
 export const deleteOperatorCategory = async (id) => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/operator-categories/${id}`, {
@@ -124,7 +123,8 @@ export const getOperatorMappings = async (tenantId) => {
 
 export const assignOperatorCategory = async (userId, tenantId, categoryId) => {
     try {
-        const payload = { tenant_id: tenantId, id_user: userId, id_operator_category: categoryId };
+        // MODIFICA: id_user -> user_id
+        const payload = { tenant_id: tenantId, user_id: userId, id_operator_category: categoryId };
         const response = await authenticatedFetch(`${API_BASE}/intervention/mappings/user-operator`, {
             method: 'POST',
             body: JSON.stringify(payload)
@@ -135,7 +135,8 @@ export const assignOperatorCategory = async (userId, tenantId, categoryId) => {
 
 export const removeOperatorCategory = async (userId, tenantId, categoryId) => {
     try {
-        const payload = { tenant_id: tenantId, id_user: userId, id_operator_category: categoryId };
+        // MODIFICA: id_user -> user_id
+        const payload = { tenant_id: tenantId, user_id: userId, id_operator_category: categoryId };
         const response = await authenticatedFetch(`${API_BASE}/intervention/mappings/user-operator`, {
             method: 'DELETE',
             body: JSON.stringify(payload)
@@ -144,7 +145,6 @@ export const removeOperatorCategory = async (userId, tenantId, categoryId) => {
     } catch (e) { return false; }
 };
 
-// RIPRISTINATO: Mapping tra Categoria Operatore e Categoria Ticket
 export const getOperatorTicketMappings = async () => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/mappings/operator-ticket`, { method: 'GET' });

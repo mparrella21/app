@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location'; 
 import { useFocusEffect } from '@react-navigation/native';
 
-import { getAllTickets } from '../services/ticketService'; // Usa getAllTickets per vedere quelli del comune
+import { getAllTickets } from '../services/ticketService'; 
 import { searchTenantByCoordinates } from '../services/tenantService';
 import { useAuth } from '../context/AuthContext';
 
@@ -17,7 +17,6 @@ const CitizenHomeScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('active'); 
   
-  // Stato per il comune attuale
   const [currentTenant, setCurrentTenant] = useState(null); 
 
   // 1. Rileva Posizione e Tenant
@@ -32,7 +31,7 @@ const CitizenHomeScreen = ({ navigation }) => {
           const result = await searchTenantByCoordinates(loc.coords.latitude, loc.coords.longitude);
           
           if (result && result.tenant) {
-              setCurrentTenant(result.tenant); // Salvo {id, name...}
+              setCurrentTenant(result.tenant); 
               loadTickets(result.tenant.id);
           } else {
               setLoading(false);
@@ -48,9 +47,6 @@ const CitizenHomeScreen = ({ navigation }) => {
   const loadTickets = async (tenantId) => {
     try {
       if (!tenantId) return;
-      // Per la Dashboard Cittadino, mostriamo TUTTI i ticket del comune (trasparenza), 
-      // o se preferisci solo i suoi, usa getUserTickets. 
-      // Solitamente la Home mostra "Cosa succede intorno a te", quindi getAllTickets.
       const data = await getAllTickets(tenantId);
       setTickets(data || []);
     } catch (e) {
@@ -60,7 +56,6 @@ const CitizenHomeScreen = ({ navigation }) => {
     }
   };
 
-  // Carica all'avvio e al focus
   useFocusEffect(
     useCallback(() => {
         setLoading(true);
@@ -80,7 +75,7 @@ const CitizenHomeScreen = ({ navigation }) => {
 
   // Filtro Tab
   const filteredTickets = tickets.filter(t => {
-    // Normalizzazione stato (gestisce id o stringa)
+    // MODIFICA: Parsing status robusto (id_status o status)
     const s = String(t.id_status || t.status || '').toLowerCase();
     const isClosed = s === '3' || s === 'risolto' || s === 'chiuso' || s === 'closed';
     
@@ -98,9 +93,9 @@ const CitizenHomeScreen = ({ navigation }) => {
 
   const getStatusColor = (t) => {
       const label = getStatusLabel(t);
-      if (label === 'RISOLTO') return '#D1E7DD'; // Verde bg
-      if (label === 'IN LAVORAZIONE') return '#FFF3CD'; // Giallo bg
-      return '#F8D7DA'; // Rosso bg
+      if (label === 'RISOLTO') return '#D1E7DD'; 
+      if (label === 'IN LAVORAZIONE') return '#FFF3CD'; 
+      return '#F8D7DA'; 
   };
   
   const getStatusTextColor = (t) => {
@@ -113,17 +108,17 @@ const CitizenHomeScreen = ({ navigation }) => {
   const renderTicket = ({ item }) => (
     <TouchableOpacity 
         style={styles.ticketCard} 
-        // PASSAGGIO TENANT ID FONDAMENTALE
         onPress={() => navigation.navigate('TicketDetail', { id: item.id, tenant_id: currentTenant?.id })}
     >
       <View style={styles.iconContainer}>
-        {/* Logica icona semplice basata su titolo/descrizione se la categoria manca */}
         <Ionicons name="alert-circle" size={24} color="#555" />
       </View>
       <View style={{ flex: 1, marginLeft: 15 }}>
         <Text style={styles.ticketTitle} numberOfLines={1}>{item.title || 'Segnalazione'}</Text>
+        
+        {/* MODIFICA: Visualizzazione data corretta (creation_date o created_at) */}
         <Text style={styles.ticketSub}>
-            #{item.id?.toString().substring(0,8)} • {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/D'}
+            #{item.id?.toString().substring(0,8)} • {item.creation_date ? new Date(item.creation_date).toLocaleDateString() : (item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/D')}
         </Text>
       </View>
       <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item) }]}>
@@ -147,10 +142,6 @@ const CitizenHomeScreen = ({ navigation }) => {
               {currentTenant ? `Siamo a: ${currentTenant.name}` : 'Rilevamento posizione...'}
           </Text>
         </View>
-
-        <TouchableOpacity style={styles.notifBtn} onPress={() => navigation.navigate('Notifications')}>
-           <Ionicons name="notifications-outline" size={24} color="white" />
-        </TouchableOpacity>
       </View>
 
       <View style={styles.body}>
@@ -208,7 +199,6 @@ const styles = StyleSheet.create({
   },
   welcomeText: { color: 'white', fontSize: 22, fontWeight: '800' },
   subText: { color: 'rgba(255,255,255,0.8)', marginTop: 4, fontSize: 13 },
-  notifBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent:'center', alignItems:'center'},
   
   body: { flex: 1, padding: 20, marginTop: -20 },
   tabs: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 12, padding: 4, marginBottom: 15, elevation: 3 },

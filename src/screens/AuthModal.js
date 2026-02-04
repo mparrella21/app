@@ -18,10 +18,11 @@ export default function AuthModal({ navigation }) {
   
   // Configurazione Google Auth
   const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: 'YOUR_EXPO_CLIENT_ID.apps.googleusercontent.com',
-    iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
-    androidClientId: 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com',
-    webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
+    webClientId: '802415952838-3cgv2g043mt4onpd791q5lf8bnu8b4fo.apps.googleusercontent.com',
+    //expoClientId: 'YOUR_EXPO_CLIENT_ID.apps.googleusercontent.com',
+    //iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
+    androidClientId: '802415952838-3cgv2g043mt4onpd791q5lf8bnu8b4fo.apps.googleusercontent.com',
+    //webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
   });
 
   // Form State
@@ -35,25 +36,30 @@ export default function AuthModal({ navigation }) {
 
   // Effetto per catturare il risultato del Login Google
   useEffect(() => {
+  // Verifichiamo che la risposta sia 'success'
     if (response?.type === 'success') {
-      const { authentication } = response;
-      handleGoogleAuth(authentication.accessToken);
+        // IMPORTANTE: Prendiamo l'idToken (o params.id_token) 
+        // a seconda di come è configurato il provider
+        const { id_token } = response.params; 
+        handleGoogleAuth(id_token);
     }
-  }, [response]);
+    }, [response]);
 
-  const handleGoogleAuth = async (googleToken) => {
-      setIsLoading(true);
-      // Niente più check del tenant qui
-      const result = await googleLogin(googleToken);
-      setIsLoading(false);
-
-      if (result.success) {
-          await setDirectLogin(result.token, result.user);
-          navigation.goBack();
-      } else {
-          Alert.alert("Errore", "Impossibile accedere con Google. Riprova.");
-      }
-  };
+  const handleGoogleAuth = async (googleIdToken) => {
+    setIsLoading(true);
+    // Chiamata al servizio aggiornato con id_token
+    const result = await googleLogin(googleIdToken);
+    
+    if (result.success) {
+        // Usa setDirectLogin per aggiornare il context e chiudere la modale
+        await setDirectLogin(result.token, result.user);
+        setIsLoading(false);
+        navigation.goBack();
+    } else {
+        setIsLoading(false);
+        Alert.alert("Errore", result.error || "Impossibile accedere con Google.");
+    }
+};
 
   const handleAuthAction = async () => {
     setIsLoading(true);

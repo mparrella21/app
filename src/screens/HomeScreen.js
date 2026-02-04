@@ -19,8 +19,6 @@ export default function HomeScreen({ navigation }) {
   
   const [tickets, setTickets] = useState([]); 
   const [currentBoundary, setCurrentBoundary] = useState(null); 
-  
-  // STATO FONDAMENTALE: Il tenant attivo dipende da dove mi trovo (Roaming)
   const [activeTenantId, setActiveTenantId] = useState(null);
 
   const [region, setRegion] = useState({
@@ -30,25 +28,23 @@ export default function HomeScreen({ navigation }) {
 
   const getNormalizedRole = () => {
       if (!user || !user.role) return '';
+      // Gestisce sia se role è stringa ('operatore') sia se è ID stringa ('1') per sicurezza
       const r = String(user.role).toLowerCase();
-      if (r === '1') return 'cittadino';
-      if (r === '2') return 'operatore';
-      if (r === '3') return 'responsabile'; 
-      if (r === '4') return 'admin';
-      return r; 
+      if (r === '1' || r === 'operatore') return 'operatore';
+      if (r === '2' || r === 'responsabile') return 'responsabile'; 
+      if (r === '3' || r === 'admin') return 'admin';
+      return 'cittadino'; 
   };
   const currentRole = getNormalizedRole();
 
-  // Quando cambia il Tenant Attivo (mi sono spostato), ricarico i ticket
   useEffect(() => {
       if (activeTenantId) {
           fetchTickets(activeTenantId);
       } else {
-          setTickets([]); // Fuori copertura = nessun ticket
+          setTickets([]);
       }
   }, [activeTenantId]);
 
-  // Se l'utente torna sulla schermata, aggiorniamo i dati del tenant corrente
   useFocusEffect(
     useCallback(() => {
       if (activeTenantId) fetchTickets(activeTenantId);
@@ -62,7 +58,6 @@ export default function HomeScreen({ navigation }) {
     } catch (e) { console.error(e); }
   };
 
-  // Posizione Iniziale
   useEffect(() => {
     (async () => {
       try {
@@ -77,8 +72,6 @@ export default function HomeScreen({ navigation }) {
           };
           setRegion(userRegion);
           mapRef.current?.animateToRegion(userRegion, 1000);
-          
-          // Appena ho la posizione, cerco in che comune sono
           checkTenantAtLocation(loc.coords.latitude, loc.coords.longitude);
         }
       } catch (e) { console.log("Uso posizione default"); }
@@ -95,23 +88,19 @@ export default function HomeScreen({ navigation }) {
             longitudeDelta: 0.05,
         };
         mapRef.current.animateToRegion(newRegion, 1000); 
-        // Se cerco una città, devo caricare i dati di QUELLA città
         checkTenantAtLocation(result.lat, result.lon);
     } else {
         Alert.alert("Non trovato", "Luogo non trovato.");
     }
   };
 
-  // Funzione unificata per trovare Tenant e Confini
   const checkTenantAtLocation = async (lat, lon) => {
       try {
           const result = await searchTenantByCoordinates(lat, lon);
           if (result && result.tenant && result.tenant.id) {
-              // Trovato comune coperto!
               setCurrentBoundary(result.boundary);
               setActiveTenantId(result.tenant.id); 
           } else {
-              // Fuori zona
               setCurrentBoundary(null);
               setActiveTenantId(null);
           }
@@ -129,25 +118,20 @@ export default function HomeScreen({ navigation }) {
       const s = status ? String(status).toLowerCase() : '';
       if (s === '3' || s === 'risolto' || s === 'chiuso') return '#4CAF50'; 
       if (s === '2' || s === 'in corso' || s === 'assegnato') return 'orange';
-      return '#D32F2F'; // 1 o Aperto
+      return '#D32F2F'; 
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1F2937" />
 
-      {/* HEADER */}
       <SafeAreaView style={styles.headerContainer} edges={['top', 'left', 'right']}>
         <View style={styles.navBarContent}>
             <View style={styles.searchContainer}>
                <SearchBar onSearch={handleSearch} />
             </View>
 
-            {user && (
-                <TouchableOpacity style={styles.notifBtn} onPress={() => navigation.navigate('Notifications')}>
-                    <Ionicons name="notifications-outline" size={24} color="white" />
-                </TouchableOpacity>
-            )}
+            {/* RIMOSSO PULSANTE NOTIFICHE */}
 
             <View style={styles.userContainer}>
                 {user ? (
@@ -162,7 +146,6 @@ export default function HomeScreen({ navigation }) {
             </View>
         </View>
 
-        {/* MENU DROPDOWN */}
         {menuVisible && user && (
             <View style={styles.dropdownMenu}>
                 <View style={styles.dropdownHeader}>
@@ -183,6 +166,12 @@ export default function HomeScreen({ navigation }) {
                       <Text style={styles.menuText}>Dashboard Operatore</Text>
                   </TouchableOpacity>
                 )}
+                {currentRole === 'responsabile' && (
+                  <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('ResponsibleHome'); }}> 
+                      <Ionicons name="business" size={20} color="#333" />
+                      <Text style={styles.menuText}>Dashboard Responsabile</Text>
+                  </TouchableOpacity>
+                )}
                 
                 <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('Profile'); }}>
                     <Ionicons name="person" size={20} color="#333" />
@@ -196,7 +185,6 @@ export default function HomeScreen({ navigation }) {
         )}
       </SafeAreaView>
 
-      {/* MAPPA */}
       <View style={styles.mapContainer}>
           <MapView
             ref={mapRef}
@@ -217,7 +205,6 @@ export default function HomeScreen({ navigation }) {
                 return (
                   <Marker 
                     key={t.id} coordinate={{ latitude: lat, longitude: lon }}
-                    // PASSAGGIO FONDAMENTALE DEL TENANT ID AL DETTAGLIO
                     onCalloutPress={() => navigation.navigate('TicketDetail', { id: t.id, tenant_id: activeTenantId })}
                   >
                     <View style={[styles.markerCircle, {backgroundColor: getStatusColor(t.id_status || t.status)}]}>
@@ -234,7 +221,6 @@ export default function HomeScreen({ navigation }) {
               <TouchableOpacity style={styles.zoomBtn} onPress={() => handleZoom(-1)}><Ionicons name="remove" size={24} color="#333" /></TouchableOpacity>
           </View>
           
-          {/* FAB per creare ticket (se loggato o cittadino) */}
           {(!user || currentRole === 'cittadino') && (
             <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate(user ? 'CreateTicket' : 'AuthModal')}>
                 <Ionicons name="add" size={32} color="white" />
@@ -251,7 +237,6 @@ const styles = StyleSheet.create({
   navBarContent: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12 },
   searchContainer: { flex: 1, marginRight: 15 },
   userContainer: { justifyContent: 'center' }, 
-  notifBtn: { marginRight: 15, padding: 5 },
   avatarBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#374151', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#4B5563' },
   avatarText: { color: 'white', fontWeight: 'bold' },
   loginLinkBtn: { backgroundColor: '#374151', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6 },
@@ -266,7 +251,7 @@ const styles = StyleSheet.create({
   mapContainer: { flex: 1 },
   map: { width: '100%', height: '100%' },
   markerCircle: { width: 30, height: 30, borderRadius: 15, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white', elevation: 3 },
-  zoomControls: { position: 'absolute', right: 15, top: 20, backgroundColor: 'white', borderRadius: 8, elevation: 5 },
+  zoomControls: { position: 'absolute', right: 15, top: 80, backgroundColor: 'white', borderRadius: 8, elevation: 5 },
   zoomBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   zoomDivider: { height: 1, backgroundColor: '#eee', width: '80%', alignSelf: 'center' },
   fab: { position: 'absolute', bottom: 30, right: 20, width: 60, height: 60, borderRadius: 30, backgroundColor: '#467599', justifyContent: 'center', alignItems: 'center', elevation: 8 },

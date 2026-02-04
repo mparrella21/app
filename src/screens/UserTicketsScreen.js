@@ -74,6 +74,7 @@ export default function UserTicketsScreen({ navigation }) {
       setFilteredTickets(myTickets);
     } else {
       const filtered = myTickets.filter(ticket => {
+        // MODIFICA: Parsing id_status o status robusto
         const s = String(ticket.id_status || ticket.status || '').toLowerCase();
         if (filterStatus === 'Aperti') return s === '1' || s === 'aperto';
         if (filterStatus === 'In Lavorazione') return s === '2' || s === 'in corso';
@@ -115,15 +116,17 @@ export default function UserTicketsScreen({ navigation }) {
     // PASSAGGIO TENANT ID ANCHE QUI
     <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('TicketDetail', { id: item.id, tenant_id: currentTenant?.id || user.tenant_id })}>
       <View style={styles.cardHeader}>
-        <Text style={styles.category}>Segnalazione #{item.id}</Text>
+        <Text style={styles.category}>Segnalazione #{String(item.id).slice(0,6)}</Text>
         <View style={[styles.badge, { backgroundColor: getStatusColor(item.id_status || item.status) }]}>
           <Text style={styles.badgeText}>{getStatusText(item.id_status || item.status)}</Text>
         </View>
       </View>
       
       <Text style={styles.title}>{item.title}</Text>
+      
+      {/* MODIFICA: Visualizzazione data corretta (creation_date o created_at) */}
       <Text style={styles.date}>
-        {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'Data N/D'}
+        {item.creation_date ? new Date(item.creation_date).toLocaleDateString() : (item.created_at ? new Date(item.created_at).toLocaleDateString() : 'Data N/D')}
       </Text>
       
       <View style={styles.divider} />

@@ -15,11 +15,13 @@ const decodeJWT = (token) => {
 };
 
 const mapRoleToString = (roleId) => {
+    // Se non c'è ruolo, è cittadino
+    if (roleId === undefined || roleId === null) return 'cittadino';
+
     switch(Number(roleId)) {
-        case 1: return 'cittadino';
-        case 2: return 'operatore';
-        case 3: return 'responsabile'; 
-        case 4: return 'admin';
+        case 1: return 'operatore';    // CORRETTO: 1 è Operatore
+        case 2: return 'responsabile'; // CORRETTO: 2 è Responsabile
+        case 3: return 'admin';        // CORRETTO: 3 è Admin
         default: return 'cittadino';
     }
 };
@@ -79,35 +81,45 @@ export const login = async (email, password) => {
 };
 
 // --- LOGIN CON GOOGLE ---
-export const googleLogin = async (googleAccessToken) => {
+export const googleLogin = async (idToken) => {
     try {
-        const response = await fetch(`${AUTH_URL}/google-login`, {
+        // L'endpoint corretto fornito dal tuo amico
+        const response = await fetch(`${AUTH_URL}/google`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({ token: googleAccessToken }) 
+            headers: { 
+                'Content-Type': 'application/json', 
+                'Accept': 'application/json' 
+            },
+            // Il body richiesto: "id_token"
+            body: JSON.stringify({ id_token: idToken }) 
         });
 
         const data = await response.json();
 
         if (response.ok && (data.token || data.access_token)) {
             const token = data.token || data.access_token;
-            await AsyncStorage.setItem('app_auth_token', token);
+            const refreshToken = data.refresh_token;
+
+            // Salvataggio token
+            await setAuthTokens(token, refreshToken);
 
             const decoded = decodeJWT(token);
+            // Restituiamo l'utente formattato per il context
             const user = {
                 id: decoded?.sub || 'unknown-id',
-                role: 'cittadino', 
-                email: decoded?.email || 'Google User',
-                name: decoded?.name || 'Utente',
-                surname: decoded?.surname || 'Google',
+                role: mapRoleToString(decoded?.role), // Usiamo la tua funzione di mapping
+                email: decoded?.email || '',
+                name: data.user?.name || 'Utente',
+                surname: data.user?.surname || 'Google',
                 tenant_id: decoded?.tid
             };
 
-            return { success: true, token: token, user: user };
+            return { success: true, token, user };
         }
-        return { success: false, error: 'Autenticazione Google fallita sul server' };
+        return { success: false, error: data.message || 'Autenticazione Google fallita' };
     } catch (e) {
-        return { success: false, error: 'Errore di connessione a Google' };
+        console.error("Errore Google Login Service:", e);
+        return { success: false, error: 'Errore di connessione al server' };
     }
 };
 
