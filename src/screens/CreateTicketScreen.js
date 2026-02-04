@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Image, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker'; // RIPRISTINATO
+import * as ImagePicker from 'expo-image-picker'; 
 import * as Location from 'expo-location';
 
-import { getCategories, postTicket } from '../services/ticketService'; 
+import { getCategories, postTicket, postReply } from '../services/ticketService'; 
 import { searchTenantByCoordinates } from '../services/tenantService'; 
 import { useAuth } from '../context/AuthContext';
 
@@ -19,7 +19,8 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [desc, setDesc] = useState('');
   
   const [categories, setCategories] = useState([]);
-  const [selectedCatId, setSelectedCatId] = useState(null);
+  // MODIFICA: Ora è un array per gestire selezione multipla
+  const [selectedCatIds, setSelectedCatIds] = useState([]); 
   const [loadingCats, setLoadingCats] = useState(false);
 
   const [coords, setCoords] = useState({ lat: initialLat, lng: initialLng });
@@ -30,7 +31,6 @@ export default function CreateTicketScreen({ navigation, route }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    // Gestione Posizione
     if (initialLat && initialLng) {
       setCoords({ lat: initialLat, lng: initialLng });
       fetchAddress(initialLat, initialLng);
@@ -44,8 +44,6 @@ export default function CreateTicketScreen({ navigation, route }) {
         }
       })();
     }
-
-    // Caricamento Categorie da API
     loadCategories();
   }, [initialLat, initialLng]);
 
@@ -55,7 +53,8 @@ export default function CreateTicketScreen({ navigation, route }) {
           const apiCats = await getCategories();
           if (Array.isArray(apiCats) && apiCats.length > 0) {
               setCategories(apiCats);
-              setSelectedCatId(apiCats[0].id); 
+              // Opzionale: Se vuoi preselezionare la prima categoria, scommenta sotto
+              // setSelectedCatIds([apiCats[0].id]); 
           } else {
               Alert.alert("Attenzione", "Impossibile caricare le categorie dal server.");
           }
@@ -66,29 +65,36 @@ export default function CreateTicketScreen({ navigation, route }) {
       }
   };
 
+  // Funzione per gestire la selezione/deselezione multipla
+  const toggleCategory = (id) => {
+      if (selectedCatIds.includes(id)) {
+          // Se c'è già, lo rimuovo
+          setSelectedCatIds(prev => prev.filter(cId => cId !== id));
+      } else {
+          // Se non c'è, lo aggiungo
+          setSelectedCatIds(prev => [...prev, id]);
+      }
+  };
+
   const fetchAddress = async (lat, lon) => {
     setLoadingAddr(true);
     try {
-      // AGGIUNTA DELL'HEADER USER-AGENT OBBLIGATORIO PER NOMINATIM
       const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`, {
-        headers: {
-          'User-Agent': 'CivitasApp/1.0 (tuamail@example.com)' // Metti un nome fittizio per la tua app
-        }
+        headers: { 'User-Agent': 'CivitasApp/1.0 (info@civitas.it)' }
       });
-      
       const data = await response.json();
       if (data && data.display_name) {
         const shortAddr = data.address.road ? `${data.address.road}, ${data.address.city || data.address.town}` : data.display_name.split(',')[0];
         setAddress(shortAddr || data.display_name);
       }
     } catch (error) {
-      console.log("Errore reverse geocoding:", error);
       setAddress("Indirizzo non disponibile");
     } finally {
       setLoadingAddr(false);
     }
   };
 
+  // RIPRISTINATO: Gestione menu foto (Galleria/Annulla)
   const handlePhotoAction = async () => {
     Alert.alert(
       "Aggiungi Foto",
@@ -114,42 +120,53 @@ export default function CreateTicketScreen({ navigation, route }) {
   };
 
   const handleSubmit = async () => {
-    if (!title || !desc) return Alert.alert("Attenzione", "Inserisci titolo e descrizione!");
-    if (!selectedCatId) return Alert.alert("Attenzione", "Seleziona una categoria!");
-    if (!coords.lat || !coords.lng) return Alert.alert("Attenzione", "Posizione non rilevata, impossibile localizzare il comune.");
+    if (!title) return Alert.alert("Attenzione", "Inserisci almeno il titolo!");
+    // MODIFICA: Controllo se l'array è vuoto
+    if (selectedCatIds.length === 0) return Alert.alert("Attenzione", "Seleziona almeno una categoria!");
+    if (!coords.lat || !coords.lng) return Alert.alert("Attenzione", "Posizione non rilevata.");
 
     setIsSubmitting(true);
 
     try {
-      // 1. RICERCA DEL COMUNE (TENANT) TRAMITE COORDINATE
+      // 1. TROVA IL TENANT (COMUNE)
       const tenantData = await searchTenantByCoordinates(coords.lat, coords.lng);
 
       if (!tenantData || !tenantData.tenant || !tenantData.tenant.id) {
-        Alert.alert("Zona non coperta", "Impossibile creare una segnalazione: il comune in cui ti trovi non utilizza ancora questo servizio.");
+        Alert.alert("Zona non coperta", "Comune non servito.");
         setIsSubmitting(false);
         return;
       }
 
-      // 2. CREAZIONE DEL PAYLOAD (usando il servizio aggiornato)
-      const ticketData = {
-        title: `${title} - ${desc}`,
+      const tenantId = tenantData.tenant.id;
+
+      // 2. CREA IL TICKET 
+      // Inviamo l'array di categorie selezionate
+      const ticketPayload = {
+        title: title, 
         lat: coords.lat,
         lon: coords.lng,
-        categories: [selectedCatId]
+        categories: selectedCatIds 
       };
 
-      // 3. INVIO AL SERVER (usando postTicket con tenant_id)
-      const success = await postTicket(ticketData, tenantData.tenant.id);
+      const createdTicket = await postTicket(ticketPayload, tenantId);
       
-      if (success) {
-        Alert.alert("Successo", `Segnalazione inviata correttamente al comune di: ${tenantData.tenant.name}`);
-        navigation.goBack();
+      if (createdTicket) {
+          // 3. SE C'È UNA DESCRIZIONE, CREA LA PRIMA REPLY
+          if (desc && desc.trim().length > 0) {
+              const ticketId = createdTicket.id || createdTicket.insertId; 
+              if(ticketId) {
+                  await postReply(ticketId, tenantId, user.id, desc);
+              }
+          }
+
+          Alert.alert("Successo", `Segnalazione inviata a: ${tenantData.tenant.name}`);
+          navigation.goBack();
       } else {
-        throw new Error("Errore backend");
+        throw new Error("Errore creazione ticket");
       }
     } catch (error) {
       console.error(error);
-      Alert.alert("Errore", "Impossibile inviare la segnalazione al momento. Riprova più tardi.");
+      Alert.alert("Errore", "Impossibile inviare la segnalazione.");
     } finally {
       setIsSubmitting(false);
     }
@@ -167,6 +184,7 @@ export default function CreateTicketScreen({ navigation, route }) {
         </View>
 
         <ScrollView contentContainerStyle={styles.formContainer}>
+          {/* RIPRISTINATO: onPress chiama handlePhotoAction */}
           <TouchableOpacity style={styles.photoBox} onPress={handlePhotoAction}>
             {images.length > 0 ? (
               <Image source={{ uri: images[0].uri }} style={styles.previewImage} />
@@ -177,12 +195,13 @@ export default function CreateTicketScreen({ navigation, route }) {
               </>
             )}
           </TouchableOpacity>
+          
           {images.length > 0 && (
-             <TouchableOpacity onPress={() => setImages([])} style={{alignSelf:'center', marginBottom:15}}>
-                <Text style={{color:'#D32F2F', fontSize:12}}>Rimuovi foto</Text>
-             </TouchableOpacity>
+              <TouchableOpacity onPress={() => setImages([])} style={{alignSelf:'center', marginBottom:15}}>
+                 <Text style={{color:'#D32F2F', fontSize:12}}>Rimuovi foto</Text>
+              </TouchableOpacity>
           )}
-
+          
           <Text style={styles.label}>TITOLO PROBLEMA</Text>
           <TextInput 
             style={styles.input} 
@@ -191,30 +210,32 @@ export default function CreateTicketScreen({ navigation, route }) {
           />
 
           <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
-            <Text style={styles.label}>CATEGORIA</Text>
+            <Text style={styles.label}>CATEGORIE (Seleziona una o più)</Text>
             {loadingCats && <ActivityIndicator size="small" color="#1D2D44"/>}
           </View>
           
           <View style={styles.chipsRow}>
             {categories.map((cat) => {
+               // Verifica se l'ID è nell'array dei selezionati
+               const isSelected = selectedCatIds.includes(cat.id);
                return (
-                 <TouchableOpacity 
-                   key={cat.id} 
-                   style={[styles.chip, selectedCatId === cat.id && styles.chipActive]}
-                   onPress={() => setSelectedCatId(cat.id)}
-                 >
-                   <Text style={[styles.chipText, selectedCatId === cat.id && styles.chipTextActive]}>
-                      {cat.label}
-                   </Text>
-                 </TouchableOpacity>
+                   <TouchableOpacity 
+                     key={cat.id} 
+                     style={[styles.chip, isSelected && styles.chipActive]}
+                     onPress={() => toggleCategory(cat.id)}
+                   >
+                     <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
+                        {cat.label}
+                     </Text>
+                   </TouchableOpacity>
                );
             })}
           </View>
 
-          <Text style={styles.label}>DESCRIZIONE</Text>
+          <Text style={styles.label}>DESCRIZIONE (Opzionale)</Text>
           <TextInput 
             style={[styles.input, styles.textArea]} 
-            placeholder="Descrivi cosa vedi..." 
+            placeholder="Aggiungi dettagli..." 
             multiline numberOfLines={4}
             value={desc} onChangeText={setDesc} 
           />
@@ -223,13 +244,9 @@ export default function CreateTicketScreen({ navigation, route }) {
             <Ionicons name="location" size={24} color="#D32F2F" />
             <View style={{marginLeft: 10, flex: 1}}>
                 <Text style={styles.infoTitle}>Posizione rilevata</Text>
-                {loadingAddr ? (
-                    <Text style={styles.infoText}>Ricerca indirizzo...</Text>
-                ) : (
-                    <Text style={styles.infoText}>
-                      {address ? address : `${coords.lat?.toFixed(5)}, ${coords.lng?.toFixed(5)}`}
-                    </Text>
-                )}
+                <Text style={styles.infoText}>
+                  {address ? address : `${coords.lat?.toFixed(5)}, ${coords.lng?.toFixed(5)}`}
+                </Text>
             </View>
           </View>
         </ScrollView>
@@ -255,7 +272,6 @@ export default function CreateTicketScreen({ navigation, route }) {
   );
 }
 
-// STILI ORIGINALI INTATTI
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, backgroundColor: 'white', elevation: 2 },

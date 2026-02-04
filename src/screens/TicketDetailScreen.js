@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, FlatList, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker'; // RIPRISTINATO
+import * as ImagePicker from 'expo-image-picker'; 
 import { AuthContext } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
 
-// IMPORT SERVIZI (Ora aggiornati al Multi-Tenant)
 import { 
     getAssignmentByTicketId, 
     createAssignment,
@@ -29,7 +28,8 @@ import { getAllUsers } from '../services/userService';
 import { getAddressFromCoordinates } from '../services/nominatim';
 
 export default function TicketDetailScreen({ route, navigation }) {
-  const { id, ticket: paramTicket } = route.params || {};
+  // MODIFICA: Estraiamo anche tenant_id dai params (Cruciale per utenti non registrati al comune)
+  const { id, ticket: paramTicket, tenant_id: paramTenantId } = route.params || {};
   const ticketId = id || paramTicket?.id;
 
   const { user } = useContext(AuthContext);
@@ -67,16 +67,24 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [editCategoryId, setEditCategoryId] = useState(null);
   const [allCategories, setAllCategories] = useState([]);
 
-  // LOGICA MULTI-TENANT
-  const effectiveTenantId = ticket?.tenant_id || user?.tenant_id;
+  // LOGICA MULTI-TENANT ROBUSTA
+  // 1. Prova dal parametro di navigazione (passato dalla Home "Roaming")
+  // 2. Prova dal ticket passato (se c'era oggetto intero)
+  // 3. Prova dall'utente (fallback, ma sarà null per i cittadini globali)
+  const effectiveTenantId = paramTenantId || ticket?.tenant_id || paramTicket?.tenant_id || user?.tenant_id;
 
   const fetchData = async () => {
-      if (!ticketId || (!effectiveTenantId && !user?.tenant_id)) return;
-      const tenantToUse = effectiveTenantId || user?.tenant_id;
+      // Senza tenant ID non possiamo fare nulla (le API lo richiedono per sapere quale DB interrogare)
+      if (!ticketId || !effectiveTenantId) {
+          console.warn("Manca tenant ID per dettaglio ticket", ticketId, effectiveTenantId);
+          setLoading(false);
+          return;
+      }
+
       setLoading(true);
       
       try {
-        const freshTicket = await getTicket(ticketId, tenantToUse);
+        const freshTicket = await getTicket(ticketId, effectiveTenantId);
         
         if (freshTicket && freshTicket.lat && freshTicket.lon) {
             try {
@@ -90,9 +98,15 @@ export default function TicketDetailScreen({ route, navigation }) {
         setTicket(freshTicket);
         setEditTitle(freshTicket?.title || ''); 
         setEditDesc(freshTicket?.description || '');
+        
+        if (freshTicket.categories && freshTicket.categories.length > 0) {
+            const firstCat = freshTicket.categories[0];
+            setEditCategoryId(typeof firstCat === 'object' ? firstCat.id : firstCat);
+        }
 
+        // Recupero Operatore Assegnato
         try {
-            const assignmentData = await getAssignmentByTicketId(ticketId, tenantToUse);
+            const assignmentData = await getAssignmentByTicketId(ticketId, effectiveTenantId);
             if(assignmentData && assignmentData.id_user) {
                 const users = await getAllUsers();
                 const op = users.find(u => u.id === assignmentData.id_user);
@@ -104,15 +118,17 @@ export default function TicketDetailScreen({ route, navigation }) {
             setAssignedOperator(null);
         }
 
+        // Recupero Rating
         try {
-            const fetchedRating = await getRating(ticketId, tenantToUse);
+            const fetchedRating = await getRating(ticketId, effectiveTenantId);
             if (fetchedRating && fetchedRating.vote) {
                 setRating(fetchedRating.vote);
                 setRatingSubmitted(true);
             }
-        } catch (e) { console.log("Nessun rating", e); }
+        } catch (e) { }
 
-        const fetchedReplies = await getAllReplies(ticketId, tenantToUse);
+        // Recupero Risposte
+        const fetchedReplies = await getAllReplies(ticketId, effectiveTenantId);
         setReplies(fetchedReplies);
 
         if (user?.role === 'responsabile' || user?.role === 'operatore') {
@@ -122,6 +138,7 @@ export default function TicketDetailScreen({ route, navigation }) {
 
       } catch (error) {
         console.error("Errore fetch ticket detail", error);
+        Alert.alert("Errore", "Impossibile caricare i dettagli del ticket.");
       } finally {
         setLoading(false);
       }
@@ -137,7 +154,9 @@ export default function TicketDetailScreen({ route, navigation }) {
   const isCitizen = !user || user?.role === 'cittadino';
   const isManager = user?.role === 'responsabile'; 
 
-  // FUNZIONI RIPRISTINATE: Modifica/Eliminazione Reply
+  // Determina la "descrizione" usando la prima reply se esiste (logica richiesta)
+  const ticketDescription = (replies && replies.length > 0) ? (replies[0].body || replies[0].text || replies[0].messaggio) : "Nessuna descrizione.";
+
   const handleLongPressReply = (reply) => {
       const isMyReply = reply.id_creator_user === user?.id;
       if (!isMyReply) return;
@@ -211,7 +230,6 @@ export default function TicketDetailScreen({ route, navigation }) {
     ]);
   };
 
-  // FUNZIONE IMMAGINE REPORT RIPRISTINATA
   const pickReportImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -232,7 +250,7 @@ export default function TicketDetailScreen({ route, navigation }) {
 
       try {
           const bodyText = `[RAPPORTO INTERVENTO]: ${interventionReport}`;
-          await postReply(ticket.id, effectiveTenantId, user.id, bodyText); // Foto mockata per ora
+          await postReply(ticket.id, effectiveTenantId, user.id, bodyText); 
           await updateTicketStatus(ticket.id, effectiveTenantId, 3);
 
           setInterventionReport('');
@@ -353,6 +371,17 @@ export default function TicketDetailScreen({ route, navigation }) {
       );
   }
 
+  if (!ticket) {
+      return (
+          <View style={styles.center}>
+              <Text>Ticket non trovato.</Text>
+              <TouchableOpacity onPress={() => navigation.goBack()} style={{marginTop:20}}>
+                  <Text style={{color:COLORS.primary}}>Torna indietro</Text>
+              </TouchableOpacity>
+          </View>
+      );
+  }
+
   const getStatusText = () => {
       if (statusId === 1) return "RICEVUTO";
       if (statusId === 2) return "IN LAVORAZIONE";
@@ -386,7 +415,7 @@ export default function TicketDetailScreen({ route, navigation }) {
 
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
         
-        {/* IMMAGINE DI COPERTINA RIPRISTINATA */}
+        {/* IMMAGINE DI COPERTINA */}
         {ticket.images && ticket.images.length > 0 ? (
           <Image source={{ uri: ticket.images[0] }} style={styles.coverImg} />
         ) : (
@@ -467,7 +496,8 @@ export default function TicketDetailScreen({ route, navigation }) {
                 )}
 
                 <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
-                <Text style={styles.desc}>{ticket.description || "Nessuna descrizione."}</Text>
+                {/* Visualizza la descrizione calcolata dal primo messaggio Reply */}
+                <Text style={styles.desc}>{ticketDescription}</Text>
               </>
           )}
 
@@ -507,34 +537,30 @@ export default function TicketDetailScreen({ route, navigation }) {
           {isManager && (
             <View style={styles.operatorPanel}>
                 <Text style={[styles.opTitle, {color: '#B91C1C'}]}>Pannello Responsabile</Text>
-                {actionLoading ? (
-                    <ActivityIndicator color="#B91C1C" />
-                ) : (
-                    <View style={{gap: 10}}>
-                        <View style={styles.opButtons}>
-                            {!isResolved && !assignedOperator && (
-                                <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#6366F1', marginRight: 10}]} onPress={openAssignModal}>
-                                    <Ionicons name="person-add" size={18} color="white" />
-                                    <Text style={styles.opBtnText}>ASSEGNA</Text>
-                                </TouchableOpacity>
-                            )}
+                <View style={{gap: 10}}>
+                    <View style={styles.opButtons}>
+                        {!isResolved && !assignedOperator && (
+                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#6366F1', marginRight: 10}]} onPress={openAssignModal}>
+                                <Ionicons name="person-add" size={18} color="white" />
+                                <Text style={styles.opBtnText}>ASSEGNA</Text>
+                            </TouchableOpacity>
+                        )}
 
-                            {assignedOperator && !isResolved && (
-                                <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#B91C1C', marginRight: 10}]} onPress={handleRemoveAssignment}>
-                                    <Ionicons name="person-remove" size={18} color="white" />
-                                    <Text style={styles.opBtnText}>RIMUOVI OP.</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-                        
-                        {!isEditingTicket && !isResolved && (
-                             <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#F59E0B'}]} onPress={toggleEditMode}>
-                                 <Ionicons name="create" size={18} color="white" />
-                                 <Text style={styles.opBtnText}>MODIFICA DATI TICKET</Text>
-                             </TouchableOpacity>
+                        {assignedOperator && !isResolved && (
+                            <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#B91C1C', marginRight: 10}]} onPress={handleRemoveAssignment}>
+                                <Ionicons name="person-remove" size={18} color="white" />
+                                <Text style={styles.opBtnText}>RIMUOVI OP.</Text>
+                            </TouchableOpacity>
                         )}
                     </View>
-                )}
+                    
+                    {!isEditingTicket && !isResolved && (
+                         <TouchableOpacity style={[styles.opBtn, {backgroundColor: '#F59E0B'}]} onPress={toggleEditMode}>
+                             <Ionicons name="create" size={18} color="white" />
+                             <Text style={styles.opBtnText}>MODIFICA DATI TICKET</Text>
+                         </TouchableOpacity>
+                    )}
+                </View>
             </View>
           )}
 
@@ -678,7 +704,6 @@ export default function TicketDetailScreen({ route, navigation }) {
   );
 }
 
-// STILI ORIGINALI INTATTI
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { paddingTop: 40, paddingBottom: 15, paddingHorizontal: 15, backgroundColor: COLORS.primary || '#D32F2F', flexDirection: 'row', alignItems: 'center', elevation: 4 },

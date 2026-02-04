@@ -56,6 +56,8 @@ export const getTicket = async (id, tenantId) => {
 export const postTicket = async (ticketData, tenantId) => {
   try {
     const categoryIds = extractCategoryIds(ticketData.categories);
+    // POST /api/ticket. Body: tenant_id, title, id_status, lat, lon, categories.
+    // NOTA: Non inviamo descrizione qui, va in una reply successiva.
     const finalPayload = {
         tenant_id: tenantId,
         title: ticketData.title,
@@ -68,8 +70,14 @@ export const postTicket = async (ticketData, tenantId) => {
       method: 'POST',
       body: JSON.stringify(finalPayload)
     });
-    return response.ok;
-  } catch (e) { return false; }
+    
+    // Ritorniamo l'oggetto creato (o almeno l'ID) per poter postare la reply
+    if(response.ok) {
+        const data = await response.json();
+        return data.ticket || data || true; 
+    }
+    return null;
+  } catch (e) { return null; }
 };
 
 export const updateTicket = async (id, tenantId, updateData) => {

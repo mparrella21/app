@@ -19,40 +19,45 @@ export default function HomeScreen({ navigation }) {
   
   const [tickets, setTickets] = useState([]); 
   const [currentBoundary, setCurrentBoundary] = useState(null); 
+  
+  // STATO FONDAMENTALE: Il tenant attivo dipende da dove mi trovo (Roaming)
+  const [activeTenantId, setActiveTenantId] = useState(null);
+
   const [region, setRegion] = useState({
       latitude: 41.8719, longitude: 12.5674,
       latitudeDelta: 6, longitudeDelta: 6,
   });
 
-  // --- HELPER PER I RUOLI (FIX SICUREZZA E NUMERI) ---
-  // Gestisce sia stringhe ("cittadino") che numeri (1, 2, 3)
   const getNormalizedRole = () => {
       if (!user || !user.role) return '';
       const r = String(user.role).toLowerCase();
-      
-      // MAPPATURA NUMERI -> RUOLI (Se il tuo DB usa ID)
       if (r === '1') return 'cittadino';
       if (r === '2') return 'operatore';
-      if (r === '3') return 'responsabile'; // o admin
+      if (r === '3') return 'responsabile'; 
       if (r === '4') return 'admin';
-      
-      return r; // Ritorna la stringa originale se non è un numero mappato
+      return r; 
   };
-
   const currentRole = getNormalizedRole();
 
-  // Carica i ticket pubblici per la mappa
+  // Quando cambia il Tenant Attivo (mi sono spostato), ricarico i ticket
+  useEffect(() => {
+      if (activeTenantId) {
+          fetchTickets(activeTenantId);
+      } else {
+          setTickets([]); // Fuori copertura = nessun ticket
+      }
+  }, [activeTenantId]);
+
+  // Se l'utente torna sulla schermata, aggiorniamo i dati del tenant corrente
   useFocusEffect(
     useCallback(() => {
-      fetchTickets();
-    }, [])
+      if (activeTenantId) fetchTickets(activeTenantId);
+    }, [activeTenantId])
   );
 
-  const fetchTickets = async () => {
+  const fetchTickets = async (tenantId) => {
     try {
-      if (!user?.tenant_id) return; // Se l'utente non ha un tenant, la mappa resta vuota
-      // CORREZIONE: Passiamo il tenant_id dell'utente
-      const allData = await getAllTickets(user.tenant_id);
+      const allData = await getAllTickets(tenantId);
       setTickets(allData);
     } catch (e) { console.error(e); }
   };
@@ -72,7 +77,9 @@ export default function HomeScreen({ navigation }) {
           };
           setRegion(userRegion);
           mapRef.current?.animateToRegion(userRegion, 1000);
-          loadBoundaryForLocation(loc.coords.latitude, loc.coords.longitude);
+          
+          // Appena ho la posizione, cerco in che comune sono
+          checkTenantAtLocation(loc.coords.latitude, loc.coords.longitude);
         }
       } catch (e) { console.log("Uso posizione default"); }
     })();
@@ -88,19 +95,25 @@ export default function HomeScreen({ navigation }) {
             longitudeDelta: 0.05,
         };
         mapRef.current.animateToRegion(newRegion, 1000); 
-        loadBoundaryForLocation(result.lat, result.lon);
+        // Se cerco una città, devo caricare i dati di QUELLA città
+        checkTenantAtLocation(result.lat, result.lon);
     } else {
         Alert.alert("Non trovato", "Luogo non trovato.");
     }
   };
 
-  const loadBoundaryForLocation = async (lat, lon) => {
+  // Funzione unificata per trovare Tenant e Confini
+  const checkTenantAtLocation = async (lat, lon) => {
       try {
           const result = await searchTenantByCoordinates(lat, lon);
-          if (result && result.boundary) {
+          if (result && result.tenant && result.tenant.id) {
+              // Trovato comune coperto!
               setCurrentBoundary(result.boundary);
+              setActiveTenantId(result.tenant.id); 
           } else {
+              // Fuori zona
               setCurrentBoundary(null);
+              setActiveTenantId(null);
           }
       } catch (e) { console.error("Errore boundary:", e); }
   };
@@ -113,10 +126,10 @@ export default function HomeScreen({ navigation }) {
   };
 
   const getStatusColor = (status) => {
-      const s = status ? status.toLowerCase() : '';
-      if (s === 'risolto' || s === 'chiuso') return '#4CAF50'; 
-      if (s === 'in corso' || s === 'assegnato') return 'orange';
-      return '#D32F2F'; 
+      const s = status ? String(status).toLowerCase() : '';
+      if (s === '3' || s === 'risolto' || s === 'chiuso') return '#4CAF50'; 
+      if (s === '2' || s === 'in corso' || s === 'assegnato') return 'orange';
+      return '#D32F2F'; // 1 o Aperto
   };
 
   return (
@@ -154,12 +167,10 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.dropdownMenu}>
                 <View style={styles.dropdownHeader}>
                     <Text style={styles.userName}>{user.name}</Text>
-                    {/* FIX: Usiamo String() per evitare crash su numeri e mostriamo il ruolo normalizzato */}
                     <Text style={styles.userRole}>{currentRole.toUpperCase()}</Text>
                 </View>
                 <View style={styles.divider}/>
                 
-                {/* Link dinamici in base al ruolo (User ID 1 = Cittadino, ecc.) */}
                 {currentRole === 'cittadino' && (
                   <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('CitizenHome'); }}> 
                       <Ionicons name="home" size={20} color="#333" />
@@ -206,9 +217,10 @@ export default function HomeScreen({ navigation }) {
                 return (
                   <Marker 
                     key={t.id} coordinate={{ latitude: lat, longitude: lon }}
-                    onCalloutPress={() => navigation.navigate('TicketDetail', { id: t.id })}
+                    // PASSAGGIO FONDAMENTALE DEL TENANT ID AL DETTAGLIO
+                    onCalloutPress={() => navigation.navigate('TicketDetail', { id: t.id, tenant_id: activeTenantId })}
                   >
-                    <View style={[styles.markerCircle, {backgroundColor: getStatusColor(t.status)}]}>
+                    <View style={[styles.markerCircle, {backgroundColor: getStatusColor(t.id_status || t.status)}]}>
                       <Ionicons name="alert" size={16} color="white" />
                     </View>
                   </Marker>
@@ -222,7 +234,7 @@ export default function HomeScreen({ navigation }) {
               <TouchableOpacity style={styles.zoomBtn} onPress={() => handleZoom(-1)}><Ionicons name="remove" size={24} color="#333" /></TouchableOpacity>
           </View>
           
-          {/* Per utenti non loggati o cittadini, mostriamo il FAB per segnalare rapidamente */}
+          {/* FAB per creare ticket (se loggato o cittadino) */}
           {(!user || currentRole === 'cittadino') && (
             <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate(user ? 'CreateTicket' : 'AuthModal')}>
                 <Ionicons name="add" size={32} color="white" />

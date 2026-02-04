@@ -1,52 +1,83 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, ActivityIndicator, ScrollView } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location'; 
+import { useFocusEffect } from '@react-navigation/native';
+
 import { useAuth } from '../context/AuthContext'; 
 import { getUserTickets } from '../services/ticketService'; 
+import { searchTenantByCoordinates } from '../services/tenantService';
 
 export default function UserTicketsScreen({ navigation }) {
   const { user } = useAuth(); 
   const [myTickets, setMyTickets] = useState([]);
   const [filteredTickets, setFilteredTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentTenant, setCurrentTenant] = useState(null);
   
-  // NUOVO: Stato per il filtro attivo
   const [filterStatus, setFilterStatus] = useState('Tutti');
 
-  const loadTickets = async () => {
-    if (!user || !user.tenant_id) return; // Controllo di sicurezza
-    setLoading(true);
+  // 1. Determina posizione e Tenant
+  const loadContext = async () => {
+      setLoading(true);
+      try {
+          // Se l'utente ha un tenant fisso (es. Responsabile), usiamo quello
+          if (user.tenant_id) {
+              await loadTickets(user.tenant_id);
+              return;
+          }
+
+          // Altrimenti usiamo il GPS (Cittadino)
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === 'granted') {
+              const loc = await Location.getCurrentPositionAsync({});
+              const result = await searchTenantByCoordinates(loc.coords.latitude, loc.coords.longitude);
+              
+              if (result && result.tenant) {
+                  setCurrentTenant(result.tenant);
+                  await loadTickets(result.tenant.id);
+              } else {
+                  Alert.alert("Info", "Non sei in una zona coperta. Impossibile caricare lo storico locale.");
+                  setMyTickets([]);
+                  setFilteredTickets([]);
+              }
+          }
+      } catch (error) {
+          console.error("Errore context", error);
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  // 2. Carica i ticket dell'utente IN QUEL TENANT
+  const loadTickets = async (tenantId) => {
     try {
-      // CORREZIONE: Aggiunto user.tenant_id come secondo parametro
-      const tickets = await getUserTickets(user.id, user.tenant_id);
+      // getUserTickets filtra già per user_id lato client o server
+      const tickets = await getUserTickets(user.id, tenantId);
       setMyTickets(tickets);
       setFilteredTickets(tickets); 
-      setFilterStatus('Tutti');
     } catch (error) {
       console.error("Errore caricamento ticket personali:", error);
-    } finally {
-      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadTickets();
-    });
-    return unsubscribe;
-  }, [navigation, user]);
+  useFocusEffect(
+    useCallback(() => {
+        loadContext();
+    }, [])
+  );
 
-  // NUOVO: Effetto per filtrare la lista in base al tab selezionato
+  // Effetto Filtri UI
   useEffect(() => {
     if (filterStatus === 'Tutti') {
       setFilteredTickets(myTickets);
     } else {
       const filtered = myTickets.filter(ticket => {
-        const s = (ticket.status || ticket.stato || '').toLowerCase();
-        if (filterStatus === 'Aperti') return s === 'aperto' || s === 'open' || s === 'ricevuto';
-        if (filterStatus === 'In Lavorazione') return s === 'in corso' || s === 'in_progress' || s === 'assegnato' || s === 'working';
-        if (filterStatus === 'Risolti') return s === 'risolto' || s === 'resolved' || s === 'chiuso' || s === 'closed';
+        const s = String(ticket.id_status || ticket.status || '').toLowerCase();
+        if (filterStatus === 'Aperti') return s === '1' || s === 'aperto';
+        if (filterStatus === 'In Lavorazione') return s === '2' || s === 'in corso';
+        if (filterStatus === 'Risolti') return s === '3' || s === 'risolto';
         return false;
       });
       setFilteredTickets(filtered);
@@ -54,14 +85,21 @@ export default function UserTicketsScreen({ navigation }) {
   }, [filterStatus, myTickets]);
 
   const getStatusColor = (status) => {
-    const s = status ? String(status).toLowerCase() : '';
-    if (s === 'aperto' || s === 'open') return '#D32F2F'; 
-    if (s === 'in corso' || s === 'in_progress' || s === 'assegnato') return '#F59E0B'; 
-    if (s === 'risolto' || s === 'resolved' || s === 'chiuso') return '#4CAF50'; 
+    const s = String(status).toLowerCase();
+    if (s === '1' || s === 'aperto') return '#D32F2F'; 
+    if (s === '2' || s === 'in corso') return '#F59E0B'; 
+    if (s === '3' || s === 'risolto') return '#4CAF50'; 
     return '#999';
   };
 
-  // NUOVO: Componente per i Tab di Filtro
+  const getStatusText = (status) => {
+      const s = String(status).toLowerCase();
+      if (s === '1') return 'APERTO';
+      if (s === '2') return 'IN LAVORAZIONE';
+      if (s === '3') return 'RISOLTO';
+      return 'CHIUSO';
+  };
+
   const FilterTab = ({ label }) => (
     <TouchableOpacity 
       style={[styles.filterTab, filterStatus === label && styles.activeFilterTab]} 
@@ -74,17 +112,18 @@ export default function UserTicketsScreen({ navigation }) {
   );
 
   const renderItem = ({ item }) => (
-    <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('TicketDetail', { id: item.id })}>
+    // PASSAGGIO TENANT ID ANCHE QUI
+    <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('TicketDetail', { id: item.id, tenant_id: currentTenant?.id || user.tenant_id })}>
       <View style={styles.cardHeader}>
-        <Text style={styles.category}>{item.category || item.categoria || 'Generico'}</Text>
-        <View style={[styles.badge, { backgroundColor: getStatusColor(item.status || item.stato) }]}>
-          <Text style={styles.badgeText}>{(item.status || item.stato || 'Aperto').toUpperCase()}</Text>
+        <Text style={styles.category}>Segnalazione #{item.id}</Text>
+        <View style={[styles.badge, { backgroundColor: getStatusColor(item.id_status || item.status) }]}>
+          <Text style={styles.badgeText}>{getStatusText(item.id_status || item.status)}</Text>
         </View>
       </View>
       
-      <Text style={styles.title}>{item.title || item.titolo}</Text>
+      <Text style={styles.title}>{item.title}</Text>
       <Text style={styles.date}>
-        Segnalato il {item.date ? new Date(item.date).toLocaleDateString() : (item.creation_date || 'N/D')}
+        {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'Data N/D'}
       </Text>
       
       <View style={styles.divider} />
@@ -104,12 +143,14 @@ export default function UserTicketsScreen({ navigation }) {
             <TouchableOpacity onPress={() => navigation.goBack()}>
                 <Ionicons name="arrow-back" size={24} color="white" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Le Mie Segnalazioni</Text>
+            <View>
+                <Text style={styles.headerTitle}>Le Mie Segnalazioni</Text>
+                {currentTenant && <Text style={{color:'rgba(255,255,255,0.7)', fontSize:10, textAlign:'center'}}>{currentTenant.name}</Text>}
+            </View>
             <View style={{width: 24}} /> 
         </View>
       </SafeAreaView>
 
-      {/* NUOVO: Barra dei filtri orizzontale */}
       <View style={styles.filtersWrapper}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scrollFilters}>
           <FilterTab label="Tutti" />
@@ -122,21 +163,21 @@ export default function UserTicketsScreen({ navigation }) {
       {loading ? (
         <View style={{flex:1, justifyContent:'center', alignItems:'center'}}>
             <ActivityIndicator size="large" color="#467599" />
-            <Text style={{marginTop:10, color:'#666'}}>Caricamento...</Text>
+            <Text style={{marginTop:10, color:'#666'}}>Ricerca ticket locali...</Text>
         </View>
       ) : (
         <FlatList
           data={filteredTickets}
           renderItem={renderItem}
-          keyExtractor={item => item.id ? item.id.toString() : Math.random().toString()}
+          keyExtractor={item => String(item.id)}
           contentContainerStyle={styles.listContent}
           refreshing={loading}
-          onRefresh={loadTickets}
+          onRefresh={loadContext}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={50} color="#ccc" />
               <Text style={styles.emptyText}>
-                {filterStatus === 'Tutti' ? "Non hai ancora inviato segnalazioni." : `Nessuna segnalazione "${filterStatus}".`}
+                {filterStatus === 'Tutti' ? "Non hai segnalazioni in questo comune." : `Nessuna segnalazione "${filterStatus}".`}
               </Text>
             </View>
           }
@@ -152,7 +193,6 @@ const styles = StyleSheet.create({
   headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: 'white' },
   
-  // NUOVO: Stili per i filtri
   filtersWrapper: { backgroundColor: 'white', paddingVertical: 10, elevation: 2 },
   scrollFilters: { paddingHorizontal: 15 },
   filterTab: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#E0E0E0', marginRight: 8, justifyContent:'center' },
@@ -162,7 +202,6 @@ const styles = StyleSheet.create({
 
   listContent: { padding: 15 },
   
-  // Ripristinate le ombreggiature più ricche per iOS (shadow*)
   card: { 
       backgroundColor: 'white', 
       borderRadius: 10, 

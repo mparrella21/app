@@ -1,7 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getUserTickets } from '../services/ticketService';
+import * as Location from 'expo-location'; 
+import { useFocusEffect } from '@react-navigation/native';
+
+import { getAllTickets } from '../services/ticketService'; // Usa getAllTickets per vedere quelli del comune
+import { searchTenantByCoordinates } from '../services/tenantService';
 import { useAuth } from '../context/AuthContext';
 
 const COLORS = { primary: '#0077B6', bg: '#F3F4F6', card: '#FFF', accent: '#C06E52' };
@@ -11,57 +15,120 @@ const CitizenHomeScreen = ({ navigation }) => {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState('active'); // 'active' o 'history'
+  const [activeTab, setActiveTab] = useState('active'); 
+  
+  // Stato per il comune attuale
+  const [currentTenant, setCurrentTenant] = useState(null); 
 
-  const loadTickets = async () => {
+  // 1. Rileva Posizione e Tenant
+  const detectLocationAndTenant = async () => {
+      try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== 'granted') {
+              setLoading(false);
+              return;
+          }
+          const loc = await Location.getCurrentPositionAsync({});
+          const result = await searchTenantByCoordinates(loc.coords.latitude, loc.coords.longitude);
+          
+          if (result && result.tenant) {
+              setCurrentTenant(result.tenant); // Salvo {id, name...}
+              loadTickets(result.tenant.id);
+          } else {
+              setLoading(false);
+              Alert.alert("Fuori Zona", "Non siamo riusciti a identificare un comune coperto dal servizio in questa zona.");
+          }
+      } catch (e) {
+          console.error(e);
+          setLoading(false);
+      }
+  };
+
+  // 2. Carica i ticket del tenant trovato
+  const loadTickets = async (tenantId) => {
     try {
-      if (!user?.id || !user?.tenant_id) return;
-      // CAMBIATO: Usa getUserTickets passando ID e TENANT_ID (richiesto dall'API)
-      const data = await getUserTickets(user.id, user.tenant_id);
+      if (!tenantId) return;
+      // Per la Dashboard Cittadino, mostriamo TUTTI i ticket del comune (trasparenza), 
+      // o se preferisci solo i suoi, usa getUserTickets. 
+      // Solitamente la Home mostra "Cosa succede intorno a te", quindi getAllTickets.
+      const data = await getAllTickets(tenantId);
       setTickets(data || []);
     } catch (e) {
       console.warn('CitizenHomeScreen.load', e);
+    } finally {
+        setLoading(false);
     }
   };
 
-  useEffect(() => {
-    setLoading(true);
-    loadTickets().finally(() => setLoading(false));
-
-    const unsubscribe = navigation.addListener('focus', () => {
-       loadTickets();
-    });
-    return unsubscribe;
-  }, [navigation, user]);
+  // Carica all'avvio e al focus
+  useFocusEffect(
+    useCallback(() => {
+        setLoading(true);
+        detectLocationAndTenant();
+    }, [])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadTickets();
+    if (currentTenant?.id) {
+        await loadTickets(currentTenant.id);
+    } else {
+        await detectLocationAndTenant();
+    }
     setRefreshing(false);
   };
 
-  // FILTRO LISTA: Attivi vs Storico basato sui nuovi stati (Aperto, In carico, Risolto)
+  // Filtro Tab
   const filteredTickets = tickets.filter(t => {
-    const status = (t.status || '').toUpperCase();
-    const isClosed = status === 'RISOLTO' || status === 'CHIUSO';
+    // Normalizzazione stato (gestisce id o stringa)
+    const s = String(t.id_status || t.status || '').toLowerCase();
+    const isClosed = s === '3' || s === 'risolto' || s === 'chiuso' || s === 'closed';
     
     if (activeTab === 'active') return !isClosed;
     return isClosed;
   });
 
+  const getStatusLabel = (t) => {
+      const s = String(t.id_status || t.status || '').toLowerCase();
+      if (s === '1' || s === 'aperto') return 'APERTO';
+      if (s === '2' || s === 'in corso') return 'IN LAVORAZIONE';
+      if (s === '3' || s === 'risolto') return 'RISOLTO';
+      return 'CHIUSO';
+  };
+
+  const getStatusColor = (t) => {
+      const label = getStatusLabel(t);
+      if (label === 'RISOLTO') return '#D1E7DD'; // Verde bg
+      if (label === 'IN LAVORAZIONE') return '#FFF3CD'; // Giallo bg
+      return '#F8D7DA'; // Rosso bg
+  };
+  
+  const getStatusTextColor = (t) => {
+      const label = getStatusLabel(t);
+      if (label === 'RISOLTO') return '#0F5132'; 
+      if (label === 'IN LAVORAZIONE') return '#856404'; 
+      return '#721C24'; 
+  };
+
   const renderTicket = ({ item }) => (
-    <TouchableOpacity style={styles.ticketCard} onPress={() => navigation.navigate('TicketDetail', { ticket: item })}>
+    <TouchableOpacity 
+        style={styles.ticketCard} 
+        // PASSAGGIO TENANT ID FONDAMENTALE
+        onPress={() => navigation.navigate('TicketDetail', { id: item.id, tenant_id: currentTenant?.id })}
+    >
       <View style={styles.iconContainer}>
-        <Ionicons name={(item.category || '').includes('Verde') ? 'leaf' : 'construct'} size={24} color="#555" />
+        {/* Logica icona semplice basata su titolo/descrizione se la categoria manca */}
+        <Ionicons name="alert-circle" size={24} color="#555" />
       </View>
       <View style={{ flex: 1, marginLeft: 15 }}>
-        <Text style={styles.ticketTitle} numberOfLines={1}>{item.description || 'Segnalazione senza titolo'}</Text>
-        <Text style={styles.ticketSub}>#{item.id?.substring(0,8)} • {item.creation_date ? new Date(item.creation_date).toLocaleDateString() : 'Data non disp.'}</Text>
-        <Text style={{fontSize:12, color:'#777'}} numberOfLines={1}>{item.location || 'Nessun indirizzo'}</Text>
+        <Text style={styles.ticketTitle} numberOfLines={1}>{item.title || 'Segnalazione'}</Text>
+        <Text style={styles.ticketSub}>
+            #{item.id?.toString().substring(0,8)} • {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/D'}
+        </Text>
       </View>
-      <View style={[styles.statusBadge, { backgroundColor: item.status === 'Risolto' ? '#D1E7DD' : '#FFF3CD' }]}>
-        <Text style={{ color: item.status === 'Risolto' ? '#0F5132' : '#856404', fontWeight: 'bold', fontSize: 10 }}>
-          {(item.status || 'APERTO').toUpperCase()}
+      <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item) }]}>
+        <Text style={{ color: getStatusTextColor(item), fontWeight: 'bold', fontSize: 10 }}>
+          {getStatusLabel(item)}
         </Text>
       </View>
     </TouchableOpacity>
@@ -76,12 +143,13 @@ const CitizenHomeScreen = ({ navigation }) => {
 
         <View style={{ flex: 1 }}>
           <Text style={styles.welcomeText}>Ciao, {user?.name?.split(' ')[0] || 'Cittadino'}! 👋</Text>
-          <Text style={styles.subText}>Ecco la situazione nel tuo comune.</Text>
+          <Text style={styles.subText}>
+              {currentTenant ? `Siamo a: ${currentTenant.name}` : 'Rilevamento posizione...'}
+          </Text>
         </View>
 
         <TouchableOpacity style={styles.notifBtn} onPress={() => navigation.navigate('Notifications')}>
            <Ionicons name="notifications-outline" size={24} color="white" />
-           <View style={styles.redDot} />
         </TouchableOpacity>
       </View>
 
@@ -97,7 +165,7 @@ const CitizenHomeScreen = ({ navigation }) => {
             style={[styles.tab, activeTab === 'history' && styles.activeTab]} 
             onPress={() => setActiveTab('history')}
           >
-            <Text style={[styles.tabText, activeTab === 'history' && styles.activeTabText]}>STORICO</Text>
+            <Text style={[styles.tabText, activeTab === 'history' && styles.activeTabText]}>RISOLTI</Text>
           </TouchableOpacity>
         </View>
 
@@ -115,7 +183,7 @@ const CitizenHomeScreen = ({ navigation }) => {
             ListEmptyComponent={
               <View style={{alignItems:'center', marginTop:50}}>
                 <Ionicons name="folder-open-outline" size={48} color="#ccc" />
-                <Text style={{color:'#999', marginTop:10}}>Nessuna segnalazione in questa lista.</Text>
+                <Text style={{color:'#999', marginTop:10}}>Nessuna segnalazione trovata qui.</Text>
               </View>
             }
           />
@@ -141,7 +209,6 @@ const styles = StyleSheet.create({
   welcomeText: { color: 'white', fontSize: 22, fontWeight: '800' },
   subText: { color: 'rgba(255,255,255,0.8)', marginTop: 4, fontSize: 13 },
   notifBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent:'center', alignItems:'center'},
-  redDot: { position:'absolute', top:10, right:12, width:8, height:8, borderRadius:4, backgroundColor: COLORS.accent },
   
   body: { flex: 1, padding: 20, marginTop: -20 },
   tabs: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 12, padding: 4, marginBottom: 15, elevation: 3 },
@@ -150,7 +217,7 @@ const styles = StyleSheet.create({
   tabText: { color: '#999', fontWeight: '600', fontSize:13 },
   activeTabText: { color: 'white' },
   
-  ticketCard: { flexDirection: 'row', backgroundColor: 'white', padding: 16, borderRadius: 16, marginBottom: 12, alignItems: 'center', elevation: 2, shadowColor:'#000', shadowOpacity:0.05 },
+  ticketCard: { flexDirection: 'row', backgroundColor: 'white', padding: 16, borderRadius: 16, marginBottom: 12, alignItems: 'center', elevation: 2 },
   iconContainer: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#F0F4F8', justifyContent: 'center', alignItems: 'center' },
   ticketTitle: { fontWeight: '700', fontSize: 16, color: '#1D3461', width: '90%' },
   ticketSub: { color: '#888', fontSize: 12, marginTop: 4 },

@@ -26,6 +26,7 @@ const mapRoleToString = (roleId) => {
 
 export const login = async (email, password) => {
   try {
+    // La password va inviata in chiaro su protocollo HTTPS.
     const response = await fetch(`${AUTH_URL}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -39,6 +40,7 @@ export const login = async (email, password) => {
       
       await setAuthTokens(token, refreshToken);
       await AsyncStorage.setItem('user_email', email);
+      
       const decoded = decodeJWT(token);
       let user = {
           id: decoded?.sub || 'unknown-id',
@@ -49,6 +51,7 @@ export const login = async (email, password) => {
           tenant_id: decoded?.tid 
       };
 
+      // Recupero dati anagrafici (GET /api/user/id)
       try {
         const userResp = await fetch(`${API_BASE}/user/${user.id}`, {
             method: 'GET',
@@ -110,11 +113,12 @@ export const googleLogin = async (googleAccessToken) => {
 
 export const register = async (userData) => {
   try {
-    const authPayload = { email: userData.email, password: userData.password };
-
-    // Gestione creazione responsabili/operatori (se l'API accetta ancora role/tenant nel register)
-    if (userData.tenant_id) authPayload.tenant_id = userData.tenant_id;
-    if (userData.role) authPayload.role = userData.role;
+    // Registra un utente. Ritorna ACCESS_TOKEN e REFRESH_TOKEN
+    // Il body deve contenere SOLO email e password secondo il txt.
+    const authPayload = { 
+        email: userData.email, 
+        password: userData.password 
+    };
 
     const response = await fetch(`${AUTH_URL}/register`, {
       method: 'POST',
@@ -128,15 +132,11 @@ export const register = async (userData) => {
         const refreshToken = data.refresh_token;
 
         if (token) {
-            // Salviamo il token se è un cittadino
-            if (!userData.role || userData.role === 'cittadino') {
-                await setAuthTokens(token, refreshToken);
-            }
-
+            await setAuthTokens(token, refreshToken);
             const decoded = decodeJWT(token);
             const userId = decoded?.sub;
 
-            // FASE 2: Creazione Anagrafica (POST /api/user)
+            // Creazione anagrafica utente dopo la registrazione
             try {
                 const userProfileData = {
                     user_id: userId,
@@ -154,13 +154,14 @@ export const register = async (userData) => {
                 console.error("Eccezione fetch User Profile:", err);
             }
 
+            // L'utente appena registrato è inizialmente senza ruolo (o cittadino di default lato FE)
             const user = {
                 id: userId,
                 email: userData.email,
                 name: userData.name,
                 surname: userData.surname,
-                role: userData.role || 'cittadino',
-                tenant_id: userData.tenant_id || null
+                role: 'cittadino', // Assunto lato app
+                tenant_id: null
             };
             return { success: true, token: token, user: user };
         }
@@ -173,8 +174,9 @@ export const register = async (userData) => {
 
 export const logout = async () => {
     try {
-        const token = await AsyncStorage.getItem('app_auth_token');
+        const token = await AsyncStorage.getItem('app_access_token');
         const refresh = await AsyncStorage.getItem('app_refresh_token');
+        // Logout invalida il refresh token
         if (refresh) {
             await fetch(`${AUTH_URL}/logout`, {
                 method: 'POST',
@@ -242,6 +244,7 @@ const clearAuthTokens = async () => {
     try {
         await AsyncStorage.removeItem('app_access_token');
         await AsyncStorage.removeItem('app_refresh_token');
+        await AsyncStorage.removeItem('user_email');
     } catch (e) {
         console.error("Errore rimozione token", e);
     }
