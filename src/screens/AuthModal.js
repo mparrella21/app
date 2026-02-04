@@ -21,7 +21,7 @@ export default function AuthModal({ navigation }) {
     webClientId: '802415952838-3cgv2g043mt4onpd791q5lf8bnu8b4fo.apps.googleusercontent.com',
     //expoClientId: 'YOUR_EXPO_CLIENT_ID.apps.googleusercontent.com',
     //iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
-    androidClientId: '802415952838-3cgv2g043mt4onpd791q5lf8bnu8b4fo.apps.googleusercontent.com',
+    androidClientId: '802415952838-9lehle0ro3dgu7dma0321lhccihdcp1h.apps.googleusercontent.com',
     //webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
   });
 

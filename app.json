@@ -23,6 +23,11 @@
     },
     "android": {
       "package": "com.mparrella21.civitas",
+      "config": {
+        "googleMaps": {
+          "apiKey": "LA_TUA_GOOGLE_MAPS_API_KEY"
+        }
+      },
       "permissions": [
         "CAMERA",
         "ACCESS_COARSE_LOCATION",
