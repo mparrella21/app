@@ -1,9 +1,10 @@
 {
   "expo": {
     "name": "Civitas",
-    "slug": "Civitas",
+    "slug": "civitas",      
+    "scheme": "civitas",
     "version": "1.0.0",
-    "scheme": "manutenzioneurbana",
+    "owner": "m.parrella21",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

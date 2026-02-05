@@ -1,31 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
+
+// --- USIAMO DIRETTAMENTE IL BROWSER ---
 import * as WebBrowser from 'expo-web-browser';
 
 import { useAuth } from '../context/AuthContext';
 import { register, login as loginApi, googleLogin } from '../services/authService'; 
 
+// Importante: gestisce il ritorno dall'autenticazione
 WebBrowser.maybeCompleteAuthSession();
 
 const { width } = Dimensions.get('window');
 
 export default function AuthModal({ navigation }) {
-  const { setDirectLogin } = useAuth(); 
+const { setDirectLogin } = useAuth(); 
   const [activeTab, setActiveTab] = useState('login'); 
   const [isLoading, setIsLoading] = useState(false);
-  
-  // Configurazione Google Auth
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    webClientId: '802415952838-3cgv2g043mt4onpd791q5lf8bnu8b4fo.apps.googleusercontent.com',
-    //expoClientId: 'YOUR_EXPO_CLIENT_ID.apps.googleusercontent.com',
-    //iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
-    androidClientId: '802415952838-9lehle0ro3dgu7dma0321lhccihdcp1h.apps.googleusercontent.com',
-    //webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
-  });
 
-  // Form State
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nome, setNome] = useState('');
@@ -34,33 +27,126 @@ export default function AuthModal({ navigation }) {
   const [cellulare, setCellulare] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Effetto per catturare il risultato del Login Google
-  useEffect(() => {
-  // Verifichiamo che la risposta sia 'success'
-    if (response?.type === 'success') {
-        // IMPORTANTE: Prendiamo l'idToken (o params.id_token) 
-        // a seconda di come è configurato il provider
-        const { id_token } = response.params; 
-        handleGoogleAuth(id_token);
-    }
-    }, [response]);
-
-  const handleGoogleAuth = async (googleIdToken) => {
+  // ---------------------------------------------------------
+  // LOGIN MANUALE PURO
+  // ---------------------------------------------------------
+  const handleGoogleManualLogin = async () => {
     setIsLoading(true);
-    // Chiamata al servizio aggiornato con id_token
-    const result = await googleLogin(googleIdToken);
-    
-    if (result.success) {
-        // Usa setDirectLogin per aggiornare il context e chiudere la modale
-        await setDirectLogin(result.token, result.user);
-        setIsLoading(false);
-        navigation.goBack();
-    } else {
-        setIsLoading(false);
-        Alert.alert("Errore", result.error || "Impossibile accedere con Google.");
-    }
-};
+    try {
+        // 1. URL DEL PROXY (Deve essere identico a quello su Google Cloud)
+        // Nota: Assicurati che su Google Cloud sia scritto in minuscolo: .../civitas
+        const proxyURL = "https://auth.expo.io/@m.parrella21/civitas";
+        
+        // 2. Costruiamo l'URL di Google a mano
+        // response_type=token ci dà direttamente l'access_token (più facile da gestire col proxy)
+        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth` +
+          `?client_id=802415952838-3cgv2g043mt4onpd791q5lf8bnu8b4fo.apps.googleusercontent.com` +
+          `&redirect_uri=${encodeURIComponent(proxyURL)}` +
+          `&response_type=token` + 
+          `&scope=openid%20profile%20email` +
+          `&include_granted_scopes=true` +
+          `&state=civitas_auth`;
 
+        console.log("Apro browser...");
+
+        // 3. APRIAMO IL BROWSER (SENZA SECONDO PARAMETRO)
+        // Non passiamo proxyURL come secondo argomento. Lasciamo che Expo rilevi
+        // automaticamente il ritorno su exp://...
+        const result = await WebBrowser.openAuthSessionAsync(authUrl);
+
+        console.log("Risultato Browser:", result);
+
+        if (result.type === 'success' && result.url) {
+            // L'URL di ritorno avrà il token nel frammento (#)
+            const params = parseUrlParams(result.url);
+            
+            if (params.access_token) {
+                // Abbiamo l'access token! Lo usiamo.
+                await fetchUserInfoAndLogin(params.access_token);
+            } else if (params.id_token) {
+                // Caso raro, ma gestiamo anche l'id_token
+                await callBackendWithGoogleToken(params.id_token);
+            } else {
+                setIsLoading(false);
+                Alert.alert("Errore", "Nessun token trovato.");
+            }
+        } else {
+            setIsLoading(false);
+            // 'dismiss' è normale se l'utente chiude, non mostriamo errori
+            if (result.type !== 'dismiss') {
+               Alert.alert("Info", "Login non completato.");
+            }
+        }
+    } catch (error) {
+        console.error(error);
+        setIsLoading(false);
+        Alert.alert("Errore", "Impossibile aprire il browser.");
+    }
+  };
+
+  // Funzione per estrarre i parametri (token) dall'URL
+  const parseUrlParams = (url) => {
+    const params = {};
+    // Divide l'url all'hash (#) o alla query (?)
+    const queryString = url.split('#')[1] || url.split('?')[1];
+    if (queryString) {
+        const pairs = queryString.split('&');
+        for (const pair of pairs) {
+            const [key, value] = pair.split('=');
+            if (key && value) {
+                params[key] = decodeURIComponent(value);
+            }
+        }
+    }
+    return params;
+  };
+
+  // Ottiene info utente da Google e poi fa login sul tuo backend
+  const fetchUserInfoAndLogin = async (accessToken) => {
+      try {
+          // 1. Chiediamo a Google chi è l'utente
+          const userInfoResp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+          const userInfo = await userInfoResp.json();
+          console.log("Google User:", userInfo);
+
+          // 2. Mandiamo il token al tuo backend
+          // Nota: Stiamo mandando l'accessToken. Se il tuo backend richiede strettamente un JWT ID Token,
+          // potrebbe servire una modifica lato backend, ma spesso accettano entrambi se configurati.
+          await callBackendWithGoogleToken(accessToken); 
+
+      } catch (err) {
+          console.log("Errore user info:", err);
+          setIsLoading(false);
+          Alert.alert("Errore", "Impossibile recuperare dati utente.");
+      }
+  };
+
+  const callBackendWithGoogleToken = async (token) => {
+      try {
+        console.log("Chiamata backend...");
+        const result = await googleLogin(token);
+        
+        if (result.success) {
+            await setDirectLogin(result.token, result.user);
+            setIsLoading(false);
+            navigation.goBack();
+        } else {
+            setIsLoading(false);
+            console.log("Backend Error:", result);
+            Alert.alert("Errore Accesso", "Il server non ha accettato il login.");
+        }
+      } catch (error) {
+          setIsLoading(false);
+          Alert.alert("Errore", "Problema di connessione col server.");
+      }
+  };
+
+
+
+  // ---------------------------------------------------------
+  // ---------------------------------------------------------
   const handleAuthAction = async () => {
     setIsLoading(true);
 
@@ -72,7 +158,7 @@ export default function AuthModal({ navigation }) {
                 return;
             }
             
-            // Login senza tenant
+            // Login classico
             const result = await loginApi(email, password);
             
             if (result.success) {
@@ -85,12 +171,14 @@ export default function AuthModal({ navigation }) {
             }
 
         } else {
+            // Registrazione
             if (!nome || !cognome || !email || !password || !cellulare || !birthDate) {
                 Alert.alert("Errore", "Compila tutti i campi, inclusa la data di nascita.");
                 setIsLoading(false);
                 return;
             }
             
+            // Regex Data
             const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
             if (!dateRegex.test(birthDate)) {
                 Alert.alert("Errore Data", "La data deve essere nel formato AAAA-MM-GG (es. 2002-07-08)");
@@ -98,6 +186,7 @@ export default function AuthModal({ navigation }) {
                 return;
             }
 
+            // Controllo Password
             if (password !== confirmPassword) {
                 Alert.alert("Errore", "Le password non coincidono");
                 setIsLoading(false);
@@ -105,7 +194,6 @@ export default function AuthModal({ navigation }) {
             }
 
             const userData = {
-                // Niente tenant_id qui
                 name: nome,
                 surname: cognome,
                 email: email,
@@ -249,12 +337,12 @@ export default function AuthModal({ navigation }) {
                 )}
               </TouchableOpacity>
 
-              {/* TASTO GOOGLE LOGIN - Solo nel Tab Login */}
+              {/* TASTO GOOGLE - Modificato per usare il PROXY */}
               {activeTab === 'login' && (
                   <TouchableOpacity 
                       style={styles.googleBtn} 
-                      disabled={!request || isLoading} 
-                      onPress={() => promptAsync()}
+                      disabled={isLoading} 
+                      onPress={() => handleGoogleManualLogin()}
                   >
                       <Ionicons name="logo-google" size={20} color="#4285F4" style={{marginRight: 10}} />
                       <Text style={styles.googleBtnText}>Accedi con Google</Text>
