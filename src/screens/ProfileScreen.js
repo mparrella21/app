@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { updateProfile, deleteUser } from '../services/userService';
+import * as Clipboard from 'expo-clipboard';
+import { COLORS } from '../styles/global'; // Per i colori
 
 export default function ProfileScreen({ navigation }) {
   const { user, logout, setUser } = useAuth(); 
@@ -47,7 +49,13 @@ export default function ProfileScreen({ navigation }) {
         ]
     );
   };
-
+  //funzione per copia e incolla id utente
+  const handleCopyId = async () => {
+    if (user?.id) {
+        await Clipboard.setStringAsync(user.id);
+        Alert.alert("Copiato!", "L'ID utente è stato copiato negli appunti.");
+    }
+};
   // NUOVA FUNZIONE: ELIMINA ACCOUNT (Requisito Profilo)
   const handleDeleteAccount = () => {
     Alert.alert(
@@ -216,7 +224,7 @@ export default function ProfileScreen({ navigation }) {
                 </View>
             )}
 
-            {currentRole === 'operatore' && (
+            {/*currentRole === 'operatore' && (
                 <View style={styles.menuGroup}>
                     <Text style={styles.menuTitle}>Gestione Operativa</Text>
                     <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('OperatorTickets')}>
@@ -227,20 +235,12 @@ export default function ProfileScreen({ navigation }) {
                         <Ionicons name="chevron-forward" size={24} color="#ccc" />
                     </TouchableOpacity>
                 </View>
-            )}
+            )*/}
 
             {(currentRole === 'responsabile' || currentRole === 'admin') && (
                 <View style={styles.menuGroup}>
-                    <Text style={styles.menuTitle}>Amministrazione</Text>
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('ResponsibleTickets')}>
-                        <View style={[styles.iconBox, { backgroundColor: '#10B981' }]}>
-                            <Ionicons name="folder-open" size={24} color="white" />
-                        </View>
-                        <Text style={styles.actionText}>Gestione Ticket Comune</Text>
-                        <Ionicons name="chevron-forward" size={24} color="#ccc" />
-                    </TouchableOpacity>
 
-                    <View style={styles.divider} />
+
 
                     <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('ManageOperators')}>
                         <View style={[styles.iconBox, { backgroundColor: '#6366F1' }]}>
@@ -257,6 +257,30 @@ export default function ProfileScreen({ navigation }) {
         {!isEditing && (
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dettagli Account</Text>
+               {/* Riga id utente */}
+            <View style={styles.infoRow}>
+    <Ionicons name="id-card-outline" size={20} color="#666" />
+    
+    {/* Rendiamo cliccabile il contenitore del testo */}
+    <TouchableOpacity 
+        style={styles.infoTextContainer} 
+        onPress={handleCopyId}
+        activeOpacity={0.6} // Feedback visivo al tocco
+    >
+        <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+            <Text style={styles.label}>ID Utente (Tocca per copiare)</Text>
+            {/* Piccola icona copia opzionale per far capire l'azione */}
+            <Ionicons name="copy-outline" size={14} color={COLORS.primary} style={{marginLeft: 5}}/>
+        </View>
+
+        <Text style={[styles.value, styles.multilineId]} 
+        selectable={true} >
+        {user?.id || 'Non disponibile'}
+        </Text>
+            </TouchableOpacity>
+        </View>
+            
+            <View style={styles.divider} />
             
             {/* Riga Email */}
             <View style={styles.infoRow}>
@@ -273,7 +297,7 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.infoRow}>
                 <Ionicons name="business-outline" size={20} color="#666" />
                 <View style={styles.infoTextContainer}>
-                    <Text style={styles.label}>Comune di competenza</Text>
+                    <Text style={styles.label}>Comune di appartenenza</Text>
                     <Text style={styles.value}>
                         {currentRole === 'cittadino' 
                             ? 'Ovunque (tramite GPS)' 

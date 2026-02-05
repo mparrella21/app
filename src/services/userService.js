@@ -1,7 +1,8 @@
 import { API_BASE } from './config';
-import { authenticatedFetch, register } from './authService';
+import { authenticatedFetch } from './authService';
 import { getOperatorCategories, getOperatorMappings, assignOperatorCategory } from './interventionService';
 
+// Recupera tutti gli utenti
 export const getAllUsers = async () => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/user`, { method: 'GET' });
@@ -13,79 +14,182 @@ export const getAllUsers = async () => {
 export const getUserById = async (id) => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/user/${id}`, { method: 'GET' });
-        if (response.ok) return await response.json();
+        if (response.ok) {
+            const data = await response.json();
+            return Array.isArray(data) ? data[0] : data;
+        }
         return null;
     } catch (e) { return null; }
 };
 
 export const updateProfile = async (userId, profileData) => {
     try {
-        const payload = {
-            name: profileData.name,
-            surname: profileData.surname,
-            phonenumber: profileData.phonenumber,
-            birth_date: profileData.birth_date
-        };
         const response = await authenticatedFetch(`${API_BASE}/user/${userId}`, {
             method: 'POST', 
-            body: JSON.stringify(payload)
+            body: JSON.stringify(profileData)
         });
         return response.ok;
     } catch (e) { return false; }
 };
 
-export const deleteUser = async (userId) => {
+// --- GESTIONE OPERATORI ---
+
+// Rimuove il ruolo di operatore
+export const deleteUser = async (operatorId, tenantId) => {
   try {
-    const response = await authenticatedFetch(`${API_BASE}/user/${userId}`, { method: 'DELETE' });
+    // CORREZIONE: Anche per la DELETE, se il backend accetta query params, è più sicuro.
+    // Tuttavia, le DELETE spesso accettano il body. Se ti da errore anche qui, cambialo in query param.
+    // Per ora mantengo il body come da specifiche TXT, ma se fallisce usa: ?tenant_id=${tenantId}
+    const response = await authenticatedFetch(`${API_BASE}/operator/${operatorId}`, { 
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenant_id: tenantId })
+    });
     return response.ok;
   } catch (e) { return false; }
 };
 
-// ADATTATO ALLA NUOVA LOGICA: Creazione operatore completo di mapping
-export const createOperator = async (operatorData, tenantId, categoryId) => {
+export const promoteToOperator = async (userId, tenantId, categoryId) => {
   try {
-    // 1. Registra l'utente come operatore per questo tenant
-    const regResult = await register({
-        email: operatorData.email,
-        password: operatorData.password,
-        name: operatorData.name,
-        surname: operatorData.surname,
-        phoneNumber: operatorData.phoneNumber,
-        role: 'operatore',
-        tenant_id: tenantId
+    const response = await authenticatedFetch(`${API_BASE}/operator`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            tenant_id: tenantId,
+            user_id: userId
+        })
     });
 
-    if (!regResult.success || !regResult.user?.id) return { success: false };
-
-    // 2. Se è stata scelta una categoria, gliela assegna via mapping (nuova logica API)
-    if (categoryId) {
-        await assignOperatorCategory(regResult.user.id, tenantId, categoryId);
+    if (!response.ok) {
+        const errText = await response.text();
+        console.error("Errore promozione operatore:", errText);
+        return { success: false, error: "Impossibile promuovere. Verifica l'ID utente." };
     }
 
-    return { success: true, id: regResult.user.id };
-  } catch (e) { return { success: false }; }
+    if (categoryId) {
+        await assignOperatorCategory(userId, tenantId, categoryId);
+    }
+
+    return { success: true };
+  } catch (e) { 
+      console.error(e);
+      return { success: false, error: e.message }; 
+  }
 };
 
-// ADATTATO ALLA NUOVA LOGICA: Filtra operatori usando i mapping tenant/operatore
 export const getOperatorsByTenant = async (tenantId) => {
-  try {
-    const allUsers = await getAllUsers();
-    const mappings = await getOperatorMappings(tenantId);
-    const categories = await getOperatorCategories();
 
-    const operatorUserIds = mappings.map(m => m.id_user);
-    let operators = allUsers.filter(u => operatorUserIds.includes(u.id));
+try {
 
-    // Arricchimento dati con il nome della categoria
-    operators = operators.map(op => {
-        const userMap = mappings.find(m => m.id_user === op.id);
-        if (userMap) {
-            const cat = categories.find(c => String(c.id) === String(userMap.id_operator_category));
-            if (cat) return { ...op, category: cat.label, category_id: cat.id };
-        }
-        return { ...op, category: 'Non assegnato' };
-    });
+// 1. Prendi la lista delle relazioni operatore (ID e TenantID)
 
-    return operators;
-  } catch (e) { return []; }
+const response = await authenticatedFetch(`${API_BASE}/operator?tenant_id=${tenantId}`, {
+
+method: 'GET',
+
+headers: { 'Content-Type': 'application/json' }
+
+});
+
+
+
+let operatorRelations = [];
+
+if (response.ok) {
+
+operatorRelations = await response.json();
+
+// Assicuriamoci sia un array
+
+if (!Array.isArray(operatorRelations)) operatorRelations = [];
+
+} else {
+
+console.warn("API /operator fallita o vuota");
+
+// Fallback vuoto o su mapping se necessario, ma meglio evitare errori
+
+}
+
+
+
+const categories = await getOperatorCategories();
+
+const mappings = await getOperatorMappings(tenantId);
+
+
+
+// 2. Per ogni relazione, recuperiamo i dettagli anagrafici dell'utente
+
+// usando GET /api/user/{id} che è permesso.
+
+const operatorsPromises = operatorRelations.map(async (rel) => {
+
+// L'API operator potrebbe restituire { id: ..., user_id: ..., ... } oppure direttamente l'oggetto user.
+
+// Assumiamo restituisca una relazione con user_id o id che è l'id operatore.
+
+// Dal txt: "Restituisce la coppia {id, tid}". 'id' qui è presumibilmente l'user_id dell'operatore.
+
+const targetId = rel.user_id || rel.id;
+
+
+if (!targetId) return null;
+
+
+
+const userDetails = await getUserById(targetId);
+
+if (!userDetails) return null;
+
+
+
+// Arricchiamo con la categoria
+
+const userMap = mappings.find(m => String(m.id_user) === String(targetId));
+
+let catLabel = 'Non assegnato';
+
+let catId = null;
+
+
+
+if (userMap) {
+
+const cat = categories.find(c => String(c.id) === String(userMap.id_operator_category));
+
+if (cat) {
+
+catLabel = cat.label;
+
+catId = cat.id;
+
+}
+
+}
+
+
+
+return { ...userDetails, id: targetId, category: catLabel, category_id: catId };
+
+});
+
+
+
+// Risolviamo tutte le promesse e filtriamo i null
+
+const operators = (await Promise.all(operatorsPromises)).filter(op => op !== null);
+
+
+
+return operators;
+
+} catch (e) {
+
+console.error("Errore getOperatorsByTenant", e);
+
+return [];
+
+}
+
 };

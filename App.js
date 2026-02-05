@@ -48,11 +48,7 @@ function RootNavigator() {
   // Se Operatore -> OperatorHome
   // Se Responsabile/Admin -> ResponsibleHome
   // Altrimenti (Cittadino o non loggato) -> Home (Mappa)
-  const initialRouteName = (user && getRole() === 'operatore') 
-      ? "OperatorHome" 
-      : (user && (getRole() === 'responsabile' || getRole() === 'admin')) 
-          ? "ResponsibleHome" 
-          : "Home";
+  const initialRouteName = "Home";
 
   return (
     <NavigationContainer>

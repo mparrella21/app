@@ -2,15 +2,16 @@ import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, TextInput, ActivityIndicator, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../styles/global';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// IMPORT SERVIZI AGGIORNATI
-import { getOperatorsByTenant, updateProfile, deleteUser } from '../services/userService';
+import { getOperatorsByTenant, promoteToOperator, deleteUser, getUserById, updateProfile } from '../services/userService';
 import { getOperatorCategories, assignOperatorCategory } from '../services/interventionService';
-import { register } from '../services/authService'; 
 import { AuthContext } from '../context/AuthContext';
 
 export default function ManageOperatorsScreen({ navigation }) {
-  const { user } = useContext(AuthContext); // Importante per prendere il tenant_id del responsabile
+  const { user } = useContext(AuthContext);
+  const insets = useSafeAreaInsets();
+
   const [operators, setOperators] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -22,17 +23,16 @@ export default function ManageOperatorsScreen({ navigation }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
-  const [opName, setOpName] = useState('');
+  // Form State
+  const [targetId, setTargetId] = useState(''); // ID Utente invece di Email
+  const [opName, setOpName] = useState(''); 
   const [opSurname, setOpSurname] = useState('');
-  const [opEmail, setOpEmail] = useState('');
-  const [opPassword, setOpPassword] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState(null); 
   
+  const [selectedCategory, setSelectedCategory] = useState(null); 
   const [catModalVisible, setCatModalVisible] = useState(false);
 
   const fetchOperators = async () => {
     setLoading(true);
-    // MODIFICA: Ora prende gli operatori specifici del tenant
     if (user?.tenant_id) {
         const data = await getOperatorsByTenant(user.tenant_id);
         setOperators(data);
@@ -46,7 +46,7 @@ export default function ManageOperatorsScreen({ navigation }) {
           const cats = await getOperatorCategories();
           setCategories(cats || []);
       } catch (e) {
-          console.error("Errore fetch categorie operatori", e);
+          console.error("Errore fetch categorie", e);
       } finally {
           setLoadingCats(false);
       }
@@ -57,10 +57,11 @@ export default function ManageOperatorsScreen({ navigation }) {
     fetchCategories();
   }, [user]);
 
-  const openCreateMode = () => {
+  const openPromoteMode = () => {
       setIsEditing(false);
       setEditingId(null);
-      setOpName(''); setOpSurname(''); setOpEmail(''); setOpPassword(''); setSelectedCategory(null);
+      setTargetId(''); 
+      setSelectedCategory(null);
       setModalFormVisible(true);
   };
 
@@ -69,8 +70,7 @@ export default function ManageOperatorsScreen({ navigation }) {
       setEditingId(op.id);
       setOpName(op.name || '');
       setOpSurname(op.surname || '');
-      setOpEmail(op.email || '');
-      setOpPassword(''); 
+      setTargetId(String(op.id)); 
       
       const catObj = categories.find(c => c.id === op.category_id || c.label === op.category) || null;
       setSelectedCategory(catObj);
@@ -78,8 +78,8 @@ export default function ManageOperatorsScreen({ navigation }) {
   };
 
   const handleSave = async () => {
-    if (!opName || !opEmail || (!isEditing && !opPassword) || !selectedCategory) {
-      Alert.alert("Errore", "Compila i campi obbligatori (Nome, Email, Password, Categoria).");
+    if (!selectedCategory) {
+      Alert.alert("Errore", "Seleziona una categoria per l'operatore.");
       return;
     }
 
@@ -87,43 +87,48 @@ export default function ManageOperatorsScreen({ navigation }) {
 
     try {
         if (isEditing) {
-            // MODIFICA: Utilizzo della nuova funzione di update profile e di ri-assegnazione categoria
-            const updateData = { name: opName, surname: opSurname, phonenumber: "0000000000" }; // Email e pass non si cambiano via profile
+            const updateData = { name: opName, surname: opSurname }; 
             const updated = await updateProfile(editingId, updateData);
             
             if (updated) {
                 await assignOperatorCategory(editingId, user.tenant_id, selectedCategory.id);
-                Alert.alert("Successo", "Operatore aggiornato!");
+                Alert.alert("Successo", "Dati operatore aggiornati!");
                 setModalFormVisible(false);
                 fetchOperators();
             } else {
                 Alert.alert("Errore", "Impossibile aggiornare l'operatore.");
             }
         } else {
-            // CREAZIONE: Passiamo l'oggetto atteso dal nuovo authService.js
-            const userData = {
-                email: opEmail,
-                password: opPassword,
-                name: opName,
-                surname: opSurname,
-                role: 'operatore',
-                tenant_id: user.tenant_id // Passiamo il tenant del responsabile
-            };
+            // PROMOZIONE TRAMITE ID
+            if (!targetId) {
+                Alert.alert("Errore", "Inserisci l'ID dell'utente cittadino.");
+                setActionLoading(false);
+                return;
+            }
 
-            const result = await register(userData);
+            // 1. Verifichiamo che l'utente esista usando l'ID (Permesso a tutti)
+            const existingUser = await getUserById(targetId.trim());
             
-            if (result && result.success && result.user) {
-                // MODIFICA: Assegniamo la categoria al nuovo operatore con il tenant_id corretto
-                await assignOperatorCategory(result.user.id, user.tenant_id, selectedCategory.id);
-                Alert.alert("Successo", "Operatore creato con successo!");
+            if (!existingUser) {
+                Alert.alert("Utente non trovato", "Nessun utente trovato con questo ID.");
+                setActionLoading(false);
+                return;
+            }
+
+            // 2. Chiamata API promozione
+            const result = await promoteToOperator(existingUser.id, user.tenant_id, selectedCategory.id);
+            
+            if (result && result.success) {
+                Alert.alert("Successo", `${existingUser.name || 'Utente'} è ora un operatore!`);
                 setModalFormVisible(false);
                 fetchOperators();
             } else {
-                Alert.alert("Errore", result.error || "Impossibile creare l'operatore.");
+                Alert.alert("Errore", result.error || "Impossibile promuovere l'utente.");
             }
         }
     } catch (e) {
         Alert.alert("Errore", "Si è verificato un errore di rete.");
+        console.error(e);
     } finally {
         setActionLoading(false);
     }
@@ -131,19 +136,19 @@ export default function ManageOperatorsScreen({ navigation }) {
 
   const handleDelete = (op) => {
       Alert.alert(
-          "Elimina Operatore", 
-          `Sei sicuro di voler eliminare ${op.name} ${op.surname}?`,
+          "Rimuovi Operatore", 
+          `Rimuovere il ruolo operatore a ${op.name || 'Utente'}?`,
           [
               { text: "Annulla", style: "cancel" },
-              { text: "Elimina", style: 'destructive', onPress: async () => {
+              { text: "Rimuovi", style: 'destructive', onPress: async () => {
                   setLoading(true);
-                  const success = await deleteUser(op.id);
+                  const success = await deleteUser(op.id, user.tenant_id);
                   if (success) {
-                      Alert.alert("Eliminato", "Operatore rimosso.");
+                      Alert.alert("Rimosso", "Ruolo operatore revocato.");
                       fetchOperators();
                   } else {
                       setLoading(false);
-                      Alert.alert("Errore", "Impossibile eliminare l'operatore.");
+                      Alert.alert("Errore", "Impossibile rimuovere l'operatore.");
                   }
               }}
           ]
@@ -158,7 +163,7 @@ export default function ManageOperatorsScreen({ navigation }) {
         </View>
         <View style={{marginLeft: 10, flex:1}}>
              <Text style={styles.opName}>{item.name} {item.surname}</Text>
-             <Text style={styles.opEmail}>{item.email}</Text>
+             <Text style={styles.opEmail}>{item.email || `ID: ${item.id}`}</Text>
              {item.category && <Text style={styles.opCat}>Categoria: {item.category}</Text>}
         </View>
       </View>
@@ -175,45 +180,72 @@ export default function ManageOperatorsScreen({ navigation }) {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 10 }]}>
+      
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Elenco Operatori</Text>
-        <TouchableOpacity onPress={openCreateMode} style={styles.addBtnHeader}>
-            <Ionicons name="add" size={24} color="white" />
-            <Text style={{color:'white', fontWeight:'bold', marginLeft:5}}>Nuovo</Text>
+        <Text style={styles.title}>Gestione Operatori</Text>
+        <TouchableOpacity onPress={openPromoteMode} style={styles.addBtnHeader}>
+            <Ionicons name="person-add" size={20} color="white" />
+            <Text style={{color:'white', fontWeight:'bold', marginLeft:5}}>Aggiungi</Text>
         </TouchableOpacity>
       </View>
+
+      <Text style={styles.subtitle}>
+          Operatori attivi nel tuo comune. ({user?.tenant_id ? 'Tenant Attivo' : '...'})
+      </Text>
 
       {loading ? (
           <ActivityIndicator size="large" color={COLORS.primary || '#007BFF'} style={{marginTop:20}} />
       ) : (
           <FlatList 
             data={operators} 
-            keyExtractor={item => item.id ? item.id.toString() : Math.random().toString()} 
+            keyExtractor={item => item.id ? String(item.id) : Math.random().toString()} 
             renderItem={renderItem}
             ListEmptyComponent={<Text style={{textAlign:'center', marginTop: 20, color:'#666'}}>Nessun operatore presente.</Text>}
             contentContainerStyle={{paddingBottom: 20}}
           />
       )}
 
-      {/* MODALE FORM RIPRISTINATO */}
+      {/* MODALE FORM */}
       <Modal visible={modalFormVisible} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>{isEditing ? "Modifica Operatore" : "Nuovo Operatore"}</Text>
+                  <Text style={styles.modalTitle}>{isEditing ? "Modifica Operatore" : "Promuovi Utente"}</Text>
                   
                   <ScrollView showsVerticalScrollIndicator={false}>
-                    <Text style={styles.label}>Nome *</Text>
-                    <TextInput style={styles.input} value={opName} onChangeText={setOpName} placeholder="Nome" />
                     
-                    <Text style={styles.label}>Cognome</Text>
-                    <TextInput style={styles.input} value={opSurname} onChangeText={setOpSurname} placeholder="Cognome" />
-                    
-                    <Text style={styles.label}>Email *</Text>
-                    <TextInput style={styles.input} value={opEmail} onChangeText={setOpEmail} placeholder="Email" keyboardType="email-address" autoCapitalize="none" />
-                    
-                    <Text style={styles.label}>{isEditing ? "Nuova Password (opzionale)" : "Password *"}</Text>
-                    <TextInput style={styles.input} value={opPassword} onChangeText={setOpPassword} placeholder="Password" secureTextEntry />
+                    {!isEditing && (
+                        <View style={styles.infoBox}>
+                            <Ionicons name="information-circle" size={24} color="#0056b3" />
+                            <Text style={styles.infoText}>
+                                A causa delle restrizioni di sicurezza, non è possibile cercare gli utenti per email.
+                                {'\n\n'}
+                                <Text style={{fontWeight:'bold'}}>Inserisci l'ID Utente</Text> del cittadino che vuoi promuovere.
+                                L'utente può trovare il suo ID nella schermata Profilo.
+                            </Text>
+                        </View>
+                    )}
+
+                    <Text style={styles.label}>{isEditing ? "ID Utente (Non modificabile)" : "ID Utente *"}</Text>
+                    <TextInput 
+                        style={[styles.input, isEditing && {backgroundColor: '#e0e0e0', color: '#888'}]} 
+                        value={targetId} 
+                        onChangeText={setTargetId} 
+                        placeholder="es. 123" 
+                        keyboardType="numeric"
+                        autoCapitalize="none" 
+                        editable={!isEditing} 
+                    />
+
+                    {isEditing && (
+                        <>
+                            <Text style={styles.label}>Nome</Text>
+                            <TextInput style={styles.input} value={opName} onChangeText={setOpName} placeholder="Nome" />
+                            
+                            <Text style={styles.label}>Cognome</Text>
+                            <TextInput style={styles.input} value={opSurname} onChangeText={setOpSurname} placeholder="Cognome" />
+                        </>
+                    )}
                     
                     <Text style={styles.label}>Categoria Operatore *</Text>
                     <TouchableOpacity style={styles.catSelector} onPress={() => setCatModalVisible(true)}>
@@ -228,7 +260,7 @@ export default function ManageOperatorsScreen({ navigation }) {
                             <Text style={styles.btnTextCancel}>Annulla</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.btn, styles.btnSave]} onPress={handleSave} disabled={actionLoading}>
-                            {actionLoading ? <ActivityIndicator color="white" /> : <Text style={styles.btnTextSave}>Salva</Text>}
+                            {actionLoading ? <ActivityIndicator color="white" /> : <Text style={styles.btnTextSave}>{isEditing ? "Salva Modifiche" : "Promuovi"}</Text>}
                         </TouchableOpacity>
                     </View>
                   </ScrollView>
@@ -236,7 +268,7 @@ export default function ManageOperatorsScreen({ navigation }) {
           </View>
       </Modal>
 
-      {/* MODALE CATEGORIA RIPRISTINATO */}
+      {/* MODALE CATEGORIA */}
       <Modal visible={catModalVisible} transparent animationType="fade">
           <View style={styles.modalOverlay}>
               <View style={[styles.modalContent, {maxHeight: '50%'}]}>
@@ -266,11 +298,11 @@ export default function ManageOperatorsScreen({ navigation }) {
   );
 }
 
-// STILI ORIGINALI INTATTI
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: COLORS.bg || '#F5F5F5' },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  container: { flex: 1, paddingHorizontal: 16, paddingBottom: 16, backgroundColor: COLORS.bg || '#F5F5F5' },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   title: { fontSize: 22, fontWeight: '800', color: COLORS.primary || '#007BFF' },
+  subtitle: { fontSize: 12, color: '#666', marginBottom: 15 },
   addBtnHeader: { flexDirection:'row', backgroundColor: COLORS.primary || '#007BFF', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, alignItems:'center', elevation: 2 },
   
   card: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: 15, borderRadius: 12, marginBottom: 10, elevation: 1 },
@@ -286,6 +318,9 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#F3F4F6', borderRadius: 8, padding: 12, fontSize: 16, borderWidth: 1, borderColor: '#E5E7EB' },
   catSelector: { flexDirection: 'row', justifyContent: 'space-between', padding: 12, backgroundColor: '#F3F4F6', borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', alignItems:'center' },
   
+  infoBox: { backgroundColor: '#e3f2fd', padding: 10, borderRadius: 8, flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  infoText: { color: '#0d47a1', fontSize: 12, marginLeft: 8, flex: 1 },
+
   formButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 30, gap: 10 },
   btn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   btnCancel: { backgroundColor: '#E0E0E0' },
