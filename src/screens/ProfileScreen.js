@@ -393,8 +393,8 @@ const formatPhoneForDisplay = (phone) => {
                     </Text>
                     <Text style={styles.value}>
                         {currentRole === 'cittadino' 
-                            ? (activeTenantName || 'Nessun comune selezionato') 
-                            : (fetchedTenantName || (user.tenant_id ? 'Caricamento...' : 'Non assegnato'))}
+                            ? (activeTenantName || 'Nessun comune selezionato oppure la posizione non è supportata') 
+                            : (fetchedTenantName || (user.tenant_id ? 'Caricamento...' : 'Non posizione nons supportata'))}
                     </Text>
                 </View>
             </View>

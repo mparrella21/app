@@ -6,8 +6,9 @@ import { AuthContext } from '../context/AuthContext';
 import { COLORS } from '../styles/global';
 import { API_BASE } from '../services/config';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getOperatorsByTenant } from '../services/userService';
+import { getOperatorsByTenant , getUserById} from '../services/userService';
 import { 
+    getRatingsForReply,
     getAssignments, 
     createAssignment, 
     deleteAssignment, 
@@ -63,9 +64,10 @@ export default function TicketDetailScreen({ route, navigation }) {
   const [editDesc, setEditDesc] = useState(''); 
   const [categories, setCategories] = useState([]); 
   const [selectedCategoryIds, setSelectedCategoryIds] = useState([]);
-
+  const [userNames, setUserNames] = useState({});
   const effectiveTenantId = paramTenantId || ticket?.tenant_id || paramTicket?.tenant_id || user?.tenant_id;
-  
+  const [votedReplies, setVotedReplies] = useState([]);
+  const [replyRatings, setReplyRatings] = useState({});
   const toggleCategory = (catId) => {
     setSelectedCategoryIds(prev => {
         const sId = String(catId);
@@ -75,6 +77,58 @@ export default function TicketDetailScreen({ route, navigation }) {
             return [...prev, sId];
         }
     });
+  };
+
+  const fetchRatingsForReports = async (replies) => {
+      const reportReplies = replies.filter(r => r.type === 'REPORT' || (r.body && r.body.includes('[RAPPORTO INTERVENTO]')));
+      if (reportReplies.length === 0) return;
+
+      const newRatingsData = {};
+
+      await Promise.all(reportReplies.map(async (r) => {
+          const ratings = await getRatingsForReply(r.id, effectiveTenantId); // Importa questa funzione dal service
+          
+          if (ratings && ratings.length > 0) {
+              const total = ratings.reduce((sum, item) => sum + (item.rating || 0), 0);
+              const avg = (total / ratings.length).toFixed(1);
+              // Controlla se l'utente corrente ha già votato
+              const hasVoted = ratings.some(item => String(item.id_user || item.user_id) === String(user.id));
+              
+              newRatingsData[r.id] = {
+                  average: avg,
+                  count: ratings.length,
+                  hasVoted: hasVoted
+              };
+          } else {
+              newRatingsData[r.id] = { average: 0, count: 0, hasVoted: false };
+          }
+      }));
+
+      setReplyRatings(prev => ({ ...prev, ...newRatingsData }));
+  };
+
+  const fetchMissingNames = async (allIds) => {
+      // Filtriamo: togliamo il mio ID, togliamo i null, e togliamo quelli che abbiamo già
+      const idsToFetch = [...new Set(allIds)].filter(uid => 
+          uid && 
+          String(uid) !== String(user.id) && 
+          !userNames[uid]
+      );
+
+      if (idsToFetch.length === 0) return;
+
+      const newNames = {};
+      // Chiamate in parallelo per velocità
+      await Promise.all(idsToFetch.map(async (uid) => {
+          const userData = await getUserById(uid);
+          if (userData && userData.name) {
+              newNames[uid] = `${userData.name} ${userData.surname}`;
+          } else {
+              newNames[uid] = `Utente Sconosciuto`; // Fallback se non trovato
+          }
+      }));
+
+      setUserNames(prev => ({ ...prev, ...newNames }));
   };
 
   const fetchData = async () => {
@@ -118,8 +172,8 @@ export default function TicketDetailScreen({ route, navigation }) {
                     const assignedId = match.id_user || match.user_id;
                     const ops = await getOperatorsByTenant(effectiveTenantId);
                     const op = Array.isArray(ops) ? ops.find(u => String(u.id) === String(assignedId)) : null;
-                    
-                    setAssignedOperator(op || { id: assignedId, name: 'Operatore', surname: 'Assegnato' });
+                    const assnome = await getUserById(assignedId);
+                    setAssignedOperator(op || { id: assignedId, name: assnome.name, surname: assnome.surname });
                 } else {
                     setAssignedOperator(null);
                 }
@@ -141,10 +195,16 @@ export default function TicketDetailScreen({ route, navigation }) {
             let tempChat = [];
             let extractedCoverId = null;
 
+           const idsCollection = [];
+            if (freshTicket.id_creator_user) idsCollection.push(freshTicket.id_creator_user);
+
             for (let r of sortedReplies) {
                 const text = (r.body || r.text || r.messaggio || "").trim();
                 const hasAttachments = r.attachments && r.attachments.length > 0;
                 
+                // Aggiungiamo ID autore messaggio alla lista da cercare
+                if (r.id_creator_user) idsCollection.push(r.id_creator_user);
+
                 if (!descFound && text.length > 0 && !hasAttachments) {
                     extractedDesc = text;
                     setDescriptionReplyId(r.id);
@@ -162,6 +222,8 @@ export default function TicketDetailScreen({ route, navigation }) {
             setInitialDescription(extractedDesc); 
             setEditDesc(extractedDesc);
             setCoverImageId(extractedCoverId);
+            fetchMissingNames(idsCollection);
+            fetchRatingsForReports(tempChat);
         }
     } catch (error) {
         Alert.alert("Errore", "Impossibile caricare i dettagli.");
@@ -431,38 +493,25 @@ export default function TicketDetailScreen({ route, navigation }) {
       ]);
   };
 
-  const handleRating = async (stars) => {
-    if(ratingSubmitted) return;
-    let reportReply = null;
-    for (let i = chatReplies.length - 1; i >= 0; i--) {
-        const r = chatReplies[i];
-        if (assignedOperator && String(r.id_creator_user) === String(assignedOperator.id)) {
-            reportReply = r;
-            break;
-        }
-        if (String(r.id_creator_user) !== String(ticket.id_creator_user)) {
-            reportReply = r;
-            break;
-        }
-    }
-
-    if (!reportReply) {
-        Alert.alert("Info", "Non è stato trovato un report operatore da votare.");
-        return;
-    }
-
-    Alert.alert("Valutazione", `Confermi ${stars} stelle?`, [
+ const handleRatingReply = async (stars, replyId) => {
+      if (votedReplies.includes(replyId)) {
+          Alert.alert("Info", "Hai già votato questo intervento in questa sessione.");
+          return;
+      }
+      
+      Alert.alert("Valutazione", `Confermi ${stars} stelle?`, [
         { text: "Annulla", style: "cancel"},
         { text: "Invia", onPress: async () => {
-            setRating(stars);
             setActionLoading(true);
-            const success = await sendFeedback(ticket.id, effectiveTenantId, stars, reportReply.id);
+            const success = await sendFeedback(user.id, effectiveTenantId, stars, replyId);
             setActionLoading(false);
             if (success) {
-                setRatingSubmitted(true);
                 Alert.alert("Grazie", "Feedback inviato.");
+                // Ricarica i voti per aggiornare la media e il conteggio
+                fetchRatingsForReports(chatReplies); 
+            } else {
+                Alert.alert("Errore", "Impossibile salvare il voto.");
             }
-            else Alert.alert("Errore", "Impossibile salvare il voto.");
         }}
     ]);
   };
@@ -478,6 +527,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           Linking.openURL(url);
       }
   };
+  
 
   if (loading || !ticket) {
       return (
@@ -588,6 +638,15 @@ export default function TicketDetailScreen({ route, navigation }) {
           ) : (
             <>
                 <Text style={styles.title}>{ticket.title}</Text>
+                <View style={styles.reporterRow}>
+                    <Text style={styles.reporterText}>
+                        Segnalato da: <Text style={{fontWeight: 'bold'}}>
+                            {String(ticket.id_creator_user) === String(user?.id) 
+                                ? "Tu" 
+                                : (userNames[ticket.id_creator_user] || `Utente Sconosciuto`)}
+                        </Text>
+                    </Text>
+                </View>
                 <Text style={styles.address}><Ionicons name="location-outline" size={14} /> {ticket.location || 'Posizione non disponibile'}</Text>
                 {ticket.lat && ticket.lon && (
                     <TouchableOpacity onPress={openMap} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
@@ -598,7 +657,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                 {assignedOperator && (
                     <View style={styles.assignedBox}>
                         <Ionicons name="person-circle" size={20} color="#6366F1" />
-                        <Text style={styles.assignedText}>In carico a: <Text style={{ fontWeight: 'bold' }}>{assignedOperator.id} </Text></Text>
+                        <Text style={styles.assignedText}>In carico a: <Text style={{ fontWeight: 'bold' }}>{assignedOperator.name && assignedOperator.surname ? `${assignedOperator.name} ${assignedOperator.surname}` : `ID ${assignedOperator.id}`} </Text></Text>
                     </View>
                 )}
                 <Text style={styles.sectionTitle}>DESCRIZIONE</Text>
@@ -644,36 +703,91 @@ export default function TicketDetailScreen({ route, navigation }) {
                  )}
             </View>
           )}
-
-          {/* RATING */}
-          {isResolved && isCitizen && !ratingSubmitted && (
-            <View style={styles.ratingBox}>
-                <Text style={styles.ratingTitle}>Valuta l'intervento</Text>
-                <View style={{flexDirection:'row', justifyContent:'center'}}>
-                   {[1,2,3,4,5].map(star => (
-                      <TouchableOpacity key={star} onPress={()=>handleRating(star)}>
-                          <Ionicons name={star <= rating ? "star" : "star-outline"} size={32} color="#FFD700" />
-                      </TouchableOpacity>
-                   ))}
-                </View>
-            </View>
-          )}
-
           <Text style={styles.sectionTitle}>MESSAGGI</Text>
           {chatReplies.length === 0 ? (
               <Text style={{color:'#999', fontStyle:'italic'}}>Nessun messaggio.</Text>
           ) : (
-              chatReplies.map((r, i) => (
-                <TouchableOpacity key={i} onLongPress={() => handleLongPressReply(r)} style={[styles.msgBox, String(r.id_creator_user) === String(user?.id) ? styles.msgMine : styles.msgOther]}>
-                    <Text style={styles.msgUser}>{String(r.id_creator_user) === String(user?.id) ? 'Tu' : r.id_creator_user}</Text>
-                    <Text style={styles.msgText}>{r.body || r.text}</Text>
-                    {r.attachments && r.attachments.length > 0 && r.attachments.map((att, idx) => (
-                        <TouchableOpacity key={idx} onPress={() => setFullScreenImage(`${API_BASE}/media/static/upload/${typeof att === 'object' ? att.id : att}.jpg`)}>
-                            <Image source={{ uri: `${API_BASE}/media/static/upload/${typeof att === 'object' ? att.id : att}.jpg` }} style={{ width: 100, height: 70, marginTop: 5, borderRadius: 5 }} />
-                        </TouchableOpacity>
-                    ))}
-                </TouchableOpacity>
-              ))
+              chatReplies.map((r, i) => {
+                const isMe = String(r.id_creator_user) === String(user?.id);
+                // Determina se è un messaggio dell'operatore (REPORT o ID operatore assegnato)
+                const isOperatorMessage = (r.type === 'REPORT' || r.type === 'operator') || 
+                                          (assignedOperator && String(r.id_creator_user) === String(assignedOperator.id));
+                
+                // Determina se è un messaggio "votabile" (deve essere un REPORT e l'utente deve essere un cittadino/manager, non l'operatore stesso)
+                const isVotable = isOperatorMessage && !isOperator && isResolved;
+
+                const displayName = isMe ? 'Tu' : (userNames[r.id_creator_user] || `Utente ${r.id_creator_user}`);
+                let boxStyle = styles.msgOther; 
+                
+                if (isOperatorMessage) {
+                    boxStyle = styles.msgOperator; 
+                    if (isMe) boxStyle = { ...styles.msgOperator, alignSelf: 'flex-end' };
+                } else if (isMe) {
+                    boxStyle = styles.msgMine;
+                }
+
+                return (
+                    <TouchableOpacity key={i} onLongPress={() => handleLongPressReply(r)} style={[styles.msgBox, boxStyle]}>
+                        <View style={{flexDirection:'row', alignItems:'center', justifyContent: 'space-between', marginBottom: 2}}>
+                            <Text style={styles.msgUser}>{displayName}</Text>
+                            {isOperatorMessage && (<View style={styles.operatorBadge}><Text style={styles.operatorBadgeText}>OPERATORE</Text></View>)}
+                        </View>
+                        <Text style={styles.msgText}>{r.body || r.text}</Text>
+                        {r.attachments && r.attachments.length > 0 && r.attachments.map((att, idx) => (
+                            <TouchableOpacity key={idx} onPress={() => setFullScreenImage(`${API_BASE}/media/static/upload/${typeof att === 'object' ? att.id : att}.jpg`)}>
+                                <Image source={{ uri: `${API_BASE}/media/static/upload/${typeof att === 'object' ? att.id : att}.jpg` }} style={{ width: 100, height: 70, marginTop: 5, borderRadius: 5 }} />
+                            </TouchableOpacity>
+                        ))}
+                        
+                        {/* --- RATING SU SINGOLA REPLY --- */}
+                        {isVotable && (
+                            <View style={styles.replyRatingContainer}>
+                                {/* Linea separatrice o spaziatore */}
+                                <View style={styles.separatorLine} />
+                                
+                                <Text style={styles.replyRatingLabel}>Valuta intervento:</Text>
+                                
+                                <View style={{flexDirection:'row', alignItems:'center', marginTop: 5}}>
+                                    {/* Stelline */}
+                                    <View style={{flexDirection:'row', marginRight: 10}}>
+                                        {[1,2,3,4,5].map(star => {
+                                            // Se l'utente ha già votato, mostra le stelle piene in base al suo voto (se lo avessimo)
+                                            // O semplicemente disabilita. Qui usiamo replyRatings[r.id]?.hasVoted per colorarle o meno.
+                                            const isVoted = replyRatings[r.id]?.hasVoted;
+                                            return (
+                                                <TouchableOpacity 
+                                                    key={star} 
+                                                    onPress={() => !isVoted && handleRatingReply(star, r.id)} 
+                                                    disabled={isVoted} // Disabilita se già votato
+                                                    style={{marginHorizontal:2}}
+                                                >
+                                                    <Ionicons 
+                                                        name="star" 
+                                                        size={22} 
+                                                        color={isVoted ? "#BDBDBD" : "#FFD700"} // Grigio se già votato, Oro se votabile
+                                                    />
+                                                </TouchableOpacity>
+                                            );
+                                        })}
+                                    </View>
+
+                                    {/* Media e Conteggio */}
+                                    {replyRatings[r.id] && replyRatings[r.id].count > 0 && (
+                                        <View style={styles.ratingStats}>
+                                            <Text style={styles.ratingAvgText}>{replyRatings[r.id].average}</Text>
+                                            <Text style={styles.ratingCountText}>({replyRatings[r.id].count} voti)</Text>
+                                        </View>
+                                    )}
+                                </View>
+                                
+                                {replyRatings[r.id]?.hasVoted && (
+                                    <Text style={{fontSize: 10, color: '#4CAF50', marginTop: 2}}>Hai già votato questo intervento.</Text>
+                                )}
+                            </View>
+                        )}
+                    </TouchableOpacity>
+                );
+              })
           )}
         </View>
       </ScrollView>
@@ -760,6 +874,60 @@ export default function TicketDetailScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+    replyRatingContainer: {
+      marginTop: 10,
+      width: '100%',
+  },
+  separatorLine: {
+      height: 1,
+      backgroundColor: '#E0E0E0', // Grigio chiaro
+      marginBottom: 8,
+      width: '100%'
+  },
+  replyRatingLabel: {
+      fontSize: 12,
+      color: '#666',
+      fontWeight: 'bold',
+      marginBottom: 2
+  },
+  ratingStats: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#f0f0f0',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 10
+  },
+  ratingAvgText: {
+      fontSize: 14,
+      fontWeight: 'bold',
+      color: '#333',
+      marginRight: 4
+  },
+  ratingCountText: {
+      fontSize: 10,
+      color: '#666'
+  },
+    msgOperator: { 
+      backgroundColor: '#FFF9C4', // Sfondo Giallo chiaro
+      alignSelf: 'flex-start', 
+      elevation: 1,
+      borderWidth: 1,
+      borderColor: '#FBC02D', // Bordo Giallo scuro
+      maxWidth: '85%'
+  },
+  operatorBadge: {
+      backgroundColor: '#FBC02D',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 4,
+      marginLeft: 8,
+  },
+  operatorBadgeText: {
+      color: 'white',
+      fontSize: 9,
+      fontWeight: 'bold'
+  },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { paddingTop: 40, paddingBottom: 15, paddingHorizontal: 15, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center' },
   backBtn: { padding: 5 },

@@ -76,7 +76,6 @@ export const AuthProvider = ({ children }) => {
           if (response.ok) {
             const profileData = await response.json();
             const realUser = Array.isArray(profileData) ? profileData[0] : (profileData.user || profileData);
-            console.log("Fetched user profile on app start:", realUser);
             if (realUser) {
               currentUser.name = realUser.name || currentUser.name;
               currentUser.surname = realUser.surname || currentUser.surname;

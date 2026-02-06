@@ -60,6 +60,22 @@ export const deleteAssignment = async (ticketId, userId, tenantId) => {
 // --- RATING (Valutazione Intervento) ---
 // =====================================================================
 
+export const getRatingsForReply = async (replyId, tenantId) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/intervention/rating/${replyId}?tenant_id=${tenantId}`, { method: 'GET' });
+        if (response.ok) {
+            const data = await response.json();
+            // L'API restituisce un array di oggetti { id_user, rating } o { user_id, rating }
+            // Assicuriamoci che sia un array
+            return Array.isArray(data) ? data : (data.ratings || []);
+        }
+        return [];
+    } catch (e) { 
+        console.error("Errore recupero ratings:", e);
+        return []; 
+    }
+};
+
 export const getRating = async (ticketId, tenantId) => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/intervention/rating/${ticketId}?tenant_id=${tenantId}`, { method: 'GET' });
@@ -68,9 +84,9 @@ export const getRating = async (ticketId, tenantId) => {
     } catch (e) { return null; }
 };
 
-export const sendFeedback = async (ticketId, tenantId, vote, replyId) => {
+export const sendFeedback = async (id_user, tenantId, vote, replyId) => {
     try {
-        const payload = { tenant_id: tenantId, rating: vote, id_ticket_reply: replyId };
+        const payload = { tenant_id: tenantId, rating: vote, id_user: id_user, id_ticket_reply: replyId };
         const response = await authenticatedFetch(`${API_BASE}/intervention/rating`, {
             method: 'POST',
             body: JSON.stringify(payload)

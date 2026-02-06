@@ -300,8 +300,8 @@ export default function HomeScreen({ navigation }) {
                 <Marker 
                     key={t.id} 
                     coordinate={{ latitude: lat, longitude: lon }}
-                    title={`Ticket #${t.id}`}
-                    description={t.title || "Nessun titolo"}
+                    title={t.title || "Nessun titolo"}
+                    description={"status: " + (t.status || "Nessun stato")}
                     
                     // QUI LA LOGICA RICHIESTA:
                     onCalloutPress={() => {

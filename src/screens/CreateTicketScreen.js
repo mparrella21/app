@@ -265,7 +265,7 @@ export default function CreateTicketScreen({ navigation, route }) {
             <View style={{marginLeft: 10, flex: 1}}>
                 <Text style={styles.infoTitle}>Posizione rilevata</Text>
                 <Text style={styles.infoText}>
-                  {address ? address : `${coords.lat?.toFixed(5)}, ${coords.lng?.toFixed(5)}`}
+                  {(address && !address.includes('undefined')) ? address : (coords.lat ? `${coords.lat.toFixed(5)}, ${coords.lng?.toFixed(5)}` : 'Indirizzo non supportato')}
                 </Text>
             </View>
           </View>
