@@ -297,14 +297,34 @@ export default function HomeScreen({ navigation }) {
                 const lon = parseFloat(t.lon || t.longitude);
                 if (!lat || !lon) return null;
                 return (
-                  <Marker 
-                    key={t.id} coordinate={{ latitude: lat, longitude: lon }}
-                    onCalloutPress={() => navigation.navigate('TicketDetail', { id: t.id, tenant_id: activeTenantId })}
-                  >
+                <Marker 
+                    key={t.id} 
+                    coordinate={{ latitude: lat, longitude: lon }}
+                    title={`Ticket #${t.id}`}
+                    description={t.title || "Nessun titolo"}
+                    
+                    // QUI LA LOGICA RICHIESTA:
+                    onCalloutPress={() => {
+                        if (user) {
+                            // 1. SE LOGGATO: Vai al dettaglio (la schermata si adatta da sola al ruolo)
+                            navigation.navigate('TicketDetail', { id: t.id, tenant_id: activeTenantId });
+                        } else {
+                            // 2. SE NON LOGGATO: Mostra avviso e porta al login
+                            Alert.alert(
+                                "Accesso Richiesto",
+                                "Devi effettuare il login per visualizzare i dettagli e gestire la segnalazione.",
+                                [
+                                    { text: "Annulla", style: "cancel" },
+                                    { text: "Accedi", onPress: () => navigation.navigate('AuthModal') }
+                                ]
+                            );
+                        }
+                    }}
+                >
                     <View style={[styles.markerCircle, {backgroundColor: getStatusColor(t.id_status || t.status)}]}>
-                      <Ionicons name="alert" size={16} color="white" />
+                    <Ionicons name="alert" size={16} color="white" />
                     </View>
-                  </Marker>
+                </Marker>
                 );
             })}
           </MapView>
