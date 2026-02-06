@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Civitas",
-    "slug": "civitas",      
+    "slug": "civitas",
     "scheme": "civitas",
     "version": "1.0.0",
     "owner": "m.parrella21",
@@ -19,6 +19,7 @@
       "bundleIdentifier": "com.marcoparrella.civitas",
       "infoPlist": {
         "NSCameraUsageDescription": "Civitas ha bisogno di accedere alla fotocamera per permetterti di scattare foto alle segnalazioni.",
+        "NSPhotoLibraryUsageDescription": "Civitas ha bisogno di accedere alle tue foto per allegarle al ticket.",
         "NSLocationWhenInUseUsageDescription": "Civitas utilizza la tua posizione per localizzare con precisione l'intervento di manutenzione."
       }
     },
@@ -31,6 +32,8 @@
       },
       "permissions": [
         "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "FOREGROUND_SERVICE"
@@ -56,6 +59,13 @@
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Consenti a Civitas di utilizzare la tua posizione."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "L'app ha bisogno di accedere alle tue foto per allegarle al ticket.",
+          "cameraPermission": "L'app ha bisogno di accedere alla fotocamera per scattare foto del problema."
         }
       ]
     ],

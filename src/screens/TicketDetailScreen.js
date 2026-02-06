@@ -8,7 +8,7 @@ import { API_BASE } from '../services/config';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getOperatorsByTenant } from '../services/userService';
 import { 
-    getAssignments, // <--- USIAMO QUESTA, PIÙ ROBUSTA
+    getAssignments, 
     createAssignment, 
     deleteAssignment, 
     sendFeedback
@@ -108,10 +108,8 @@ export default function TicketDetailScreen({ route, navigation }) {
             }
 
             // --- FIX RECUPERO ASSEGNAZIONE ---
-            // Usiamo getAssignments (tutti) e filtriamo in memoria, come nella home operatore
             try {
                 const allAssignments = await getAssignments(effectiveTenantId);
-                // Cerchiamo l'assegnazione per QUESTO ticket
                 const match = Array.isArray(allAssignments) 
                     ? allAssignments.find(a => String(a.id_ticket) === String(ticketId)) 
                     : null;
@@ -129,7 +127,6 @@ export default function TicketDetailScreen({ route, navigation }) {
                 console.log("Errore recupero assegnazione:", e);
                 setAssignedOperator(null); 
             }
-            // ---------------------------------
 
             // Risposte
             const fetchedReplies = await getAllReplies(ticketId, effectiveTenantId);
@@ -185,7 +182,6 @@ export default function TicketDetailScreen({ route, navigation }) {
   const isManager = userRole === 'responsabile' || userRole === 'admin' || userRole === 'manager';
   const isCreator = String(user?.id) === String(ticket?.id_creator_user);
 
-  // Variabile chiave per mostrare i pulsanti
   const isAssignedToMe = assignedOperator && String(user?.id) === String(assignedOperator.id);
 
   const coverImageUrl = coverImageId ? `${API_BASE}/media/static/upload/${coverImageId}.jpg` : null;
@@ -328,11 +324,9 @@ export default function TicketDetailScreen({ route, navigation }) {
       } finally { setActionLoading(false); }
   };
 
-  // --- OPERATOR: PRESA IN CARICO ---
   const handleTakeCharge = async () => {
       setActionLoading(true);
       try {
-          // Cambio stato a 2 (In Lavorazione)
           const success = await updateTicketStatus(ticket.id, effectiveTenantId, user.id, 2);
           if (success) {
               fetchData();
@@ -355,14 +349,41 @@ export default function TicketDetailScreen({ route, navigation }) {
     fetchData();
   };
 
-  const pickChatImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.5 });
-    if (!result.canceled) setChatImage(result.assets[0]);
-  };
-
-  const pickReportImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.5 });
-    if (!result.canceled) setReportImage(result.assets[0]);
+  // --- NUOVA FUNZIONE GENERICA PER SCELTA FOTO ---
+  // Accetta 'setFunction' che è la funzione di stato da aggiornare (es. setChatImage o setReportImage)
+  const handleImagePick = async (setFunction) => {
+    Alert.alert(
+        "Aggiungi Foto",
+        "Scegli una sorgente",
+        [
+            { 
+                text: "Scatta Foto", 
+                onPress: async () => {
+                    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                    if (status !== 'granted') {
+                        Alert.alert("Permesso negato", "È necessario concedere l'accesso alla fotocamera.");
+                        return;
+                    }
+                    let result = await ImagePicker.launchCameraAsync({
+                        allowsEditing: true, // Libero da crop (o metti false per foto intera raw)
+                        quality: 0.5,
+                    });
+                    if (!result.canceled) setFunction(result.assets[0]);
+                }
+            },
+            { 
+                text: "Galleria", 
+                onPress: async () => {
+                    let result = await ImagePicker.launchImageLibraryAsync({ 
+                        mediaTypes: ['images'], 
+                        quality: 0.5 
+                    });
+                    if (!result.canceled) setFunction(result.assets[0]);
+                }
+            },
+            { text: "Annulla", style: "cancel" }
+        ]
+    );
   };
 
   const openAssignModal = async () => {
@@ -586,7 +607,6 @@ export default function TicketDetailScreen({ route, navigation }) {
           )}
 
           {/* PANNELLO OPERATORE */}
-          {/* ORA CONTROLLIAMO isAssignedToMe INVECE DI RICALCOLARLO */}
           {isOperator && isAssignedToMe && !isResolved && (
             <View style={styles.operatorPanel}>
                 <Text style={styles.opTitle}>Pannello Operatore</Text>
@@ -660,9 +680,18 @@ export default function TicketDetailScreen({ route, navigation }) {
 
       {!isResolved && (
           <View style={styles.inputArea}>
-             <TouchableOpacity style={styles.cameraBtn} onPress={pickChatImage}>
+             {/* MODIFICATO: Chiama handleImagePick passando setChatImage */}
+             <TouchableOpacity style={styles.cameraBtn} onPress={() => handleImagePick(setChatImage)}>
                  <Ionicons name="camera" size={24} color={COLORS.primary} />
              </TouchableOpacity>
+
+             {/* Se c'è un'immagine selezionata per la chat, mostriamo un'anteprima/avviso */}
+             {chatImage && (
+                <View style={{marginRight: 10}}>
+                    <Ionicons name="image" size={24} color="#10B981" />
+                </View>
+             )}
+
              <TextInput style={styles.input} placeholder="Scrivi..." value={newComment} onChangeText={setNewComment} />
              <TouchableOpacity style={styles.sendBtn} onPress={handleSendComment} disabled={actionLoading}>
                 {actionLoading ? <ActivityIndicator color="white" /> : <Ionicons name="send" size={20} color="white" />}
@@ -676,16 +705,19 @@ export default function TicketDetailScreen({ route, navigation }) {
               <View style={styles.modalContent}>
                   <Text style={styles.modalTitle}>Rapporto Intervento</Text>
                   <TextInput style={styles.modalInput} multiline value={interventionReport} onChangeText={setInterventionReport} placeholder="Descrivi intervento..." />
-                  <TouchableOpacity onPress={pickReportImage} style={styles.reportPhotoBtn}>
-                     <Ionicons name="camera-outline" size={20} color="#666" style={{marginRight:5}} />
-                     <Text>{reportImage ? 'Foto Allegata' : 'Allega Foto (Opzionale)'}</Text>
+                  
+                  {/* MODIFICATO: Chiama handleImagePick passando setReportImage */}
+                  <TouchableOpacity onPress={() => handleImagePick(setReportImage)} style={styles.reportPhotoBtn}>
+                      <Ionicons name="camera-outline" size={20} color="#666" style={{marginRight:5}} />
+                      <Text>{reportImage ? 'Foto Allegata (Pronta)' : 'Allega Foto (Opzionale)'}</Text>
                   </TouchableOpacity>
+
                   <View style={styles.modalButtons}>
                       <TouchableOpacity onPress={()=>setReportModalVisible(false)} style={[styles.modalBtn, {backgroundColor:'#ccc'}]}><Text>Annulla</Text></TouchableOpacity>
                       <TouchableOpacity onPress={handleSubmitReportAndClose} style={[styles.modalBtn, {backgroundColor: COLORS.primary}]}><Text style={{color:'white', fontWeight:'bold'}}>CONFERMA RISOLUZIONE</Text></TouchableOpacity>
                   </View>
               </View>
-          </View>
+           </View>
       </Modal>
 
       <Modal visible={assignModalVisible} transparent animationType="fade">
@@ -699,7 +731,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                   )}/>
                   <TouchableOpacity onPress={()=>setAssignModalVisible(false)} style={{marginTop:10, alignSelf:'center'}}><Text style={{color:'red'}}>Annulla</Text></TouchableOpacity>
               </View>
-          </View>
+           </View>
       </Modal>
       
       <Modal visible={editReplyModalVisible} transparent animationType="fade">
@@ -712,7 +744,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                       <TouchableOpacity onPress={handleUpdateReply} style={[styles.modalBtn, {backgroundColor: COLORS.primary}]}><Text style={{color:'white'}}>Salva</Text></TouchableOpacity>
                   </View>
               </View>
-          </View>
+           </View>
       </Modal>
 
       <Modal visible={fullScreenImage !== null} transparent={true} onRequestClose={() => setFullScreenImage(null)}>

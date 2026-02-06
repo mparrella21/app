@@ -88,22 +88,34 @@ export default function CreateTicketScreen({ navigation, route }) {
     }
   };
 
-  const handlePhotoAction = async () => {
-    Alert.alert(
-      "Aggiungi Foto",
-      "Scegli una sorgente",
-      [
-        { text: "Galleria", onPress: pickImage },
-        { text: "Annulla", style: "cancel" }
-      ]
-    );
+  // --- NUOVA FUNZIONE: SCATTA FOTO ---
+  const takePhoto = async () => {
+    // 1. Richiedi permesso fotocamera
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    
+    if (status !== 'granted') {
+      Alert.alert("Permesso negato", "È necessario concedere l'accesso alla fotocamera.");
+      return;
+    }
+
+    // 2. Apri fotocamera
+    let result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true, // Permette di ritagliare dopo lo scatto
+      //aspect: [4, 3],
+      quality: 0.5,
+    });
+
+    if (!result.canceled) {
+      setImages([result.assets[0]]);
+    }
   };
 
+  // Funzione esistente per Galleria
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'], 
       allowsEditing: true,
-      aspect: [4, 3],
+      //aspect: [4, 3],
       quality: 0.5,
     });
     if (!result.canceled) {
@@ -111,7 +123,19 @@ export default function CreateTicketScreen({ navigation, route }) {
     } 
   };
 
-  // --- LOGICA DI INVIO AGGIORNATA (3 STEP SEQUENZIALI) ---
+  // --- AGGIORNATO: MENU DI SCELTA ---
+  const handlePhotoAction = async () => {
+    Alert.alert(
+      "Aggiungi Foto",
+      "Scegli una sorgente",
+      [
+        { text: "Scatta Foto", onPress: takePhoto }, // Nuova opzione
+        { text: "Galleria", onPress: pickImage },
+        { text: "Annulla", style: "cancel" }
+      ]
+    );
+  };
+
   const handleSubmit = async () => {
     if (!title) return Alert.alert("Attenzione", "Inserisci almeno il titolo!");
     if (selectedCatIds.length === 0) return Alert.alert("Attenzione", "Seleziona almeno una categoria!");
@@ -144,18 +168,16 @@ export default function CreateTicketScreen({ navigation, route }) {
       if (createdTicket) {
           const ticketId = createdTicket.id || createdTicket.insertId; 
 
-          // 3a. REPLY 1: TITOLO (Sempre, come richiesto)
-          // Usiamo await per garantire l'ordine
+          // 3a. REPLY 1: TITOLO
           await postReply(ticketId, tenantId, user.id, title);
 
-          // 3b. REPLY 2: DESCRIZIONE (Solo se c'è testo aggiuntivo)
+          // 3b. REPLY 2: DESCRIZIONE
           if (desc && desc.trim().length > 0) {
              await postReply(ticketId, tenantId, user.id, desc);
           }
 
-          // 3c. REPLY 3: FOTO (Solo se c'è foto) - Inviata separatamente
+          // 3c. REPLY 3: FOTO
           if (images.length > 0) {
-             // Manda la foto. La stringa vuota "" serve perché il body è obbligatorio nel FormData
              await postReply(ticketId, tenantId, user.id, "", images);
           }
 
