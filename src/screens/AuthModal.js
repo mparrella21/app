@@ -165,7 +165,7 @@ const { setDirectLogin } = useAuth();
                  if (result.token && result.user) {
                     await setDirectLogin(result.token, result.user);
                  }
-                 navigation.goBack(); 
+                 //navigation.goBack(); 
             } else {
                  Alert.alert("Errore Login", result.error || "Credenziali non valide");
             }
