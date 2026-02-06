@@ -65,7 +65,8 @@ export const login = async (email, password) => {
             if (realUser) {
                 user.name = realUser.name || user.name;
                 user.surname = realUser.surname || user.surname;
-                user.phoneNumber = realUser.phonenumber || user.phoneNumber;
+                user.phonenumber = realUser.phonenumber || user.phonenumber;
+                user.birth_date = realUser.birth_date || user.birth_date;
             }
         }
       } catch (err) {
@@ -75,7 +76,6 @@ export const login = async (email, password) => {
     }
     return { success: false, error: data.message || 'Login fallito' };
   } catch (e) {
-    console.error("ERRORE REALE:", e); 
     return { success: false, error: 'Errore di rete o di codice' };
   }
 };

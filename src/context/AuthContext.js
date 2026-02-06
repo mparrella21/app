@@ -65,7 +65,7 @@ export const AuthProvider = ({ children }) => {
         
         // Se avevamo dati in cache, li uniamo a quelli del token (il token vince su ruolo/id)
         let currentUser = cachedUser ? { ...JSON.parse(cachedUser), ...tokenUser } : tokenUser;
-
+        const storedEmail = await AsyncStorage.getItem('user_email');
         // 2. RECUPERO DATI AGGIORNATI DAL SERVER
         // Usiamo authenticatedFetch per gestire refresh token automatico
         try {
@@ -76,12 +76,13 @@ export const AuthProvider = ({ children }) => {
           if (response.ok) {
             const profileData = await response.json();
             const realUser = Array.isArray(profileData) ? profileData[0] : (profileData.user || profileData);
-            
+            console.log("Fetched user profile on app start:", realUser);
             if (realUser) {
               currentUser.name = realUser.name || currentUser.name;
               currentUser.surname = realUser.surname || currentUser.surname;
               currentUser.phonenumber = realUser.phonenumber || currentUser.phonenumber;
               currentUser.birth_date = realUser.birth_date || currentUser.birth_date;
+              currentUser.email= storedEmail;
               // Aggiorniamo stato e cache
               await updateUser(currentUser);
             }

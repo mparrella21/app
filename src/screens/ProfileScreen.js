@@ -6,13 +6,14 @@ import { useAuth } from '../context/AuthContext';
 import { updateProfile, deleteUser, deleteManager } from '../services/userService';
 import * as Clipboard from 'expo-clipboard';
 import { COLORS } from '../styles/global'; // Per i colori
-
-export default function ProfileScreen({ navigation }) {
+import { getTenantById } from '../services/tenantService';
+export default function ProfileScreen({ navigation , route}) {
   const { user, logout, setUser } = useAuth(); 
   
+  const activeTenantName = route.params?.activeTenantName;
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  
+  const [fetchedTenantName, setFetchedTenantName] = useState(null);
   const [editName, setEditName] = useState('');
   const [editSurname, setEditSurname] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -23,9 +24,28 @@ export default function ProfileScreen({ navigation }) {
         setEditName(user.name || '');
         setEditSurname(user.surname || '');
         setEditPhone(user.phonenumber || '');
-        // Gestione data: se arriva come ISO o stringa, assicuriamoci sia gestibile
-        setEditBirthDate(user.birth_date || ''); 
+        
+        // QUI LA MODIFICA: Convertiamo subito nel formato editabile standard
+        setEditBirthDate(formatDateForInput(user.birth_date)); 
     }
+  }, [user]);
+
+  useEffect(() => {
+    const fetchTenantInfo = async () => {
+        // Esegui solo se l'utente ha un tenant_id (quindi è Op o Resp)
+        if (user && user.tenant_id) {
+            try {
+                const tenantData = await getTenantById(user.tenant_id);
+                if (tenantData) {
+                    // Controlla come il backend restituisce il nome (di solito 'label' o 'name')
+                    setFetchedTenantName(tenantData.label || tenantData.name || 'Sconosciuto');
+                }
+            } catch (err) {
+                console.log("Errore recupero nome tenant", err);
+            }
+        }
+    };
+    fetchTenantInfo();
   }, [user]);
 
   const getNormalizedRole = () => {
@@ -96,42 +116,44 @@ export default function ProfileScreen({ navigation }) {
     );
   };
 
-  const handleDemoteRole = () => {
-    Alert.alert(
-        "Rinuncia incarico",
-        "Vuoi rinunciare al ruolo di Responsabile? Diventerai un utente semplice e perderai l'accesso alla gestione. Dovrai effettuare nuovamente l'accesso.",
-        [
-            { text: "Annulla", style: "cancel" },
-            { 
-                text: "Conferma", 
-                style: "default", // Non è distruttivo per l'account, solo per il ruolo
-                onPress: async () => {
-                    if (!user.tenant_id) {
-                        Alert.alert("Errore", "Dati mancanti (Tenant ID).");
-                        return;
-                    }
-                    setIsLoading(true);
-                    // Chiama deleteManager
-                    const success = await deleteManager(user.id, user.tenant_id);
-                    setIsLoading(false);
+  const formatDateForDisplay = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString; // Se non è valida, ritorna l'originale
+    
+    // Opzioni per: "14 May 2002"
+    // Usa 'it-IT' se vuoi "14 Maggio 2002", 'en-GB' per "14 May 2002"
+    return date.toLocaleDateString('en-GB', { 
+        day: 'numeric', 
+        month: 'short', 
+        year: 'numeric' 
+    });
+};
 
-                    if (success) {
-                        Alert.alert("Operazione riuscita", "Non sei più un responsabile. Verrai disconnesso per aggiornare i permessi.", [
-                            { text: "OK", onPress: () => {
-                                logout();
-                                navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
-                            }}
-                        ]);
-                    } else {
-                        Alert.alert("Errore", "Impossibile rimuovere il ruolo. Riprova.");
-                    }
-                }
-            }
-        ]
-    );
-  };
+// Funzione per convertire QUALSIASI data in YYYY-MM-DD per l'input
+const formatDateForInput = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    
+    // Costruisce YYYY-MM-DD manualmente per evitare slittamenti di fuso orario
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 
+// Funzione per formattare il telefono "carino"
+const formatPhoneForDisplay = (phone) => {
+    if (!phone) return '';
+    // Pulisce eventuali spazi esistenti
+    const cleaned = phone.replace(/\s/g, '');
+    // Regex per formattare tipo: 333 123 4567
+    // Adatta la regex se i tuoi numeri hanno lunghezze diverse
+    return cleaned.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3');
+};
   const toggleEdit = () => {
+    console.log("Toggling edit mode. Current user data:", user);
     if (!isEditing) {
         // Reset ai valori originali se annullo, oppure preparo i valori per la modifica
         setEditName(user.name || '');
@@ -247,8 +269,17 @@ export default function ProfileScreen({ navigation }) {
                     {/* Mostra dettagli extra se presenti */}
                     {(user.phonenumber || user.birth_date) && (
                         <View style={{marginTop: 5, alignItems: 'center'}}>
-                             {user.phonenumber ? <Text style={styles.subDetail}>📞 {user.phonenumber}</Text> : null}
-                             {user.birth_date ? <Text style={styles.subDetail}>🎂 {user.birth_date}</Text> : null}
+                             {user.phonenumber ? (
+                                <Text style={styles.subDetail}>
+                                    📞 +39 {formatPhoneForDisplay(user.phonenumber)}
+                                </Text>
+                             ) : null}
+                             {user.birth_date ? (
+                                <Text style={styles.subDetail}>
+                                    {/* Usa la funzione formatDateForDisplay */}
+                                    🎂 {formatDateForDisplay(user.birth_date)}
+                                </Text>
+                             ) : null}
                         </View>
                     )}
                 </View>
@@ -357,11 +388,13 @@ export default function ProfileScreen({ navigation }) {
             <View style={styles.infoRow}>
                 <Ionicons name="business-outline" size={20} color="#666" />
                 <View style={styles.infoTextContainer}>
-                    <Text style={styles.label}>Comune di appartenenza</Text>
+                    <Text style={styles.label}>
+                        {currentRole === 'cittadino' ? 'Posizione Attuale / Selezionata' : 'Comune di Competenza'}
+                    </Text>
                     <Text style={styles.value}>
                         {currentRole === 'cittadino' 
-                            ? 'Ovunque (tramite GPS)' 
-                            : (user.tenant_id ? `Codice Comune: ${user.tenant_id}` : 'Non assegnato')}
+                            ? (activeTenantName || 'Nessun comune selezionato') 
+                            : (fetchedTenantName || (user.tenant_id ? 'Caricamento...' : 'Non assegnato'))}
                     </Text>
                 </View>
             </View>
@@ -371,17 +404,7 @@ export default function ProfileScreen({ navigation }) {
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
             <Text style={styles.logoutText}>ESCI</Text>
         </TouchableOpacity>
-        {/* 1. PULSANTE RINUNCIA RUOLO (SOLO RESPONSABILE) */}
-                {currentRole === 'responsabile' && (
-                    <TouchableOpacity 
-                        style={[styles.roleBtn, {marginBottom: 20}]} 
-                        onPress={handleDemoteRole} 
-                        disabled={isLoading}
-                    >
-                        <Ionicons name="briefcase-outline" size={20} color="#F59E0B" style={{marginRight: 8}} />
-                        <Text style={styles.roleBtnText}>RINUNCIA AL RUOLO RESPONSABILE</Text>
-                    </TouchableOpacity>
-                )}
+
         {/* NUOVO: ZONA PERICOLOSA ELIMINAZIONE ACCOUNT */}
         {isEditing && (
             <View style={styles.dangerZone}>

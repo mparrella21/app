@@ -10,14 +10,30 @@ import { useAuth } from '../context/AuthContext';
 
 const COLORS = { primary: '#0077B6', bg: '#F3F4F6', card: '#FFF', accent: '#C06E52' };
 
-const CitizenHomeScreen = ({ navigation }) => {
+const CitizenHomeScreen = ({ navigation, route }) => {
   const { user } = useAuth();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('active'); 
-  
+  const { passedTenantId, passedTenantName } = route.params || {};
   const [currentTenant, setCurrentTenant] = useState(null); 
+
+  const initData = async () => {
+      setLoading(true);
+      
+      if (passedTenantId && passedTenantName) {
+          // CASO 1: Tenant passato dalla Home (Manuale o Rilevato là)
+          console.log("Usando Tenant passato dalla Home:", passedTenantName);
+          setCurrentTenant({ id: passedTenantId, name: passedTenantName });
+          await loadTickets(passedTenantId);
+      } else {
+          // CASO 2: Nessun parametro, rileviamo da GPS (Fallback)
+          console.log("Nessun parametro, rilevamento GPS locale...");
+          await detectLocationAndTenant();
+      }
+      setLoading(false);
+  };
 
   // 1. Rileva Posizione e Tenant
   const detectLocationAndTenant = async () => {
@@ -58,17 +74,19 @@ const CitizenHomeScreen = ({ navigation }) => {
 
   useFocusEffect(
     useCallback(() => {
-        setLoading(true);
-        detectLocationAndTenant();
-    }, [])
+      setLoading(true);
+        initData();
+    }, [passedTenantId]) // Ricarica se cambia il tenant passato
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
+    // Se abbiamo un tenant corrente (da param o gps), ricarichiamo quello
     if (currentTenant?.id) {
         await loadTickets(currentTenant.id);
     } else {
-        await detectLocationAndTenant();
+        // Altrimenti riproviamo tutto il processo
+        await initData();
     }
     setRefreshing(false);
   };

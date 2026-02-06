@@ -48,6 +48,29 @@ export const searchTenantByCoordinates = async (lat, lon) => {
   }
 };
 
+export const getTenantById = async (tenantId) => {
+    try {
+        const token = await AsyncStorage.getItem('app_access_token');
+        // Costruiamo l'URL: /api/tenant/{id}
+        const url = `${API_BASE}/tenant/${tenantId}`;
+
+        const headers = { Accept: 'application/json' };
+        if (token) headers.Authorization = `Bearer ${token}`;
+
+        const response = await fetch(url, { method: 'GET', headers });
+
+        if (response.ok) {
+            const data = await response.json();
+            // Restituiamo tutto l'oggetto, poi la UI prenderà .name o .label
+            return data; 
+        }
+        return null;
+    } catch (e) {
+        console.error('tenantService.getTenantById', e);
+        return null;
+    }
+};
+
 // Recupera tutti i tenant
 export const getAllTenants = async () => {
     try {

@@ -153,7 +153,8 @@ const { setDirectLogin } = useAuth();
     try {
         if (activeTab === 'login') {
             if (!email || !password) {
-                Alert.alert("Errore", "Email e Password sono obbligatori.");
+                // Anche qui mettiamo un messaggio più carino
+                Alert.alert("Attenzione", "Inserisci sia email che password.");
                 setIsLoading(false);
                 return;
             }
@@ -167,13 +168,21 @@ const { setDirectLogin } = useAuth();
                  }
                  //navigation.goBack(); 
             } else {
-                 Alert.alert("Errore Login", result.error || "Credenziali non valide");
+                 // --- MODIFICA QUI ---
+                 // PRIMA ERA: Alert.alert("Errore Login", result.error || "Credenziali non valide");
+                 
+                 // ADESSO:
+                 Alert.alert(
+                     "Attenzione",               // Titolo più soft (niente "Errore" o X rossa mentale)
+                     "Password o email sbagliata" // Il messaggio esatto che volevi
+                 );
             }
 
         } else {
+            // ... (Tutta la parte della registrazione resta uguale) ...
             // Registrazione
             if (!nome || !cognome || !email || !password || !cellulare || !birthDate) {
-                Alert.alert("Errore", "Compila tutti i campi, inclusa la data di nascita.");
+                Alert.alert("Attenzione", "Compila tutti i campi, inclusa la data di nascita.");
                 setIsLoading(false);
                 return;
             }
@@ -181,14 +190,14 @@ const { setDirectLogin } = useAuth();
             // Regex Data
             const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
             if (!dateRegex.test(birthDate)) {
-                Alert.alert("Errore Data", "La data deve essere nel formato AAAA-MM-GG (es. 2002-07-08)");
+                Alert.alert("Formato Data", "La data deve essere nel formato AAAA-MM-GG (es. 2002-07-08)");
                 setIsLoading(false);
                 return;
             }
 
             // Controllo Password
             if (password !== confirmPassword) {
-                Alert.alert("Errore", "Le password non coincidono");
+                Alert.alert("Attenzione", "Le password non coincidono");
                 setIsLoading(false);
                 return;
             }
@@ -213,11 +222,12 @@ const { setDirectLogin } = useAuth();
                     setActiveTab('login');
                 }
             } else {
-                Alert.alert("Errore Registrazione", result.error);
+                // Anche qui, se vuoi nascondere l'errore tecnico:
+                Alert.alert("Attenzione", "Impossibile completare la registrazione. Controlla i dati o riprova più tardi.");
             }
         }
     } catch (e) {
-        Alert.alert("Errore", "Problema tecnico durante l'autenticazione.");
+        Alert.alert("Attenzione", "Problema tecnico durante l'autenticazione.");
         console.error(e);
     } finally {
         setIsLoading(false);
