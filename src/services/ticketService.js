@@ -87,33 +87,84 @@ export const postTicket = async (ticketData, tenantId) => {
   }
 };
 
-export const updateTicket = async (id, tenantId, updateData) => {
+// Funzione generica di update (PUT) per i dettagli (titolo, lat, lon, categories)
+// Endpoint: /ticket/:id
+export const updateTicket = async (id, tenantId, userId, updateData) => {
   try {
-    const payload = { tenant_id: tenantId, ...updateData };
+    const payload = { 
+        tenant_id: tenantId, 
+        user_id: userId, 
+        ...updateData 
+    };
+    
+    console.log("PAYLOAD UPDATE TICKET:", JSON.stringify(payload));
+
     const response = await authenticatedFetch(`${API_BASE}/ticket/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload)
     });
+    
+    if (!response.ok) {
+        const err = await response.text();
+        console.error("Errore UPDATE TICKET API:", err);
+    }
     return response.ok;
-  } catch (e) { return false; }
+  } catch (e) { 
+      console.error("Eccezione updateTicket:", e);
+      return false; 
+  }
 };
 
-export const updateTicketDetails = async (idTicket, tenantId, details) => {
+// Aggiorna solo i dettagli (Titolo, Categorie, Posizione) recuperando prima i dati esistenti
+// Mantiene la logica di NON inviare id_status qui
+export const updateTicketDetails = async (idTicket, tenantId, userId, details) => {
     const currentTicket = await getTicket(idTicket, tenantId);
     if (!currentTicket) return false;
-    return await updateTicket(idTicket, tenantId, {
+
+    const lat = parseFloat(currentTicket.lat);
+    const lon = parseFloat(currentTicket.lon);
+    
+    const safeCategories = details.categories 
+    ? extractCategoryIds(details.categories)
+    : extractCategoryIds(currentTicket.categories);
+
+    return await updateTicket(idTicket, tenantId, userId, {
         title: details.title || currentTicket.title,
-        categories: details.categories ? extractCategoryIds(details.categories) : currentTicket.categories,
-        lat: parseFloat(currentTicket.lat),
-        lon: parseFloat(currentTicket.lon),
-        id_status: currentTicket.id_status
+        categories: safeCategories,
+        lat: isNaN(lat) ? 0 : lat,
+        lon: isNaN(lon) ? 0 : lon,
+        // Nota: id_status rimosso da qui come richiesto per evitare conflitti
     });
 };
 
-export const updateTicketStatus = async (idTicket, tenantId, statusId) => {
-  return await updateTicket(idTicket, tenantId, { id_status: statusId });
-};
+// NUOVA LOGICA AGGIORNAMENTO STATO
+// Endpoint: /ticket/:id/status
+// Payload richiesto: user_id, tenant_id, id_status
+export const updateTicketStatus = async (idTicket, tenantId, userId, statusId) => {
+    try {
+        const payload = {
+            tenant_id: tenantId,
+            user_id: userId,
+            id_status: parseInt(statusId)
+        };
 
+        console.log(`Aggiornamento Stato Ticket ${idTicket} a ${statusId} con User ${userId}`);
+
+        const response = await authenticatedFetch(`${API_BASE}/ticket/${idTicket}/status`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            console.error("Errore UPDATE STATUS API:", err);
+        }
+        return response.ok;
+    } catch (e) {
+        console.error("Errore updateTicketStatus:", e);
+        return false;
+    }
+};
 export const closeTicket = async (idTicket, tenantId) => {
   return await updateTicketStatus(idTicket, tenantId, 3); 
 };

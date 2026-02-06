@@ -167,10 +167,16 @@ export default function HomeScreen({ navigation }) {
                   </TouchableOpacity>
                 )}
                 {currentRole === 'responsabile' && (
+                  <>
                   <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('ResponsibleHome'); }}> 
                       <Ionicons name="business" size={20} color="#333" />
                       <Text style={styles.menuText}>Dashboard Responsabile</Text>
                   </TouchableOpacity>
+                  <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('StatsDashboard'); }}> 
+                      <Ionicons name="stats-chart" size={20} color="#333" />
+                      <Text style={styles.menuText}>Statistiche Avanzate</Text>
+                  </TouchableOpacity>
+                  </>
                 )}
                 
                 <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('Profile'); }}>

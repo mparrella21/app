@@ -3,9 +3,8 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, TextInput, A
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../styles/global';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import { getOperatorsByTenant, promoteToOperator, deleteUser, getUserById, updateProfile } from '../services/userService';
-import { getOperatorCategories, assignOperatorCategory } from '../services/interventionService';
+import { getOperatorsByTenant, promoteToOperator, deleteUser, updateProfile } from '../services/userService';
+import { getOperatorCategories, assignOperatorCategory, removeOperatorCategory } from '../services/interventionService';
 import { AuthContext } from '../context/AuthContext';
 
 export default function ManageOperatorsScreen({ navigation }) {
@@ -15,7 +14,7 @@ export default function ManageOperatorsScreen({ navigation }) {
   const [operators, setOperators] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  const [categories, setCategories] = useState([]); 
+  const [categories, setCategories] = useState([]);
   const [loadingCats, setLoadingCats] = useState(false);
 
   const [modalFormVisible, setModalFormVisible] = useState(false);
@@ -24,10 +23,7 @@ export default function ManageOperatorsScreen({ navigation }) {
   const [editingId, setEditingId] = useState(null);
 
   // Form State
-  const [targetId, setTargetId] = useState(''); // ID Utente invece di Email
-  const [opName, setOpName] = useState(''); 
-  const [opSurname, setOpSurname] = useState('');
-  
+  const [targetId, setTargetId] = useState(''); // ID Utente manuale
   const [selectedCategory, setSelectedCategory] = useState(null); 
   const [catModalVisible, setCatModalVisible] = useState(false);
 
@@ -68,18 +64,21 @@ export default function ManageOperatorsScreen({ navigation }) {
   const openEditMode = (op) => {
       setIsEditing(true);
       setEditingId(op.id);
-      setOpName(op.name || '');
-      setOpSurname(op.surname || '');
-      setTargetId(String(op.id)); 
-      
+      setTargetId(String(op.id)); // ID visualizzato ma non modificabile
+      // Trova l'oggetto categoria basato sull'ID o sulla label
       const catObj = categories.find(c => c.id === op.category_id || c.label === op.category) || null;
       setSelectedCategory(catObj);
       setModalFormVisible(true);
   };
 
   const handleSave = async () => {
+    // Validazione ID (solo in creazione)
+    if (!isEditing && !targetId.trim()) {
+        Alert.alert("Errore", "Inserisci l'ID dell'utente cittadino.");
+        return;
+    }
     if (!selectedCategory) {
-      Alert.alert("Errore", "Seleziona una categoria per l'operatore.");
+      Alert.alert("Errore", "Seleziona una categoria per l'operatore (Requisito fondamentale).");
       return;
     }
 
@@ -87,43 +86,30 @@ export default function ManageOperatorsScreen({ navigation }) {
 
     try {
         if (isEditing) {
-            const updateData = { name: opName, surname: opSurname }; 
-            const updated = await updateProfile(editingId, updateData);
+            // MODIFICA OPERATORE ESISTENTE (Solo cambio categoria in questo contesto)
+            // Prima rimuoviamo la categoria vecchia se necessario, poi mettiamo la nuova.
+            // Per semplicità, assegniamo la nuova (l'API potrebbe gestire l'overwrite o richiedere delete prima).
+            // Proviamo a sovrascrivere.
+            const success = await assignOperatorCategory(editingId, user.tenant_id, selectedCategory.id);
             
-            if (updated) {
-                await assignOperatorCategory(editingId, user.tenant_id, selectedCategory.id);
-                Alert.alert("Successo", "Dati operatore aggiornati!");
+            if (success) {
+                Alert.alert("Successo", "Categoria operatore aggiornata!");
                 setModalFormVisible(false);
                 fetchOperators();
             } else {
-                Alert.alert("Errore", "Impossibile aggiornare l'operatore.");
+                Alert.alert("Errore", "Impossibile aggiornare la categoria.");
             }
         } else {
-            // PROMOZIONE TRAMITE ID
-            if (!targetId) {
-                Alert.alert("Errore", "Inserisci l'ID dell'utente cittadino.");
-                setActionLoading(false);
-                return;
-            }
+            // PROMOZIONE NUOVO OPERATORE TRAMITE ID
+            // 1. Chiamata API promozione + Assegnazione Categoria
+            const result = await promoteToOperator(targetId.trim(), user.tenant_id, selectedCategory.id);
 
-            // 1. Verifichiamo che l'utente esista usando l'ID (Permesso a tutti)
-            const existingUser = await getUserById(targetId.trim());
-            
-            if (!existingUser) {
-                Alert.alert("Utente non trovato", "Nessun utente trovato con questo ID.");
-                setActionLoading(false);
-                return;
-            }
-
-            // 2. Chiamata API promozione
-            const result = await promoteToOperator(existingUser.id, user.tenant_id, selectedCategory.id);
-            
             if (result && result.success) {
-                Alert.alert("Successo", `${existingUser.name || 'Utente'} è ora un operatore!`);
+                Alert.alert("Successo", `L'utente ID ${targetId} è stato promosso a Operatore (${selectedCategory.label})!`);
                 setModalFormVisible(false);
                 fetchOperators();
             } else {
-                Alert.alert("Errore", result.error || "Impossibile promuovere l'utente.");
+                Alert.alert("Errore", result.error || "Impossibile promuovere l'utente. Verifica che l'ID sia corretto.");
             }
         }
     } catch (e) {
@@ -136,8 +122,8 @@ export default function ManageOperatorsScreen({ navigation }) {
 
   const handleDelete = (op) => {
       Alert.alert(
-          "Rimuovi Operatore", 
-          `Rimuovere il ruolo operatore a ${op.name || 'Utente'}?`,
+          "Rimuovi Ruolo", 
+          `Revocare i permessi di operatore a ${op.name || 'Utente'} (ID: ${op.id})?`,
           [
               { text: "Annulla", style: "cancel" },
               { text: "Rimuovi", style: 'destructive', onPress: async () => {
@@ -163,17 +149,19 @@ export default function ManageOperatorsScreen({ navigation }) {
         </View>
         <View style={{marginLeft: 10, flex:1}}>
              <Text style={styles.opName}>{item.name} {item.surname}</Text>
-             <Text style={styles.opEmail}>{item.email || `ID: ${item.id}`}</Text>
-             {item.category && <Text style={styles.opCat}>Categoria: {item.category}</Text>}
+             <Text style={styles.opEmail}>{item.email || `ID Utente: ${item.id}`}</Text>
+             <View style={styles.badgeCat}>
+                <Text style={styles.badgeCatText}>{item.category || 'Nessuna Cat.'}</Text>
+             </View>
         </View>
       </View>
       
       <View style={{flexDirection:'row'}}>
           <TouchableOpacity onPress={() => openEditMode(item)} style={{padding:8, marginRight:5}}>
-              <Ionicons name="create-outline" size={24} color="#F59E0B" />
+              <Ionicons name="settings-outline" size={22} color="#F59E0B" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => handleDelete(item)} style={{padding:8}}>
-              <Ionicons name="trash-outline" size={24} color="#D32F2F" />
+             <Ionicons name="trash-outline" size={22} color="#D32F2F" />
           </TouchableOpacity>
       </View>
     </View>
@@ -183,19 +171,23 @@ export default function ManageOperatorsScreen({ navigation }) {
     <View style={[styles.container, { paddingTop: insets.top + 10 }]}>
       
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Gestione Operatori</Text>
-        <TouchableOpacity onPress={openPromoteMode} style={styles.addBtnHeader}>
-            <Ionicons name="person-add" size={20} color="white" />
-            <Text style={{color:'white', fontWeight:'bold', marginLeft:5}}>Aggiungi</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{padding:5, marginRight:10}}>
+            <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
+        <Text style={styles.title}>Gestione Operatori</Text>
       </View>
+      
+      <TouchableOpacity onPress={openPromoteMode} style={styles.addBtnBlock}>
+            <Ionicons name="person-add" size={20} color="white" />
+            <Text style={{color:'white', fontWeight:'bold', marginLeft:10}}>PROMUOVI CITTADINO A OPERATORE</Text>
+      </TouchableOpacity>
 
       <Text style={styles.subtitle}>
-          Operatori attivi nel tuo comune. ({user?.tenant_id ? 'Tenant Attivo' : '...'})
+         Operatori attivi nel comune. Assegna le categorie per permettere loro di ricevere i ticket corretti.
       </Text>
 
       {loading ? (
-          <ActivityIndicator size="large" color={COLORS.primary || '#007BFF'} style={{marginTop:20}} />
+          <ActivityIndicator size="large" color={COLORS.primary} style={{marginTop:20}} />
       ) : (
           <FlatList 
             data={operators} 
@@ -210,7 +202,7 @@ export default function ManageOperatorsScreen({ navigation }) {
       <Modal visible={modalFormVisible} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>{isEditing ? "Modifica Operatore" : "Promuovi Utente"}</Text>
+                  <Text style={styles.modalTitle}>{isEditing ? "Modifica Categoria" : "Promuovi Utente"}</Text>
                   
                   <ScrollView showsVerticalScrollIndicator={false}>
                     
@@ -218,10 +210,7 @@ export default function ManageOperatorsScreen({ navigation }) {
                         <View style={styles.infoBox}>
                             <Ionicons name="information-circle" size={24} color="#0056b3" />
                             <Text style={styles.infoText}>
-                                A causa delle restrizioni di sicurezza, non è possibile cercare gli utenti per email.
-                                {'\n\n'}
-                                <Text style={{fontWeight:'bold'}}>Inserisci l'ID Utente</Text> del cittadino che vuoi promuovere.
-                                L'utente può trovare il suo ID nella schermata Profilo.
+                                Inserisci l'ID Utente del cittadino. L'utente può trovare il suo ID nella sua Area Personale.
                             </Text>
                         </View>
                     )}
@@ -237,17 +226,7 @@ export default function ManageOperatorsScreen({ navigation }) {
                         editable={!isEditing} 
                     />
 
-                    {isEditing && (
-                        <>
-                            <Text style={styles.label}>Nome</Text>
-                            <TextInput style={styles.input} value={opName} onChangeText={setOpName} placeholder="Nome" />
-                            
-                            <Text style={styles.label}>Cognome</Text>
-                            <TextInput style={styles.input} value={opSurname} onChangeText={setOpSurname} placeholder="Cognome" />
-                        </>
-                    )}
-                    
-                    <Text style={styles.label}>Categoria Operatore *</Text>
+                    <Text style={styles.label}>Categoria Operatore (Specializzazione) *</Text>
                     <TouchableOpacity style={styles.catSelector} onPress={() => setCatModalVisible(true)}>
                         <Text style={{color: selectedCategory ? '#333' : '#999'}}>
                             {selectedCategory ? selectedCategory.label : "Seleziona Categoria..."}
@@ -260,7 +239,7 @@ export default function ManageOperatorsScreen({ navigation }) {
                             <Text style={styles.btnTextCancel}>Annulla</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.btn, styles.btnSave]} onPress={handleSave} disabled={actionLoading}>
-                            {actionLoading ? <ActivityIndicator color="white" /> : <Text style={styles.btnTextSave}>{isEditing ? "Salva Modifiche" : "Promuovi"}</Text>}
+                            {actionLoading ? <ActivityIndicator color="white" /> : <Text style={styles.btnTextSave}>{isEditing ? "Salva" : "Promuovi"}</Text>}
                         </TouchableOpacity>
                     </View>
                   </ScrollView>
@@ -268,15 +247,15 @@ export default function ManageOperatorsScreen({ navigation }) {
           </View>
       </Modal>
 
-      {/* MODALE CATEGORIA */}
+      {/* MODALE SELEZIONE CATEGORIA */}
       <Modal visible={catModalVisible} transparent animationType="fade">
           <View style={styles.modalOverlay}>
               <View style={[styles.modalContent, {maxHeight: '50%'}]}>
-                  <Text style={styles.modalTitle}>Scegli Categoria</Text>
+                  <Text style={styles.modalTitle}>Scegli Specializzazione</Text>
                   {loadingCats ? (
                       <ActivityIndicator color={COLORS.primary} />
                   ) : categories.length === 0 ? (
-                      <Text style={{textAlign:'center', color:'#666'}}>Nessuna categoria disponibile.</Text>
+                      <Text style={{textAlign:'center', color:'#666'}}>Nessuna categoria disponibile. Creale via API o DB.</Text>
                   ) : (
                     <ScrollView>
                         {categories.map((cat) => (
@@ -299,16 +278,17 @@ export default function ManageOperatorsScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 16, paddingBottom: 16, backgroundColor: COLORS.bg || '#F5F5F5' },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
-  title: { fontSize: 22, fontWeight: '800', color: COLORS.primary || '#007BFF' },
-  subtitle: { fontSize: 12, color: '#666', marginBottom: 15 },
-  addBtnHeader: { flexDirection:'row', backgroundColor: COLORS.primary || '#007BFF', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, alignItems:'center', elevation: 2 },
+  container: { flex: 1, paddingHorizontal: 16, paddingBottom: 16, backgroundColor: COLORS.bg },
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+  title: { fontSize: 22, fontWeight: '800', color: COLORS.primary },
+  subtitle: { fontSize: 13, color: '#666', marginBottom: 15 },
+  addBtnBlock: { flexDirection:'row', backgroundColor: COLORS.primary, padding: 15, borderRadius: 10, alignItems:'center', justifyContent:'center', marginBottom: 20, elevation: 3 },
   
-  card: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: 15, borderRadius: 12, marginBottom: 10, elevation: 1 },
+  card: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: 15, borderRadius: 12, marginBottom: 10, elevation: 2 },
   opName: { fontWeight: '700', fontSize: 16, color:'#333' },
   opEmail: { color: '#666', fontSize: 13 },
-  opCat: { color: '#007BFF', fontSize: 12, marginTop: 2, fontWeight:'600' },
+  badgeCat: { backgroundColor: '#E3F2FD', alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 4 },
+  badgeCatText: { color: '#1976D2', fontSize: 11, fontWeight: 'bold' },
   avatarPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#E0E0E0', justifyContent: 'center', alignItems: 'center'},
   
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
@@ -324,7 +304,7 @@ const styles = StyleSheet.create({
   formButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 30, gap: 10 },
   btn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   btnCancel: { backgroundColor: '#E0E0E0' },
-  btnSave: { backgroundColor: COLORS.primary || '#007BFF' },
+  btnSave: { backgroundColor: COLORS.primary },
   btnTextCancel: { color: '#333', fontWeight: 'bold' },
   btnTextSave: { color: 'white', fontWeight: 'bold' },
 

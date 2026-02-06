@@ -23,19 +23,30 @@ export const getAssignmentByTicketId = async (ticketId, tenantId) => {
 
 export const createAssignment = async (ticketId, userId, tenantId) => {
     try {
-        // MODIFICA: id_user -> user_id
-        const payload = { user_id: userId, tenant_id: tenantId, ticket_id: ticketId };
+        const payload = { user_id: userId, tenant_id: tenantId, id_ticket: ticketId };
+        console.log("INVIO ASSEGNAZIONE:", JSON.stringify(payload)); 
+
         const response = await authenticatedFetch(`${API_BASE}/intervention/assignment`, {
             method: 'POST',
             body: JSON.stringify(payload)
         });
-        return response.ok;
-    } catch (e) { return false; }
+
+        // Se la risposta non è OK, leggiamo il messaggio di errore dal server
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("ERRORE SERVER ASSEGNAZIONE:", response.status, errorText);
+            return false;
+        }
+
+        return true;
+    } catch (e) { 
+        console.error("ECCEZIONE NETWORK/CODICE:", e);
+        return false; 
+    }
 };
 
 export const deleteAssignment = async (ticketId, userId, tenantId) => {
     try {
-        // MODIFICA: id_user -> user_id
         const payload = { user_id: userId, tenant_id: tenantId };
         const response = await authenticatedFetch(`${API_BASE}/intervention/assignment/${ticketId}`, {
             method: 'DELETE',
@@ -62,6 +73,18 @@ export const sendFeedback = async (ticketId, tenantId, vote, replyId) => {
         const payload = { tenant_id: tenantId, rating: vote, id_ticket_reply: replyId };
         const response = await authenticatedFetch(`${API_BASE}/intervention/rating`, {
             method: 'POST',
+            body: JSON.stringify(payload)
+        });
+        return response.ok;
+    } catch (e) { return false; }
+};
+
+export const deleteFeedback = async (ticketId, userId, tenantId) => {
+    try {
+        // API: DELETE /api/intervention/rating/id
+        const payload = { user_id: userId, tenant_id: tenantId };
+        const response = await authenticatedFetch(`${API_BASE}/intervention/rating/${ticketId}`, {
+            method: 'DELETE',
             body: JSON.stringify(payload)
         });
         return response.ok;
@@ -123,7 +146,6 @@ export const getOperatorMappings = async (tenantId) => {
 
 export const assignOperatorCategory = async (userId, tenantId, categoryId) => {
     try {
-        // MODIFICA: id_user -> user_id
         const payload = { tenant_id: tenantId, user_id: userId, id_operator_category: categoryId };
         const response = await authenticatedFetch(`${API_BASE}/intervention/mappings/user-operator`, {
             method: 'POST',
@@ -135,7 +157,6 @@ export const assignOperatorCategory = async (userId, tenantId, categoryId) => {
 
 export const removeOperatorCategory = async (userId, tenantId, categoryId) => {
     try {
-        // MODIFICA: id_user -> user_id
         const payload = { tenant_id: tenantId, user_id: userId, id_operator_category: categoryId };
         const response = await authenticatedFetch(`${API_BASE}/intervention/mappings/user-operator`, {
             method: 'DELETE',

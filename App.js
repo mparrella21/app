@@ -21,7 +21,7 @@ import OperatorTicketsScreen from './src/screens/OperatorTicketsScreen';
 // Schermate Responsabile
 import ResponsibleTicketsScreen from './src/screens/ResponsibleTicketsScreen'; 
 import ManageOperatorsScreen from './src/screens/ManageOperatorsScreen';
-
+import StatsDashboardScreen from './src/screens/StatsDashboardScreen'; // <--- AGGIUNGI QUESTO
 // Schermate Comuni
 import TicketDetailScreen from './src/screens/TicketDetailScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -87,7 +87,7 @@ function RootNavigator() {
             <Stack.Screen name="OperatorHome" component={OperatorTicketsScreen} />
             <Stack.Screen name="ResponsibleHome" component={ResponsibleTicketsScreen} />
             <Stack.Screen name="ManageOperators" component={ManageOperatorsScreen} />
-
+            <Stack.Screen name="StatsDashboard" component={StatsDashboardScreen} />
             <Stack.Screen name="TicketDetail" component={TicketDetailScreen} options={{ presentation: 'card' }} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
           </>

@@ -3,24 +3,35 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-
-// Services
-import { updateTicketStatus } from '../services/ticketService';
+import { updateTicketStatus, getAllTickets } from '../services/ticketService';
 import { getAssignments } from '../services/interventionService'; 
 import { COLORS } from '../styles/global';
+import { useAuth } from '../context/AuthContext';
 
 export default function OperatorTicketsScreen({ navigation }) {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('todo'); // 'todo', 'working', 'done'
+  const [filter, setFilter] = useState('todo'); 
 
   const loadTasks = async () => {
+    if (!user?.tenant_id) return;
     setLoading(true);
     try {
-      const data = await getAssignments();
-      setTasks(data);
+      // 1. Assegnamenti
+      const assignments = await getAssignments(user.tenant_id);
+      const myTicketIds = assignments.filter(a => String(a.id_user) === String(user.id)).map(a => a.id_ticket);
+
+      // 2. Ticket del tenant
+      const allTenantTickets = await getAllTickets(user.tenant_id);
+      
+      // 3. Filtro
+      const myFullTickets = allTenantTickets.filter(ticket => myTicketIds.includes(ticket.id));
+      setTasks(myFullTickets);
+
     } catch (e) {
       console.error("Errore caricamento task operatore:", e);
+      Alert.alert("Errore", "Impossibile caricare i ticket assegnati.");
     } finally {
       setLoading(false);
     }
@@ -29,15 +40,11 @@ export default function OperatorTicketsScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       loadTasks();
-    }, [])
+    }, [user])
   );
 
   // Gestione "Prendi in Carico"
-  const handleTakeCharge = async (item) => {
-    // Estraiamo l'ID del ticket (adattabile a seconda se item è l'assegnazione o il ticket stesso)
-    const ticketData = item.ticket ? item.ticket : item;
-    const ticketId = ticketData.id || ticketData.id_ticket; 
-
+  const handleTakeCharge = async (ticketData) => {
     Alert.alert(
       "Presa in carico",
       "Vuoi confermare l'inizio dei lavori per questo ticket?",
@@ -48,8 +55,8 @@ export default function OperatorTicketsScreen({ navigation }) {
           onPress: async () => {
             setLoading(true);
             try {
-                // Per prendere in carico, basta aggiornare lo stato del TICKET a 2 ("In Lavorazione")
-                const success = await updateTicketStatus(ticketId, 'In Lavorazione', 2);
+                // LOGICA CORRETTA: Passiamo user.id e stato 2 (In Lavorazione)
+                const success = await updateTicketStatus(ticketData.id, user.tenant_id, user.id, 2);
                 
                 if (success) {
                     Alert.alert("Successo", "Ticket preso in carico correttamente.");
@@ -70,29 +77,23 @@ export default function OperatorTicketsScreen({ navigation }) {
     );
   };
 
-  // Gestione "Risolvi"
   const handleResolve = (ticketData) => {
-    // Passiamo i dati del ticket alla schermata di dettaglio per la chiusura (aggiunta foto e rapporto intervento)
-    navigation.navigate('TicketDetail', { ticket: ticketData });
+    // La risoluzione richiede un rapporto, quindi mandiamo al dettaglio
+    navigation.navigate('TicketDetail', { id: ticketData.id, ticket: ticketData, tenant_id: user.tenant_id });
   };
 
-  // Filtro logico frontend
   const getFilteredTasks = () => {
-    return tasks.filter(item => {
-      // Normalizzazione: supporta sia struttura piatta che annidata
-      const ticketStatus = (item.ticket?.status || item.status || '').toLowerCase();
-      const statusId = item.ticket?.id_status || item.id_status;
+    return tasks.filter(ticket => {
+      const ticketStatus = (ticket.status || '').toLowerCase();
+      const statusId = ticket.id_status;
       
       if (filter === 'todo') {
-        // Ticket assegnati ma non ancora in lavorazione (Stato 1)
         return statusId === 1 || ticketStatus === 'assegnato' || ticketStatus === 'ricevuto' || ticketStatus === 'open' || ticketStatus === 'aperto';
       }
       if (filter === 'working') {
-        // Ticket in corso (Stato 2)
-        return statusId === 2 || ticketStatus === 'in lavorazione' || ticketStatus === 'in corso' || ticketStatus === 'working' || ticketStatus === 'in_progress';
+        return statusId === 2 || ticketStatus === 'in lavorazione' || ticketStatus === 'in corso' || ticketStatus === 'working';
       }
       if (filter === 'done') {
-        // Ticket risolti o chiusi (Stato 3 o 4)
         return statusId === 3 || statusId === 4 || ticketStatus === 'risolto' || ticketStatus === 'chiuso' || ticketStatus === 'closed';
       }
       return true;
@@ -100,38 +101,37 @@ export default function OperatorTicketsScreen({ navigation }) {
   };
 
   const renderItem = ({ item }) => {
-    // Estrazione dati ticket dall'oggetto assegnazione o dal ticket stesso
-    const ticketData = item.ticket ? item.ticket : item; 
-    
+    const ticketData = item;
     if (!ticketData) return null;
-
+    const catLabel = (ticketData.categories && ticketData.categories.length > 0 && typeof ticketData.categories[0] === 'object') 
+        ? ticketData.categories[0].label 
+        : 'Generico';
+    const locationDisplay = ticketData.location 
+        ? ticketData.location 
+        : (ticketData.lat && ticketData.lon 
+            ? `${parseFloat(ticketData.lat).toFixed(5)}, ${parseFloat(ticketData.lon).toFixed(5)}` 
+            : 'Posizione non disponibile');
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-            <Text style={styles.categoryBadge}>
-                {Array.isArray(ticketData.categories) && ticketData.categories.length > 0 
-                    ? ticketData.categories[0].label 
-                    : (ticketData.category || 'Generico')}
-            </Text>
+            <Text style={styles.categoryBadge}>{catLabel}</Text>
             <Text style={styles.date}>{ticketData.creation_date ? new Date(ticketData.creation_date).toLocaleDateString() : 'Data N/D'}</Text>
         </View>
-        
-        <Text style={styles.title}>{ticketData.titolo || ticketData.title || 'Senza Titolo'}</Text>
+        <Text style={styles.title}>{ticketData.title || 'Senza Titolo'}</Text>
         <Text style={styles.address} numberOfLines={1}>
-            <Ionicons name="location-outline" size={14} /> {ticketData.indirizzo || ticketData.address || 'Posizione non disponibile'}
+            <Ionicons name="location-outline" size={14} /> {locationDisplay}
         </Text>
 
         <View style={styles.actionRow}>
             <TouchableOpacity 
                 style={styles.detailBtn} 
-                onPress={() => navigation.navigate('TicketDetail', { id: ticketData.id, ticket: ticketData })}
+                onPress={() => navigation.navigate('TicketDetail', { id: ticketData.id, ticket: ticketData, tenant_id: user.tenant_id })}
             >
                 <Text style={styles.detailText}>Dettagli</Text>
             </TouchableOpacity>
 
-            {/* Logica Bottoni Azione */}
             {filter === 'todo' && (
-                <TouchableOpacity style={styles.primaryBtn} onPress={() => handleTakeCharge(item)}>
+                <TouchableOpacity style={styles.primaryBtn} onPress={() => handleTakeCharge(ticketData)}>
                     <Text style={styles.btnText}>Prendi in Carico</Text>
                 </TouchableOpacity>
             )}
@@ -156,11 +156,18 @@ export default function OperatorTicketsScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={styles.header}>
+        {/* AGGIUNTO: Tasto Indietro */}
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{marginRight: 10}}>
+             <Ionicons name="arrow-back" size={24} color="white" />
+        </TouchableOpacity>
+
         <Text style={styles.headerTitle}>Dashboard Operatore</Text>
-        <TouchableOpacity onPress={loadTasks}><Ionicons name="reload" size={24} color="white" /></TouchableOpacity>
+        
+        <TouchableOpacity onPress={loadTasks}>
+            <Ionicons name="reload" size={24} color="white" />
+        </TouchableOpacity>
       </SafeAreaView>
 
-      {/* TABS */}
       <View style={styles.tabsContainer}>
         <TouchableOpacity style={[styles.tab, filter==='todo' && styles.activeTab]} onPress={()=>setFilter('todo')}>
             <Text style={[styles.tabText, filter==='todo' && styles.activeTabText]}>Da Fare</Text>
@@ -178,7 +185,7 @@ export default function OperatorTicketsScreen({ navigation }) {
       ) : (
         <FlatList 
             data={getFilteredTasks()} 
-            keyExtractor={(item, index) => String(item.id || item.id_ticket || index)} 
+            keyExtractor={(item, index) => String(item.id || index)} 
             renderItem={renderItem}
             contentContainerStyle={{padding: 16, paddingBottom: 100}}
             refreshControl={<RefreshControl refreshing={loading} onRefresh={loadTasks}/>}
@@ -196,22 +203,26 @@ export default function OperatorTicketsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' },
-  header: { backgroundColor: '#1F2937', padding: 20, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: 'white' },
-  
+  // Modificato per allineare gli elementi (freccia - titolo - reload)
+  header: { 
+      backgroundColor: '#1F2937', 
+      padding: 20, 
+      flexDirection:'row', 
+      alignItems:'center',
+      justifyContent: 'space-between'
+  },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: 'white', flex: 1, textAlign: 'center' },
   tabsContainer: { flexDirection: 'row', backgroundColor: 'white', elevation: 2 },
   tab: { flex: 1, paddingVertical: 15, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
   activeTab: { borderBottomColor: COLORS.primary },
   tabText: { color: '#666', fontWeight: '600' },
   activeTabText: { color: COLORS.primary, fontWeight: 'bold' },
-
   card: { backgroundColor: 'white', borderRadius: 10, padding: 15, marginBottom: 15, elevation: 2 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   categoryBadge: { fontSize: 10, backgroundColor: '#E0F2F1', color: '#00695C', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, fontWeight:'bold', textTransform:'uppercase', overflow: 'hidden' },
   date: { fontSize: 12, color: '#999' },
   title: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 },
   address: { fontSize: 13, color: '#666', marginBottom: 15 },
-  
   actionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems:'center', borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 12 },
   detailBtn: { padding: 8 },
   detailText: { color: '#666' },

@@ -1,30 +1,39 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { login as apiLogin, register as apiRegister } from '../services/authService';
+import { login as apiLogin, register as apiRegister, authenticatedFetch } from '../services/authService'; // IMPORTATO authenticatedFetch
 import { setAuthTokens, clearAuthTokens, getAuthTokens } from '../services/authStorage';
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 import { jwtDecode } from 'jwt-decode';
-export const AuthContext = createContext();
 import { API_BASE } from '../services/config';
 
+export const AuthContext = createContext();
+
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  const [user, setUserState] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Funzione Helper per aggiornare stato E memoria locale
+  const updateUser = async (userData) => {
+      setUserState(userData);
+      if (userData) {
+          await AsyncStorage.setItem('user_data', JSON.stringify(userData));
+      } else {
+          await AsyncStorage.removeItem('user_data');
+      }
+  };
 
   const extractUserFromToken = (token) => {
     try {
       const decoded = jwtDecode(token);
       
       const rawRole = decoded.role;
-      let mappedRole = 'cittadino'; // Default se manca il ruolo
+      let mappedRole = 'cittadino'; 
 
       if (typeof rawRole === 'string') {
           mappedRole = rawRole.toLowerCase();
       } else if (typeof rawRole === 'number') {
-          // LOGICA CORRETTA BASATA SULLA TUA DESCRIZIONE
           if (rawRole === 1) mappedRole = 'operatore';
           else if (rawRole === 2) mappedRole = 'responsabile'; 
           else if (rawRole === 3) mappedRole = 'admin'; 
-          // Se è null, undefined o altro numero -> cittadino
       }
 
       return {
@@ -42,41 +51,65 @@ export const AuthProvider = ({ children }) => {
   const checkLoggedIn = async () => {
     try {
       const tokens = await getAuthTokens();
+      
+      // 1. TENTATIVO RECUPERO DATI CACHED (Risolve il problema della 'U')
+      const cachedUser = await AsyncStorage.getItem('user_data');
+      if (cachedUser) {
+          const parsedUser = JSON.parse(cachedUser);
+          setUserState(parsedUser); // Impostiamo subito i dati vecchi (completi di nome)
+      }
+
       if (tokens && tokens.access_token) {
-        // 1. Estrae i dati base dal token (ID, Email, Ruolo)
-        const userData = extractUserFromToken(tokens.access_token);
-        const savedEmail = await AsyncStorage.getItem('user_email');
-        userData.email = savedEmail || 'Nessuna email';
-        // 2. RECUPERA IL NOME DAL DATABASE (Nuovo codice!)
+        // Estrae dati freschi dal token
+        const tokenUser = extractUserFromToken(tokens.access_token);
+        
+        // Se avevamo dati in cache, li uniamo a quelli del token (il token vince su ruolo/id)
+        let currentUser = cachedUser ? { ...JSON.parse(cachedUser), ...tokenUser } : tokenUser;
+
+        // 2. RECUPERO DATI AGGIORNATI DAL SERVER
+        // Usiamo authenticatedFetch per gestire refresh token automatico
         try {
-          const response = await fetch(`${API_BASE}/user/${userData.id}`, {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${tokens.access_token}` }
+          const response = await authenticatedFetch(`${API_BASE}/user/${currentUser.id}`, {
+            method: 'GET'
           });
+          
           if (response.ok) {
             const profileData = await response.json();
             const realUser = Array.isArray(profileData) ? profileData[0] : (profileData.user || profileData);
+            
             if (realUser) {
-              userData.name = realUser.name || userData.name;
-              userData.surname = realUser.surname || userData.surname;
+              currentUser.name = realUser.name || currentUser.name;
+              currentUser.surname = realUser.surname || currentUser.surname;
+              // Aggiorniamo stato e cache
+              await updateUser(currentUser);
             }
+          } else {
+             console.log("Fetch user profile failed, keeping cached data.");
           }
         } catch(err) {
-          console.log("Errore nel recupero del nome al riavvio", err);
+          console.log("Errore connessione profilo al riavvio:", err);
+          // Non facciamo nulla, teniamo l'utente che abbiamo caricato dalla cache
         }
-
-        // 3. Salva l'utente COMPLETO di nome
-        setUser(userData);
+        
+        // Se non avevamo cache e la fetch è fallita, impostiamo almeno i dati del token
+        if (!user && !cachedUser) {
+            updateUser(currentUser);
+        }
+      } else {
+          // Nessun token, puliamo tutto
+          updateUser(null);
       }
     } catch (e) {
       console.error('Error checking auth', e);
+      updateUser(null);
     } finally {
       setLoading(false);
     }
   };
 
   const setDirectLogin = async (token, userData) => {
-    setUser(userData);
+    // Usato da Google Login o Registrazione
+    await updateUser(userData);
   };
 
   useEffect(() => {
@@ -88,8 +121,8 @@ export const AuthProvider = ({ children }) => {
       const response = await apiLogin(email, password);
       
       if (response.success) {
-        await setAuthTokens(response.token, response.refreshToken); 
-        setUser(response.user); 
+        // AuthStorage è già gestito nel service, qui aggiorniamo lo stato
+        await updateUser(response.user); 
         return true;
       }
       return false;
@@ -111,11 +144,19 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     await clearAuthTokens();
-    setUser(null);
+    await updateUser(null); // Pulisce stato e AsyncStorage
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, setDirectLogin }}>
+    <AuthContext.Provider value={{ 
+        user, 
+        loading, 
+        login, 
+        register, 
+        logout, 
+        setDirectLogin,
+        setUser: updateUser // Esponiamo updateUser come setUser per ProfileScreen
+    }}>
       {children}
     </AuthContext.Provider>
   );
