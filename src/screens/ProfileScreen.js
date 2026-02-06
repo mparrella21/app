@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { updateProfile, deleteUser } from '../services/userService';
+import { updateProfile, deleteUser, deleteManager } from '../services/userService';
 import * as Clipboard from 'expo-clipboard';
 import { COLORS } from '../styles/global'; // Per i colori
 
@@ -13,9 +13,20 @@ export default function ProfileScreen({ navigation }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  const [editName, setEditName] = useState(user ? user.name : '');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [editName, setEditName] = useState('');
+  const [editSurname, setEditSurname] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editBirthDate, setEditBirthDate] = useState('');
+
+  useEffect(() => {
+    if (user) {
+        setEditName(user.name || '');
+        setEditSurname(user.surname || '');
+        setEditPhone(user.phonenumber || '');
+        // Gestione data: se arriva come ISO o stringa, assicuriamoci sia gestibile
+        setEditBirthDate(user.birth_date || ''); 
+    }
+  }, [user]);
 
   const getNormalizedRole = () => {
     if (!user || !user.role) return '';
@@ -57,10 +68,10 @@ export default function ProfileScreen({ navigation }) {
     }
 };
   // NUOVA FUNZIONE: ELIMINA ACCOUNT (Requisito Profilo)
-  const handleDeleteAccount = () => {
+ const handleDeleteAccount = () => {
     Alert.alert(
         "Elimina Account",
-        "ATTENZIONE: Questa operazione è irreversibile. Tutti i tuoi dati e i ticket aperti verranno scollegati o eliminati. Vuoi procedere?",
+        "ATTENZIONE: Questa operazione è irreversibile. Il tuo account e tutti i dati associati verranno eliminati definitivamente. Vuoi procedere?",
         [
             { text: "Annulla", style: "cancel" },
             { 
@@ -68,11 +79,12 @@ export default function ProfileScreen({ navigation }) {
                 style: "destructive", 
                 onPress: async () => {
                     setIsLoading(true);
+
                     const success = await deleteUser(user.id);
                     setIsLoading(false);
 
                     if (success) {
-                        Alert.alert("Account Eliminato", "Il tuo account è stato rimosso con successo.");
+                        Alert.alert("Account Eliminato", "Il tuo account è stato rimosso.");
                         logout();
                         navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
                     } else {
@@ -84,44 +96,78 @@ export default function ProfileScreen({ navigation }) {
     );
   };
 
+  const handleDemoteRole = () => {
+    Alert.alert(
+        "Rinuncia incarico",
+        "Vuoi rinunciare al ruolo di Responsabile? Diventerai un utente semplice e perderai l'accesso alla gestione. Dovrai effettuare nuovamente l'accesso.",
+        [
+            { text: "Annulla", style: "cancel" },
+            { 
+                text: "Conferma", 
+                style: "default", // Non è distruttivo per l'account, solo per il ruolo
+                onPress: async () => {
+                    if (!user.tenant_id) {
+                        Alert.alert("Errore", "Dati mancanti (Tenant ID).");
+                        return;
+                    }
+                    setIsLoading(true);
+                    // Chiama deleteManager
+                    const success = await deleteManager(user.id, user.tenant_id);
+                    setIsLoading(false);
+
+                    if (success) {
+                        Alert.alert("Operazione riuscita", "Non sei più un responsabile. Verrai disconnesso per aggiornare i permessi.", [
+                            { text: "OK", onPress: () => {
+                                logout();
+                                navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                            }}
+                        ]);
+                    } else {
+                        Alert.alert("Errore", "Impossibile rimuovere il ruolo. Riprova.");
+                    }
+                }
+            }
+        ]
+    );
+  };
+
   const toggleEdit = () => {
     if (!isEditing) {
-        setEditName(user.name);
-        setNewPassword('');
-        setConfirmPassword('');
+        // Reset ai valori originali se annullo, oppure preparo i valori per la modifica
+        setEditName(user.name || '');
+        setEditSurname(user.surname || '');
+        setEditPhone(user.phonenumber || '');
+        setEditBirthDate(user.birth_date || '');
     }
     setIsEditing(!isEditing);
   };
 
   const handleSaveProfile = async () => {
     if (!editName.trim()) {
-        Alert.alert("Errore", "Il nome non può essere vuoto.");
-        return;
-    }
-    if (newPassword && newPassword !== confirmPassword) {
-        Alert.alert("Errore", "Le password non coincidono.");
-        return;
-    }
-    if (newPassword && newPassword.length < 6) {
-        Alert.alert("Errore", "La password deve essere di almeno 6 caratteri.");
+        Alert.alert("Errore", "Il nome è obbligatorio.");
         return;
     }
 
     setIsLoading(true);
 
+    // Costruiamo il payload ESATTAMENTE come richiesto dalla PUT profile
+    // Nota: Non inviamo password o email.
     const payload = {
         name: editName,
-        password: newPassword ? newPassword : undefined 
+        surname: editSurname,
+        phonenumber: editPhone,
+        birth_date: editBirthDate // Assicurati di inserire il formato che il DB si aspetta (es. YYYY-MM-DD)
     };
 
-    // Chiamata alla funzione corretta updateProfile
     const success = await updateProfile(user.id, payload);
 
     setIsLoading(false);
 
     if (success) {
         Alert.alert("Successo", "Profilo aggiornato correttamente.");
-        setUser({ ...user, name: editName });
+        // Aggiorniamo il contesto globale e lo storage locale con i nuovi dati
+        // Manteniamo i dati vecchi (email, ruolo, id) e sovrascriviamo quelli modificati
+        setUser({ ...user, ...payload });
         setIsEditing(false);
     } else {
         Alert.alert("Errore", "Impossibile aggiornare il profilo.");
@@ -149,6 +195,7 @@ export default function ProfileScreen({ navigation }) {
 
       <ScrollView contentContainerStyle={styles.scroll}>
         
+        {/* CARD PROFILO */}
         <View style={styles.profileCard}>
             <View style={styles.avatarCircle}>
                 <Text style={styles.avatarText}>
@@ -158,39 +205,52 @@ export default function ProfileScreen({ navigation }) {
 
             {isEditing ? (
                 <View style={styles.editContainer}>
-                    <Text style={styles.labelInput}>Nome e Cognome</Text>
+                    <Text style={styles.labelInput}>Nome *</Text>
                     <TextInput 
                         style={styles.input}
                         value={editName}
                         onChangeText={setEditName}
-                        placeholder="Nome e Cognome"
+                        placeholder="Nome"
+                    />
+                    
+                    <Text style={styles.labelInput}>Cognome</Text>
+                    <TextInput 
+                        style={styles.input}
+                        value={editSurname}
+                        onChangeText={setEditSurname}
+                        placeholder="Cognome"
+                    />
+
+                    <Text style={styles.labelInput}>Telefono</Text>
+                    <TextInput 
+                        style={styles.input}
+                        value={editPhone}
+                        onChangeText={setEditPhone}
+                        placeholder="Numero di telefono"
+                        keyboardType="phone-pad"
+                    />
+
+                    <Text style={styles.labelInput}>Data di Nascita (YYYY-MM-DD)</Text>
+                    <TextInput 
+                        style={styles.input}
+                        value={editBirthDate}
+                        onChangeText={setEditBirthDate}
+                        placeholder="Es. 1990-12-31"
                     />
                 </View>
             ) : (
-                <Text style={styles.userName}>{user.name}</Text>
-            )}
-
-            <Text style={styles.userRole}>
-                {currentRole ? currentRole.toUpperCase() : 'OSPITE'}
-            </Text>
-
-            {isEditing && (
-                <View style={[styles.editContainer, {marginTop: 15, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 15}]}>
-                    <Text style={[styles.labelInput, {marginBottom: 10, color: '#F59E0B'}]}>Cambio Password (Opzionale)</Text>
-                    <TextInput 
-                        style={styles.input}
-                        value={newPassword}
-                        onChangeText={setNewPassword}
-                        placeholder="Nuova Password"
-                        secureTextEntry
-                    />
-                    <TextInput 
-                        style={styles.input}
-                        value={confirmPassword}
-                        onChangeText={setConfirmPassword}
-                        placeholder="Conferma Password"
-                        secureTextEntry
-                    />
+                <View style={{alignItems: 'center'}}>
+                    <Text style={styles.userName}>{user.name} {user.surname}</Text>
+                    <Text style={styles.userRole}>
+                        {currentRole ? currentRole.toUpperCase() : 'OSPITE'}
+                    </Text>
+                    {/* Mostra dettagli extra se presenti */}
+                    {(user.phonenumber || user.birth_date) && (
+                        <View style={{marginTop: 5, alignItems: 'center'}}>
+                             {user.phonenumber ? <Text style={styles.subDetail}>📞 {user.phonenumber}</Text> : null}
+                             {user.birth_date ? <Text style={styles.subDetail}>🎂 {user.birth_date}</Text> : null}
+                        </View>
+                    )}
                 </View>
             )}
 
@@ -203,7 +263,7 @@ export default function ProfileScreen({ navigation }) {
                     {isLoading ? (
                         <ActivityIndicator color="white" />
                     ) : (
-                        <Text style={styles.saveBtnText}>SALVA MODIFICHE</Text>
+                        <Text style={styles.saveBtnText}>SALVA DATI ANAGRAFICI</Text>
                     )}
                 </TouchableOpacity>
             )}
@@ -311,7 +371,17 @@ export default function ProfileScreen({ navigation }) {
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
             <Text style={styles.logoutText}>ESCI</Text>
         </TouchableOpacity>
-
+        {/* 1. PULSANTE RINUNCIA RUOLO (SOLO RESPONSABILE) */}
+                {currentRole === 'responsabile' && (
+                    <TouchableOpacity 
+                        style={[styles.roleBtn, {marginBottom: 20}]} 
+                        onPress={handleDemoteRole} 
+                        disabled={isLoading}
+                    >
+                        <Ionicons name="briefcase-outline" size={20} color="#F59E0B" style={{marginRight: 8}} />
+                        <Text style={styles.roleBtnText}>RINUNCIA AL RUOLO RESPONSABILE</Text>
+                    </TouchableOpacity>
+                )}
         {/* NUOVO: ZONA PERICOLOSA ELIMINAZIONE ACCOUNT */}
         {isEditing && (
             <View style={styles.dangerZone}>

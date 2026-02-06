@@ -80,6 +80,8 @@ export const AuthProvider = ({ children }) => {
             if (realUser) {
               currentUser.name = realUser.name || currentUser.name;
               currentUser.surname = realUser.surname || currentUser.surname;
+              currentUser.phonenumber = realUser.phonenumber || currentUser.phonenumber;
+              currentUser.birth_date = realUser.birth_date || currentUser.birth_date;
               // Aggiorniamo stato e cache
               await updateUser(currentUser);
             }

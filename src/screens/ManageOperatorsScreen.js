@@ -3,7 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, TextInput, A
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../styles/global';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getOperatorsByTenant, promoteToOperator, deleteUser, updateProfile } from '../services/userService';
+import { getOperatorsByTenant, promoteToOperator, deleteOperator, updateProfile } from '../services/userService';
 import { getOperatorCategories, assignOperatorCategory, removeOperatorCategory } from '../services/interventionService';
 import { AuthContext } from '../context/AuthContext';
 
@@ -128,7 +128,7 @@ export default function ManageOperatorsScreen({ navigation }) {
               { text: "Annulla", style: "cancel" },
               { text: "Rimuovi", style: 'destructive', onPress: async () => {
                   setLoading(true);
-                  const success = await deleteUser(op.id, user.tenant_id);
+                  const success = await deleteOperator(op.id, user.tenant_id);
                   if (success) {
                       Alert.alert("Rimosso", "Ruolo operatore revocato.");
                       fetchOperators();

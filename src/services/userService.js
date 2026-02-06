@@ -25,7 +25,7 @@ export const getUserById = async (id) => {
 export const updateProfile = async (userId, profileData) => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/user/${userId}`, {
-            method: 'POST', 
+            method: 'PUT', 
             body: JSON.stringify(profileData)
         });
         return response.ok;
@@ -35,7 +35,7 @@ export const updateProfile = async (userId, profileData) => {
 // --- GESTIONE OPERATORI ---
 
 // Rimuove il ruolo di operatore
-export const deleteUser = async (operatorId, tenantId) => {
+export const deleteOperator = async (operatorId, tenantId) => {
   try {
     // API TXT: DELETE /api/operator/id => body: tenant_id
     const response = await authenticatedFetch(`${API_BASE}/operator/${operatorId}`, { 
@@ -48,6 +48,34 @@ export const deleteUser = async (operatorId, tenantId) => {
       console.error("Errore deleteUser", e);
       return false; 
   }
+};
+
+export const deleteManager = async (managerId, tenantId) => {
+  try {
+    // API TXT: DELETE /api/manager/id => body: tenant_id
+    const response = await authenticatedFetch(`${API_BASE}/manager/${managerId}`, { 
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenant_id: tenantId })
+    });
+    return response.ok;
+  } catch (e) { 
+      console.error("Errore deleteManager", e);
+      return false; 
+  }
+};
+
+export const deleteUser = async (userId) => {
+    try {
+        // API: DELETE /api/user/id
+        const response = await authenticatedFetch(`${API_BASE}/user/${userId}`, { 
+            method: 'DELETE'
+        });
+        return response.ok;
+    } catch (e) { 
+        console.error("Errore deleteUser", e);
+        return false; 
+    }
 };
 
 export const promoteToOperator = async (userId, tenantId, categoryId) => {
