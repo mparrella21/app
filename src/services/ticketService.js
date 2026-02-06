@@ -188,20 +188,17 @@ export const getAllReplies = async (idTicket, tenantId) => {
   } catch (e) { return []; }
 };
 
-// --- POST REPLY CORRETTA ---
-// --- POST REPLY CORRETTA (Sempre FormData) ---
+
 export const postReply = async (idTicket, tenantId, userId, bodyText, images = []) => {
   try {
     console.log(`Invio Reply. Immagini: ${images?.length || 0}. Testo: ${bodyText}`);
 
-    // CREIAMO SEMPRE UN FORMDATA, ANCHE SE NON CI SONO IMMAGINI
     const formData = new FormData();
     
     formData.append('tenant_id', tenantId);
     formData.append('user_id', userId);
     formData.append('body', bodyText || ""); 
 
-    // Se ci sono immagini, le appendiamo
     if (images && images.length > 0) {
         images.forEach((img, index) => {
             let uri = img.uri;
@@ -221,29 +218,22 @@ export const postReply = async (idTicket, tenantId, userId, bodyText, images = [
         });
     }
 
-    // Recuperiamo il token
     let token = await AsyncStorage.getItem('app_access_token');
 
-    // USIAMO FETCH MANUALE PERCHÉ authenticatedFetch AGGIUNGE AUTOMATICAMENTE
-    // 'Content-Type': 'application/json' CHE ROMPE IL FORMDATA
     let response = await fetch(`${API_BASE}/ticket/${idTicket}/reply`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
             'Accept': 'application/json',
-            // NESSUN Content-Type QUI! Il browser/engine metterà multipart/form-data; boundary=...
         },
         body: formData
     });
 
-    // Gestione scadenza token (401)
     if (response.status === 401) {
          console.log("Token scaduto, tento refresh...");
-         // Chiamata dummy per refreshare il token
          await authenticatedFetch(`${API_BASE}/user/${userId}`, { method: 'GET' });
          token = await AsyncStorage.getItem('app_access_token');
          
-         // Riprova con nuovo token
          response = await fetch(`${API_BASE}/ticket/${idTicket}/reply`, {
             method: 'POST',
             headers: {

@@ -2,7 +2,7 @@ export const getAddressFromCoordinates = async (lat, lng) => {
     try {
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
         const response = await fetch(url, {
-            headers: { 'User-Agent': 'CivitasApp/1.0' } // Nominatim richiede User-Agent
+            headers: { 'User-Agent': 'CivitasApp/1.0' }
         });
         const data = await response.json();
         return data.display_name;

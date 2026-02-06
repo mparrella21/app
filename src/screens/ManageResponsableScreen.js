@@ -1,4 +1,3 @@
-// src/screens/ManageResponsibleScreen.js
 import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, SectionList, FlatList, TouchableOpacity, StyleSheet, Alert, TextInput, ActivityIndicator, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,32 +16,27 @@ export default function ManageResponsibleScreen({ navigation }) {
   const { user } = useContext(AuthContext);
   const insets = useSafeAreaInsets();
 
-  // --- STATO DATI ---
-  // Array di sezioni per SectionList: [{ title: 'Nome Comune', tenantId: 123, data: [...] }]
+
   const [sections, setSections] = useState([]);
   const [filteredSections, setFilteredSections] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [mainSearchText, setMainSearchText] = useState(''); 
 
-  // --- STATO MODALE (Aggiunta Responsabile) ---
   const [modalVisible, setModalVisible] = useState(false);
   const [targetTenant, setTargetTenant] = useState(null); 
   const [allUsers, setAllUsers] = useState([]); 
-  const [selectableUsers, setSelectableUsers] = useState([]); // Lista filtrata (senza i già responsabili globali)
+  const [selectableUsers, setSelectableUsers] = useState([]); 
   const [modalSearchText, setModalSearchText] = useState(''); 
   const [loadingUsers, setLoadingUsers] = useState(false);
   
   const [actionLoading, setActionLoading] = useState(false);
 
-  // --- CARICAMENTO DATI ---
 
   const fetchAllData = async () => {
     setLoading(true);
     try {
-        // 1. Scarica tutti i Tenant disponibili
         const tenants = await getAllTenants();
         
-        // 2. Per ogni tenant, scarica i suoi manager in parallelo
         const promises = tenants.map(async (tenant) => {
             const managers = await getManagersByTenant(tenant.id);
             return {
@@ -54,7 +48,6 @@ export default function ManageResponsibleScreen({ navigation }) {
 
         const results = await Promise.all(promises);
         
-        // Ordina i tenant per nome
         results.sort((a, b) => a.title.localeCompare(b.title));
         
         setSections(results);
@@ -71,7 +64,6 @@ export default function ManageResponsibleScreen({ navigation }) {
     fetchAllData();
   }, []);
 
-  // --- LOGICA RICERCA PRINCIPALE ---
   const handleMainSearch = (text) => {
       setMainSearchText(text);
       if (!text) {
@@ -98,7 +90,6 @@ export default function ManageResponsibleScreen({ navigation }) {
           return null;
       }).filter(Boolean); 
 
-      // Se cerchi il nome del comune, mostra tutti i suoi manager
       const refinedFiltered = filtered.map(section => {
           const originalSection = sections.find(s => s.tenantId === section.tenantId);
           if (originalSection.title.toLowerCase().includes(lower)) {
@@ -110,7 +101,6 @@ export default function ManageResponsibleScreen({ navigation }) {
       setFilteredSections(refinedFiltered);
   };
 
-  // --- LOGICA MODALE (Apertura e Filtro Utenti) ---
 
   const openPromoteModalForTenant = async (tenantId, tenantName) => {
       setTargetTenant({ id: tenantId, name: tenantName });
@@ -119,18 +109,14 @@ export default function ManageResponsibleScreen({ navigation }) {
       setModalSearchText('');
 
       try {
-          // 1. Scarica tutti gli utenti (se non presenti in cache)
           let usersList = allUsers;
           if (usersList.length === 0) {
              usersList = await getAllUsers();
-             // Rimuovi eventuali duplicati "sporchi" dall'API (stesso ID più volte)
              const uniqueUsers = Array.from(new Map(usersList.map(item => [item.id, item])).values());
              setAllUsers(uniqueUsers);
              usersList = uniqueUsers;
           }
 
-          // 2. Identifica chi è GIÀ manager (GLOBALMENTE: in qualsiasi comune)
-          // Scansioniamo tutte le sezioni (tutti i tenant) per trovare TUTTI i manager assegnati nel sistema
           const globalManagerIds = new Set();
           
           sections.forEach(section => {
@@ -141,7 +127,6 @@ export default function ManageResponsibleScreen({ navigation }) {
               }
           });
 
-          // 3. Filtra la lista: Mostra solo chi NON è manager da nessuna parte (né qui, né altrove)
           const available = usersList.filter(u => !globalManagerIds.has(String(u.id)));
           setSelectableUsers(available);
 
@@ -152,7 +137,6 @@ export default function ManageResponsibleScreen({ navigation }) {
       }
   };
 
-  // Filtro ricerca interna al modale (sulla lista già pulita dai duplicati globali)
   const getModalFilteredUsers = () => {
       if (!modalSearchText) return selectableUsers;
       const lower = modalSearchText.toLowerCase();
@@ -335,7 +319,6 @@ export default function ManageResponsibleScreen({ navigation }) {
               {loadingUsers ? (
                   <ActivityIndicator size="large" color={COLORS.primary} style={{marginTop: 40}} />
               ) : (
-                  // USA FlatList INVECE DI VIEW+MAP PER SCORRIMENTO OTTIMALE
                   <FlatList 
                       data={getModalFilteredUsers()}
                       keyExtractor={(item) => String(item.id)}
@@ -374,7 +357,6 @@ const styles = StyleSheet.create({
       elevation: 1
   },
 
-  // SECTION HEADER STYLE
   sectionHeader: { 
       flexDirection: 'row', 
       justifyContent: 'space-between', 

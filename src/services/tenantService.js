@@ -1,7 +1,6 @@
 import { API_BASE } from './config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Endpoint AGGIORNATO (secondo la nuova API): GET /api/search?lat=...&lon=...
 export const searchTenantByCoordinates = async (lat, lon) => {
   try {
     const token = await AsyncStorage.getItem('app_access_token');
@@ -51,7 +50,6 @@ export const searchTenantByCoordinates = async (lat, lon) => {
 export const getTenantById = async (tenantId) => {
     try {
         const token = await AsyncStorage.getItem('app_access_token');
-        // Costruiamo l'URL: /api/tenant/{id}
         const url = `${API_BASE}/tenant/${tenantId}`;
 
         const headers = { Accept: 'application/json' };
@@ -61,7 +59,6 @@ export const getTenantById = async (tenantId) => {
 
         if (response.ok) {
             const data = await response.json();
-            // Restituiamo tutto l'oggetto, poi la UI prenderà .name o .label
             return data; 
         }
         return null;
@@ -71,7 +68,6 @@ export const getTenantById = async (tenantId) => {
     }
 };
 
-// Recupera tutti i tenant
 export const getAllTenants = async () => {
     try {
         const response = await fetch(`${API_BASE}/tenant`, { method: 'GET' });
@@ -84,7 +80,6 @@ export const getAllTenants = async () => {
 };
 
 
-// Recupera province
 export const getProvinces = async () => {
     try {
         const response = await fetch(`${API_BASE}/tenant/provincia`, { method: 'GET' });
@@ -96,7 +91,6 @@ export const getProvinces = async () => {
     }
 };
 
-// Recupera regioni
 export const getRegions = async () => {
     try {
         const response = await fetch(`${API_BASE}/tenant/regione`, { method: 'GET' });
@@ -109,7 +103,7 @@ export const getRegions = async () => {
 };
 
 
-// Recupera i confini specifici di un tenant (Endpoint AGGIORNATO a /api/boundaries/)
+
 export const getTenantBoundary = async (istatCode) => {
     try {
         const response = await fetch(`${API_BASE}/tenant/boundaries/${istatCode}`, { method: 'GET' });

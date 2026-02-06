@@ -153,34 +153,27 @@ const { setDirectLogin } = useAuth();
     try {
         if (activeTab === 'login') {
             if (!email || !password) {
-                // Anche qui mettiamo un messaggio più carino
                 Alert.alert("Attenzione", "Inserisci sia email che password.");
                 setIsLoading(false);
                 return;
             }
             
-            // Login classico
             const result = await loginApi(email, password);
             
             if (result.success) {
                  if (result.token && result.user) {
                     await setDirectLogin(result.token, result.user);
                  }
-                 //navigation.goBack(); 
             } else {
-                 // --- MODIFICA QUI ---
-                 // PRIMA ERA: Alert.alert("Errore Login", result.error || "Credenziali non valide");
-                 
-                 // ADESSO:
+ 
                  Alert.alert(
-                     "Attenzione",               // Titolo più soft (niente "Errore" o X rossa mentale)
-                     "Password o email sbagliata" // Il messaggio esatto che volevi
+                     "Attenzione",             
+                     "Password o email sbagliata" 
                  );
             }
 
         } else {
-            // ... (Tutta la parte della registrazione resta uguale) ...
-            // Registrazione
+     
             if (!nome || !cognome || !email || !password || !cellulare || !birthDate) {
                 Alert.alert("Attenzione", "Compila tutti i campi, inclusa la data di nascita.");
                 setIsLoading(false);
@@ -222,7 +215,6 @@ const { setDirectLogin } = useAuth();
                     setActiveTab('login');
                 }
             } else {
-                // Anche qui, se vuoi nascondere l'errore tecnico:
                 Alert.alert("Attenzione", "Impossibile completare la registrazione. Controlla i dati o riprova più tardi.");
             }
         }

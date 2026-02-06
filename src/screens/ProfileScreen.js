@@ -153,7 +153,6 @@ const formatPhoneForDisplay = (phone) => {
     return cleaned.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3');
 };
   const toggleEdit = () => {
-    console.log("Toggling edit mode. Current user data:", user);
     if (!isEditing) {
         // Reset ai valori originali se annullo, oppure preparo i valori per la modifica
         setEditName(user.name || '');

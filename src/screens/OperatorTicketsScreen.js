@@ -18,14 +18,11 @@ export default function OperatorTicketsScreen({ navigation }) {
     if (!user?.tenant_id) return;
     setLoading(true);
     try {
-      // 1. Assegnamenti
       const assignments = await getAssignments(user.tenant_id);
       const myTicketIds = assignments.filter(a => String(a.id_user) === String(user.id)).map(a => a.id_ticket);
 
-      // 2. Ticket del tenant
       const allTenantTickets = await getAllTickets(user.tenant_id);
       
-      // 3. Filtro
       const myFullTickets = allTenantTickets.filter(ticket => myTicketIds.includes(ticket.id));
       setTasks(myFullTickets);
 
@@ -43,7 +40,6 @@ export default function OperatorTicketsScreen({ navigation }) {
     }, [user])
   );
 
-  // Gestione "Prendi in Carico"
   const handleTakeCharge = async (ticketData) => {
     Alert.alert(
       "Presa in carico",
@@ -55,7 +51,6 @@ export default function OperatorTicketsScreen({ navigation }) {
           onPress: async () => {
             setLoading(true);
             try {
-                // LOGICA CORRETTA: Passiamo user.id e stato 2 (In Lavorazione)
                 const success = await updateTicketStatus(ticketData.id, user.tenant_id, user.id, 2);
                 
                 if (success) {
@@ -78,7 +73,6 @@ export default function OperatorTicketsScreen({ navigation }) {
   };
 
   const handleResolve = (ticketData) => {
-    // La risoluzione richiede un rapporto, quindi mandiamo al dettaglio
     navigation.navigate('TicketDetail', { id: ticketData.id, ticket: ticketData, tenant_id: user.tenant_id });
   };
 
@@ -156,7 +150,6 @@ export default function OperatorTicketsScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={styles.header}>
-        {/* AGGIUNTO: Tasto Indietro */}
         <TouchableOpacity onPress={() => navigation.goBack()} style={{marginRight: 10}}>
              <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
@@ -203,7 +196,6 @@ export default function OperatorTicketsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' },
-  // Modificato per allineare gli elementi (freccia - titolo - reload)
   header: { 
       backgroundColor: '#1F2937', 
       padding: 20, 

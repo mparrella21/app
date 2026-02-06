@@ -31,7 +31,6 @@ export const createAssignment = async (ticketId, userId, tenantId) => {
             body: JSON.stringify(payload)
         });
 
-        // Se la risposta non è OK, leggiamo il messaggio di errore dal server
         if (!response.ok) {
             const errorText = await response.text();
             console.error("ERRORE SERVER ASSEGNAZIONE:", response.status, errorText);
@@ -66,7 +65,6 @@ export const getRatingsForReply = async (replyId, tenantId) => {
         if (response.ok) {
             const data = await response.json();
             // L'API restituisce un array di oggetti { id_user, rating } o { user_id, rating }
-            // Assicuriamoci che sia un array
             return Array.isArray(data) ? data : (data.ratings || []);
         }
         return [];

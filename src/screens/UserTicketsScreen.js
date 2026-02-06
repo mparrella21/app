@@ -18,17 +18,14 @@ export default function UserTicketsScreen({ navigation }) {
   
   const [filterStatus, setFilterStatus] = useState('Tutti');
 
-  // 1. Determina posizione e Tenant
   const loadContext = async () => {
       setLoading(true);
       try {
-          // Se l'utente ha un tenant fisso (es. Responsabile), usiamo quello
           if (user.tenant_id) {
               await loadTickets(user.tenant_id);
               return;
           }
 
-          // Altrimenti usiamo il GPS (Cittadino)
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (status === 'granted') {
               const loc = await Location.getCurrentPositionAsync({});
@@ -50,10 +47,8 @@ export default function UserTicketsScreen({ navigation }) {
       }
   };
 
-  // 2. Carica i ticket dell'utente IN QUEL TENANT
   const loadTickets = async (tenantId) => {
     try {
-      // getUserTickets filtra già per user_id lato client o server
       const tickets = await getUserTickets(user.id, tenantId);
       setMyTickets(tickets);
       setFilteredTickets(tickets); 
@@ -68,13 +63,11 @@ export default function UserTicketsScreen({ navigation }) {
     }, [])
   );
 
-  // Effetto Filtri UI
   useEffect(() => {
     if (filterStatus === 'Tutti') {
       setFilteredTickets(myTickets);
     } else {
       const filtered = myTickets.filter(ticket => {
-        // MODIFICA: Parsing id_status o status robusto
         const s = String(ticket.id_status || ticket.status || '').toLowerCase();
         if (filterStatus === 'Aperti') return s === '1' || s === 'aperto';
         if (filterStatus === 'In Lavorazione') return s === '2' || s === 'in corso';
@@ -113,7 +106,6 @@ export default function UserTicketsScreen({ navigation }) {
   );
 
   const renderItem = ({ item }) => (
-    // PASSAGGIO TENANT ID ANCHE QUI
     <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('TicketDetail', { id: item.id, tenant_id: currentTenant?.id || user.tenant_id })}>
       <View style={styles.cardHeader}>
         <Text style={styles.category}>Segnalazione #{String(item.id).slice(0,6)}</Text>

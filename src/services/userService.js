@@ -43,7 +43,6 @@ export const getManagersByTenant = async (tenantId) => {
         }
 
         // 2. Per ogni manager, recuperiamo i dettagli anagrafici
-        // Nota: l'API /manager ritorna oggetti che hanno 'id' (che è l'id utente) o 'user_id'
         const managersPromises = managerRelations.map(async (rel) => {
             const targetId = rel.id_user || rel.user_id || rel.id; 
             if (!targetId) return null;
@@ -54,8 +53,8 @@ export const getManagersByTenant = async (tenantId) => {
 
             return { 
                 ...userDetails, 
-                id: targetId, // ID utente
-                manager_record_id: rel.id // Se serve l'ID della relazione, altrimenti l'ID utente basta per il deleteManager standard
+                id: targetId, 
+                manager_record_id: rel.id 
             };
         });
 
@@ -67,7 +66,6 @@ export const getManagersByTenant = async (tenantId) => {
         return [];
     }
 };
-// Recupera tutti gli utenti
 export const getAllUsers = async () => {
     try {
         const response = await authenticatedFetch(`${API_BASE}/user`, { method: 'GET' });
@@ -102,7 +100,6 @@ export const updateProfile = async (userId, profileData) => {
 // Rimuove il ruolo di operatore
 export const deleteOperator = async (operatorId, tenantId) => {
   try {
-    // API TXT: DELETE /api/operator/id => body: tenant_id
     const response = await authenticatedFetch(`${API_BASE}/operator/${operatorId}`, { 
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -117,7 +114,6 @@ export const deleteOperator = async (operatorId, tenantId) => {
 
 export const deleteManager = async (managerId, tenantId) => {
   try {
-    // API TXT: DELETE /api/manager/id => body: tenant_id
     const response = await authenticatedFetch(`${API_BASE}/manager/${managerId}`, { 
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -132,7 +128,6 @@ export const deleteManager = async (managerId, tenantId) => {
 
 export const deleteUser = async (userId) => {
     try {
-        // API: DELETE /api/user/id
         const response = await authenticatedFetch(`${API_BASE}/user/${userId}`, { 
             method: 'DELETE'
         });
@@ -173,8 +168,6 @@ export const promoteToOperator = async (userId, tenantId, categoryId) => {
 
 export const getOperatorsByTenant = async (tenantId) => {
     try {
-        // 1. Recupera la lista operatori (relazione)
-        // API TXT: GET /api/operator => body (query param): tenant_id
         const response = await authenticatedFetch(`${API_BASE}/operator?tenant_id=${tenantId}`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -183,26 +176,21 @@ export const getOperatorsByTenant = async (tenantId) => {
         let operatorRelations = [];
         if (response.ok) {
             const data = await response.json();
-            // L'API potrebbe ritornare { operators: [...] } o direttamente [...]
             operatorRelations = Array.isArray(data) ? data : (data.operators || []);
         } else {
             return [];
         }
 
-        // Recuperiamo categorie e mapping per arricchire i dati
         const categories = await getOperatorCategories();
         const mappings = await getOperatorMappings(tenantId);
 
-        // 2. Per ogni relazione, recuperiamo i dettagli anagrafici dell'utente
         const operatorsPromises = operatorRelations.map(async (rel) => {
-            // L'API /operator ritorna coppie {id (user_id), tenant_id} o simili
             const targetId = rel.id_user || rel.user_id || rel.id; 
             if (!targetId) return null;
 
             const userDetails = await getUserById(targetId);
             if (!userDetails) return null;
 
-            // Arricchiamo con la categoria (se presente nei mapping)
             const userMap = mappings.find(m => String(m.id_user) === String(targetId));
             let catLabel = 'Non assegnato';
             let catId = null;
@@ -217,7 +205,7 @@ export const getOperatorsByTenant = async (tenantId) => {
 
             return { 
                 ...userDetails, 
-                id: targetId, // Assicuriamoci che l'ID sia quello dell'utente
+                id: targetId, 
                 category: catLabel, 
                 category_id: catId 
             };

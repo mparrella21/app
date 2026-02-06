@@ -134,7 +134,6 @@ const CitizenHomeScreen = ({ navigation, route }) => {
       <View style={{ flex: 1, marginLeft: 15 }}>
         <Text style={styles.ticketTitle} numberOfLines={1}>{item.title || 'Segnalazione'}</Text>
         
-        {/* MODIFICA: Visualizzazione data corretta (creation_date o created_at) */}
         <Text style={styles.ticketSub}>
             #{item.id?.toString().substring(0,8)} • {item.creation_date ? new Date(item.creation_date).toLocaleDateString() : (item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/D')}
         </Text>

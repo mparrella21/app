@@ -129,7 +129,6 @@ export default function ResponsibleTicketsScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       
-      {/* HEADER BLU CON TASTO INDIETRO AGGIUNTO */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{marginRight: 15}}>
            <Ionicons name="arrow-back" size={24} color="white" />
@@ -255,14 +254,12 @@ const getStatusColor = (statusId) => {
 };
 
 const styles = StyleSheet.create({
-  // Modificato per rimuovere il paddingTop non necessario con header dedicato
   safeArea: { flex: 1, backgroundColor: COLORS.bg },
   container: { 
     flex: 1, 
     paddingHorizontal: 16, 
     paddingBottom: 16 
   },
-  // NUOVO STILE HEADER BLU
   header: { 
       backgroundColor: '#1F2937', 
       padding: 20, 

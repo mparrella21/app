@@ -88,9 +88,9 @@ export default function CreateTicketScreen({ navigation, route }) {
     }
   };
 
-  // --- NUOVA FUNZIONE: SCATTA FOTO ---
+  
   const takePhoto = async () => {
-    // 1. Richiedi permesso fotocamera
+   
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     
     if (status !== 'granted') {
@@ -98,10 +98,9 @@ export default function CreateTicketScreen({ navigation, route }) {
       return;
     }
 
-    // 2. Apri fotocamera
+    
     let result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true, // Permette di ritagliare dopo lo scatto
-      //aspect: [4, 3],
+      allowsEditing: true, 
       quality: 0.5,
     });
 
@@ -110,12 +109,10 @@ export default function CreateTicketScreen({ navigation, route }) {
     }
   };
 
-  // Funzione esistente per Galleria
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'], 
       allowsEditing: true,
-      //aspect: [4, 3],
       quality: 0.5,
     });
     if (!result.canceled) {
@@ -123,7 +120,6 @@ export default function CreateTicketScreen({ navigation, route }) {
     } 
   };
 
-  // --- AGGIORNATO: MENU DI SCELTA ---
   const handlePhotoAction = async () => {
     Alert.alert(
       "Aggiungi Foto",
@@ -144,7 +140,6 @@ export default function CreateTicketScreen({ navigation, route }) {
     setIsSubmitting(true);
 
     try {
-      // 1. TROVA IL TENANT (COMUNE)
       const tenantData = await searchTenantByCoordinates(coords.lat, coords.lng);
 
       if (!tenantData || !tenantData.tenant || !tenantData.tenant.id) {
@@ -155,7 +150,6 @@ export default function CreateTicketScreen({ navigation, route }) {
 
       const tenantId = tenantData.tenant.id;
 
-      // 2. CREA IL TICKET (Metadato)
       const ticketPayload = {
         title: title, 
         lat: coords.lat,
@@ -168,15 +162,12 @@ export default function CreateTicketScreen({ navigation, route }) {
       if (createdTicket) {
           const ticketId = createdTicket.id || createdTicket.insertId; 
 
-          // 3a. REPLY 1: TITOLO
           await postReply(ticketId, tenantId, user.id, title);
 
-          // 3b. REPLY 2: DESCRIZIONE
           if (desc && desc.trim().length > 0) {
              await postReply(ticketId, tenantId, user.id, desc);
           }
 
-          // 3c. REPLY 3: FOTO
           if (images.length > 0) {
              await postReply(ticketId, tenantId, user.id, "", images);
           }

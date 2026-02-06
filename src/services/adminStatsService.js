@@ -1,4 +1,3 @@
-// src/services/adminStatsService.js
 import { API_BASE } from './config';
 import { authenticatedFetch } from './authService';
 

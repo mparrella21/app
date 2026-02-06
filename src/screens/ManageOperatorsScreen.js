@@ -40,6 +40,7 @@ export default function ManageOperatorsScreen({ navigation }) {
       setLoadingCats(true);
       try {
           const cats = await getOperatorCategories();
+          console.log("Categorie fetchate:", cats);
           setCategories(cats || []);
       } catch (e) {
           console.error("Errore fetch categorie", e);

@@ -1,4 +1,3 @@
-// src/screens/AdminStatsScreen.js
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -50,7 +49,7 @@ export default function AdminStatsScreen({ navigation }) {
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
-            {/* HEADER PERSONALIZZATO (Stile StatsDashboardScreen) */}
+            {/* HEADER PERSONALIZZATO  */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 5 }}>
                     <Ionicons name="arrow-back" size={24} color="white" />
@@ -153,7 +152,6 @@ export default function AdminStatsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#F3F4F6' },
-    // STILI HEADER AGGIUNTI
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1F2937', padding: 15 },
     headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
 

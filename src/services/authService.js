@@ -15,20 +15,18 @@ const decodeJWT = (token) => {
 };
 
 const mapRoleToString = (roleId) => {
-    // Se non c'è ruolo, è cittadino
     if (roleId === undefined || roleId === null) return 'cittadino';
 
     switch(Number(roleId)) {
-        case 1: return 'operatore';    // CORRETTO: 1 è Operatore
-        case 2: return 'responsabile'; // CORRETTO: 2 è Responsabile
-        case 3: return 'admin';        // CORRETTO: 3 è Admin
+        case 1: return 'operatore';    e
+        case 2: return 'responsabile';
+        case 3: return 'admin';        
         default: return 'cittadino';
     }
 };
 
 export const login = async (email, password) => {
   try {
-    // La password va inviata in chiaro su protocollo HTTPS.
     const response = await fetch(`${AUTH_URL}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -126,7 +124,7 @@ export const googleLogin = async (idToken) => {
 export const register = async (userData) => {
   try {
     // Registra un utente. Ritorna ACCESS_TOKEN e REFRESH_TOKEN
-    // Il body deve contenere SOLO email e password secondo il txt.
+    // Il body deve contenere SOLO email e password
     const authPayload = { 
         email: userData.email, 
         password: userData.password 
@@ -166,7 +164,7 @@ export const register = async (userData) => {
                 console.error("Eccezione fetch User Profile:", err);
             }
 
-            // L'utente appena registrato è inizialmente senza ruolo (o cittadino di default lato FE)
+            // L'utente appena registrato è inizialmente senza ruolo 
             const user = {
                 id: userId,
                 email: userData.email,

@@ -20,9 +20,8 @@ export default function HomeScreen({ navigation }) {
   const [tickets, setTickets] = useState([]); 
   const [currentBoundary, setCurrentBoundary] = useState(null); 
   const [activeTenantId, setActiveTenantId] = useState(null);
-  const [activeTenantName, setActiveTenantName] = useState("Rilevamento..."); // Per visualizzare il nome
+  const [activeTenantName, setActiveTenantName] = useState("Rilevamento..."); 
 
-  // Stati per il selettore manuale del comune
   const [tenantModalVisible, setTenantModalVisible] = useState(false);
   const [allTenants, setAllTenants] = useState([]);
   const [loadingTenants, setLoadingTenants] = useState(false);
@@ -42,7 +41,6 @@ export default function HomeScreen({ navigation }) {
   };
   const currentRole = getNormalizedRole();
 
-  // --- GESTIONE TASTO INDIETRO ---
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
@@ -57,15 +55,12 @@ export default function HomeScreen({ navigation }) {
         return true; 
       };
 
-      // NUOVA SINTASSI: Salva la sottoscrizione
       const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
 
-      // Rimuovi usando .remove()
       return () => subscription.remove();
     }, [menuVisible]) 
   );
 
-  // Carica i ticket quando cambia il Tenant attivo
   useEffect(() => {
       if (activeTenantId) {
           fetchTickets(activeTenantId);
@@ -87,13 +82,10 @@ export default function HomeScreen({ navigation }) {
     } catch (e) { console.error(e); }
   };
 
-  // Inizializzazione: Posizione e lista Tenant
   useEffect(() => {
     (async () => {
-      // 1. Carica la lista di tutti i comuni (tenants) disponibili per il selettore
       loadAllTenants();
 
-      // 2. Rileva posizione utente
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
@@ -158,12 +150,10 @@ export default function HomeScreen({ navigation }) {
               setActiveTenantId(result.tenant.id);
               setActiveTenantName(result.tenant.name);
           } else {
-              // Tenant non trovato alla posizione corrente
               setCurrentBoundary(null);
               setActiveTenantId(null);
               setActiveTenantName("Nessun comune servito qui");
               
-              // Mostra Alert e apri modale selezione
               Alert.alert(
                   "Zona non coperta", 
                   "La tua posizione attuale non corrisponde a un comune gestito dal servizio. Seleziona un comune dalla lista.",
@@ -175,11 +165,11 @@ export default function HomeScreen({ navigation }) {
 
   const handleManualTenantSelect = (tenant) => {
       setActiveTenantId(tenant.id);
-      setActiveTenantName(tenant.label); // <--- CAMBIATO da .name a .label
+      setActiveTenantName(tenant.label); 
       setTenantModalVisible(false);
       
       Alert.alert("Comune Selezionato", `Ora visualizzi le segnalazioni di: ${tenant.label}`); // <--- CAMBIATO
-      fetchTickets(tenant.id); // Forziamo il caricamento immediato
+      fetchTickets(tenant.id); 
   };
 
   const handleZoom = (amount) => {
@@ -206,7 +196,6 @@ export default function HomeScreen({ navigation }) {
                <SearchBar onSearch={handleSearch} />
             </View>
 
-            {/* RIMOSSO PULSANTE NOTIFICHE */}
 
             <View style={styles.userContainer}>
                 {user ? (
@@ -310,13 +299,10 @@ export default function HomeScreen({ navigation }) {
                     title={t.title || "Nessun titolo"}
                     description={"status: " + (t.id_status || "Nessun stato")}
                     
-                    // QUI LA LOGICA RICHIESTA:
                     onCalloutPress={() => {
                         if (user) {
-                            // 1. SE LOGGATO: Vai al dettaglio (la schermata si adatta da sola al ruolo)
                             navigation.navigate('TicketDetail', { id: t.id, tenant_id: activeTenantId });
                         } else {
-                            // 2. SE NON LOGGATO: Mostra avviso e porta al login
                             Alert.alert(
                                 "Accesso Richiesto",
                                 "Devi effettuare il login per visualizzare i dettagli e gestire la segnalazione.",
@@ -394,7 +380,6 @@ const styles = StyleSheet.create({
   loginLinkBtn: { backgroundColor: '#374151', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6 },
   loginLinkText: { color: 'white', fontWeight: 'bold', fontSize: 12 },
   
-  // STILI NUOVI PER LA BARRA COMUNE
   tenantBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#374151', paddingVertical: 8, marginHorizontal: 15, marginBottom: 10, borderRadius: 8 },
   tenantBarText: { color: 'white', fontWeight: 'bold', marginHorizontal: 8, fontSize: 14 },
 
@@ -413,7 +398,6 @@ const styles = StyleSheet.create({
   zoomDivider: { height: 1, backgroundColor: '#eee', width: '80%', alignSelf: 'center' },
   fab: { position: 'absolute', bottom: 30, right: 20, width: 60, height: 60, borderRadius: 30, backgroundColor: '#467599', justifyContent: 'center', alignItems: 'center', elevation: 8 },
 
-  // STILI MODALE
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { width: '85%', backgroundColor: 'white', borderRadius: 12, padding: 20, elevation: 10 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center', color: '#1D2D44' },

@@ -19,7 +19,6 @@ export default function StatsDashboardScreen({ navigation }) {
     const { user } = useAuth();
     const [loading, setLoading] = useState(true);
     
-    // Stati per i dati
     const [statusData, setStatusData] = useState(null);
     const [timeData, setTimeData] = useState(null);
     const [operatorStats, setOperatorStats] = useState([]);
@@ -188,8 +187,6 @@ export default function StatsDashboardScreen({ navigation }) {
                 <Text style={styles.sectionTitle}>Carico Lavoro Operatori</Text>
                 <View style={styles.sectionCard}>
                     {operatorStats.map((op, idx) => {
-                        // Cerchiamo il nome vero nella mappa, altrimenti usiamo l'ID/nome che arriva
-                        // L'API a volte manda l'ID nel campo operator_name se non fa la join
                         const realName = operatorsMap[op.operator_id] || operatorsMap[op.operator_name] || "Operatore Sconosciuto";
                         const isUUID = realName.length > 20 && realName.includes('-');
                         const displayName = isUUID ? `Operatore #${realName.substring(0,5)}` : realName;
@@ -230,14 +227,12 @@ const styles = StyleSheet.create({
     sectionCard: { backgroundColor: 'white', padding: 15, borderRadius: 10, elevation: 2 },
     subText: { fontSize: 12, color: '#666', marginTop: 8, fontStyle: 'italic' },
 
-    // Chart Styles
     chartContainer: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 150, paddingTop: 20 },
     barWrapper: { alignItems: 'center', flex: 1 },
     bar: { width: 12, borderRadius: 4, minHeight: 4 },
     barValue: { fontSize: 10, color: '#666', marginBottom: 2 },
     barLabel: { fontSize: 10, color: '#999', marginTop: 5 },
 
-    // Operator List
     operatorRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
     opName: { fontWeight: 'bold', color: '#333' },
     opSub: { fontSize: 10, color: '#999' },

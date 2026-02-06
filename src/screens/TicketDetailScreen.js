@@ -102,7 +102,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                   average: avg,
                   count: ratings.length,
                   hasVoted: hasVoted,
-                  userVote: userVote // <--- Salviamo il voto specifico (1-5)
+                  userVote: userVote 
               };
           } else {
               newRatingsData[r.id] = { average: 0, count: 0, hasVoted: false, userVote: 0 };
@@ -113,7 +113,6 @@ export default function TicketDetailScreen({ route, navigation }) {
   };
 
   const fetchMissingNames = async (allIds) => {
-      // Filtriamo: togliamo il mio ID, togliamo i null, e togliamo quelli che abbiamo già
       const idsToFetch = [...new Set(allIds)].filter(uid => 
           uid && 
           String(uid) !== String(user.id) && 
@@ -129,7 +128,7 @@ export default function TicketDetailScreen({ route, navigation }) {
           if (userData && userData.name) {
               newNames[uid] = `${userData.name} ${userData.surname}`;
           } else {
-              newNames[uid] = `Utente Sconosciuto`; // Fallback se non trovato
+              newNames[uid] = `Utente Sconosciuto`;
           }
       }));
 
@@ -166,7 +165,6 @@ export default function TicketDetailScreen({ route, navigation }) {
                 } catch (err) {}
             }
 
-            // --- FIX RECUPERO ASSEGNAZIONE ---
             try {
                 const allAssignments = await getAssignments(effectiveTenantId);
                 const match = Array.isArray(allAssignments) 
@@ -187,7 +185,6 @@ export default function TicketDetailScreen({ route, navigation }) {
                 setAssignedOperator(null); 
             }
 
-            // Risposte
             const fetchedReplies = await getAllReplies(ticketId, effectiveTenantId);
             const sortedReplies = [...fetchedReplies].sort((a,b) => {
                 const d1 = new Date(a.creation_date || a.created_at || a.date);
@@ -416,8 +413,7 @@ export default function TicketDetailScreen({ route, navigation }) {
     fetchData();
   };
 
-  // --- NUOVA FUNZIONE GENERICA PER SCELTA FOTO ---
-  // Accetta 'setFunction' che è la funzione di stato da aggiornare (es. setChatImage o setReportImage)
+  // ---  FUNZIONE GENERICA PER SCELTA FOTO ---
   const handleImagePick = async (setFunction) => {
     Alert.alert(
         "Aggiungi Foto",
@@ -432,7 +428,7 @@ export default function TicketDetailScreen({ route, navigation }) {
                         return;
                     }
                     let result = await ImagePicker.launchCameraAsync({
-                        allowsEditing: true, // Libero da crop (o metti false per foto intera raw)
+                        allowsEditing: true, 
                         quality: 0.5,
                     });
                     if (!result.canceled) setFunction(result.assets[0]);
@@ -926,11 +922,11 @@ const styles = StyleSheet.create({
       color: '#666'
   },
     msgOperator: { 
-      backgroundColor: '#FFF9C4', // Sfondo Giallo chiaro
+      backgroundColor: '#FFF9C4', 
       alignSelf: 'flex-start', 
       elevation: 1,
       borderWidth: 1,
-      borderColor: '#FBC02D', // Bordo Giallo scuro
+      borderColor: '#FBC02D', 
       maxWidth: '85%'
   },
   operatorBadge: {
