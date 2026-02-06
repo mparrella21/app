@@ -5,7 +5,7 @@ import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from './src/context/AuthContext'; 
-
+import AdminStatsScreen from './src/screens/AdminStatsScreen'; // <--- IMPORTO NUOVA SCREEN
 // --- SCREENS IMPORT ---
 import HomeScreen from './src/screens/HomeScreen'; 
 import AuthModal from './src/screens/AuthModal';
@@ -21,6 +21,7 @@ import OperatorTicketsScreen from './src/screens/OperatorTicketsScreen';
 // Schermate Responsabile
 import ResponsibleTicketsScreen from './src/screens/ResponsibleTicketsScreen'; 
 import ManageOperatorsScreen from './src/screens/ManageOperatorsScreen';
+import ManageResponsableScreen from './src/screens/ManageResponsableScreen';
 import StatsDashboardScreen from './src/screens/StatsDashboardScreen'; // <--- AGGIUNGI QUESTO
 // Schermate Comuni
 import TicketDetailScreen from './src/screens/TicketDetailScreen';
@@ -87,9 +88,12 @@ function RootNavigator() {
             <Stack.Screen name="OperatorHome" component={OperatorTicketsScreen} />
             <Stack.Screen name="ResponsibleHome" component={ResponsibleTicketsScreen} />
             <Stack.Screen name="ManageOperators" component={ManageOperatorsScreen} />
+
             <Stack.Screen name="StatsDashboard" component={StatsDashboardScreen} />
             <Stack.Screen name="TicketDetail" component={TicketDetailScreen} options={{ presentation: 'card' }} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="AdminStats" component={AdminStatsScreen} />
+            <Stack.Screen name="ManageResponsibles" component={ManageResponsableScreen} />
           </>
         )}
       </Stack.Navigator>

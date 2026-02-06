@@ -2,6 +2,71 @@ import { API_BASE } from './config';
 import { authenticatedFetch } from './authService';
 import { getOperatorCategories, getOperatorMappings, assignOperatorCategory } from './interventionService';
 
+
+export const promoteToManager = async (userId, tenantId) => {
+    try {
+        const response = await authenticatedFetch(`${API_BASE}/manager`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tenant_id: tenantId,
+                user_id: userId
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("Errore promozione manager:", errText);
+            return { success: false, error: "Impossibile promuovere." };
+        }
+        return { success: true };
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
+    }
+};
+
+export const getManagersByTenant = async (tenantId) => {
+    try {
+        // 1. Recupera la lista delle relazioni manager (coppie id, tenant_id)
+        const response = await authenticatedFetch(`${API_BASE}/manager?tenant_id=${tenantId}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        let managerRelations = [];
+        if (response.ok) {
+            const data = await response.json();
+            managerRelations = Array.isArray(data) ? data : (data.managers || []);
+        } else {
+            return [];
+        }
+
+        // 2. Per ogni manager, recuperiamo i dettagli anagrafici
+        // Nota: l'API /manager ritorna oggetti che hanno 'id' (che è l'id utente) o 'user_id'
+        const managersPromises = managerRelations.map(async (rel) => {
+            const targetId = rel.id_user || rel.user_id || rel.id; 
+            if (!targetId) return null;
+
+            // Recuperiamo i dati anagrafici completi
+            const userDetails = await getUserById(targetId);
+            if (!userDetails) return null;
+
+            return { 
+                ...userDetails, 
+                id: targetId, // ID utente
+                manager_record_id: rel.id // Se serve l'ID della relazione, altrimenti l'ID utente basta per il deleteManager standard
+            };
+        });
+
+        const managers = (await Promise.all(managersPromises)).filter(m => m !== null);
+        return managers;
+
+    } catch (e) {
+        console.error("Errore getManagersByTenant", e);
+        return [];
+    }
+};
 // Recupera tutti gli utenti
 export const getAllUsers = async () => {
     try {

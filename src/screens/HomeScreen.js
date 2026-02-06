@@ -263,6 +263,13 @@ export default function HomeScreen({ navigation }) {
                       <Text style={styles.menuText}>Statistiche Avanzate</Text>
                   </TouchableOpacity>
                   </>
+                )}{currentRole === 'admin' && (
+                  <>
+                  <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('AdminStats'); }}> 
+                      <Ionicons name="business" size={20} color="#333" />
+                      <Text style={styles.menuText}>Statistiche Admin</Text>
+                  </TouchableOpacity>
+                  </>
                 )}
                 <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('Profile', { activeTenantName }); }}> 
                     <Ionicons name="person" size={20} color="#333" />

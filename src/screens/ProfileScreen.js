@@ -328,7 +328,7 @@ const formatPhoneForDisplay = (phone) => {
                 </View>
             )*/}
 
-            {(currentRole === 'responsabile' || currentRole === 'admin') && (
+            {(currentRole === 'responsabile' ) && (
                 <View style={styles.menuGroup}>
 
 
@@ -338,6 +338,20 @@ const formatPhoneForDisplay = (phone) => {
                             <Ionicons name="people" size={24} color="white" />
                         </View>
                         <Text style={styles.actionText}>Gestione Operatori</Text>
+                        <Ionicons name="chevron-forward" size={24} color="#ccc" />
+                    </TouchableOpacity>
+                </View>
+            )}
+             {(currentRole === 'admin' ) && (
+                <View style={styles.menuGroup}>
+
+
+
+                    <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('ManageResponsibles')}>
+                        <View style={[styles.iconBox, { backgroundColor: '#6366F1' }]}>
+                            <Ionicons name="people" size={24} color="white" />
+                        </View>
+                        <Text style={styles.actionText}>Gestione Responsabili</Text>
                         <Ionicons name="chevron-forward" size={24} color="#ccc" />
                     </TouchableOpacity>
                 </View>
@@ -391,11 +405,12 @@ const formatPhoneForDisplay = (phone) => {
                     <Text style={styles.label}>
                         {currentRole === 'cittadino' ? 'Posizione Attuale / Selezionata' : 'Comune di Competenza'}
                     </Text>
+                    {currentRole != 'admin' ?(
                     <Text style={styles.value}>
                         {currentRole === 'cittadino' 
                             ? (activeTenantName || 'Nessun comune selezionato oppure la posizione non è supportata') 
-                            : (fetchedTenantName || (user.tenant_id ? 'Caricamento...' : 'Non posizione nons supportata'))}
-                    </Text>
+                            : (fetchedTenantName || (user.tenant_id ? 'Caricamento...' : 'posizione non supportata'))}
+                    </Text>): (<Text style={styles.value}>NESSUN COMUNE</Text>)}
                 </View>
             </View>
         </View>

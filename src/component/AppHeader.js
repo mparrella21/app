@@ -9,53 +9,50 @@ export default function AppHeader({ navigation, searchText, setSearchText, onSea
   const { user, logout } = useAuth();
   const [menuVisible, setMenuVisible] = useState(false);
 
-  // Fallback: se user è null, mostriamo iniziali fittizie o nascondiamo in modo diverso
-  // Per testare la campanella, assumiamo che se siamo nella home cittadino, siamo loggati o vogliamo vederla.
   const initials = user?.name ? user.name.split(' ').map(s => s[0]).slice(0,2).join('').toUpperCase() : 'Guest';
 
-  const handleNotifications = () => {
-    setMenuVisible(false);
-    // Naviga alla schermata vera delle notifiche
-    navigation.navigate('Notifications');
-  };
+  // Logica per determinare se è admin
+  const isAdmin = user?.role === 'admin';
 
   return (
     <View style={styles.header}>
-      {/* Search on the left */}
-      <View style={styles.left}>
-        <SearchBar value={searchText} onChange={setSearchText} onSearch={onSearch} />
-      </View>
-
+      {/* ... Left e Right sections rimangono uguali ... */}
+      
       {/* Right: Actions */}
       <View style={styles.right}>
+        {/* Campanella... */}
         
-        {/* Campanella Notifiche - Ora visibile anche se user è "mock" o guest per debug */}
-        <TouchableOpacity style={styles.iconBtn} onPress={handleNotifications}>
-            <Ionicons name="notifications-outline" size={24} color="white" />
-            {/* Badge rosso (finto per ora) */}
-            <View style={styles.badgeDot} />
-        </TouchableOpacity>
-
-        {/* Avatar */}
+        {/* Avatar con touch per il menu */}
         {user ? (
           <TouchableOpacity style={styles.avatar} onPress={() => setMenuVisible(true)}>
             <Text style={styles.avatarText}>{initials}</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.accessBtn} onPress={() => navigation.navigate('Login')}>
-             <Text style={styles.accessText}>Accedi</Text>
-          </TouchableOpacity>
+             // ... login btn
+             <TouchableOpacity style={styles.accessBtn} onPress={() => navigation.navigate('Login')}>
+                <Text style={styles.accessText}>Accedi</Text>
+             </TouchableOpacity>
         )}
       </View>
 
-      {/* Dropdown Menu */}
+      {/* Dropdown Menu Modificato */}
       <Modal animationType="fade" transparent visible={menuVisible} onRequestClose={() => setMenuVisible(false)}>
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setMenuVisible(false)} />
         <View style={styles.menuWrapRight}>
-          <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('AreaPersonale'); }}>
-            <Ionicons name="person" size={18} color={COLORS.primary} />
-            <Text style={styles.menuText}>Area Personale</Text>
-          </TouchableOpacity>
+          
+          {/* Se è Admin mostra Statistiche, altrimenti Area Personale */}
+          {isAdmin ? (
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('AdminStats'); }}>
+               <Ionicons name="stats-chart" size={18} color={COLORS.primary} />
+               <Text style={styles.menuText}>Statistiche Admin</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); navigation.navigate('AreaPersonale'); }}>
+               <Ionicons name="person" size={18} color={COLORS.primary} />
+               <Text style={styles.menuText}>Area Personale</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity style={styles.menuItem} onPress={async () => { setMenuVisible(false); await logout(); navigation.navigate('Home'); }}>
             <Ionicons name="log-out" size={18} color={COLORS.primary} />
             <Text style={styles.menuText}>Logout</Text>
