@@ -80,27 +80,32 @@ export default function TicketDetailScreen({ route, navigation }) {
   };
 
   const fetchRatingsForReports = async (replies) => {
+      // Filtra solo i messaggi di tipo REPORT o che contengono il tag
       const reportReplies = replies.filter(r => r.type === 'REPORT' || (r.body && r.body.includes('[RAPPORTO INTERVENTO]')));
       if (reportReplies.length === 0) return;
 
       const newRatingsData = {};
 
       await Promise.all(reportReplies.map(async (r) => {
-          const ratings = await getRatingsForReply(r.id, effectiveTenantId); // Importa questa funzione dal service
+          const ratings = await getRatingsForReply(r.id, effectiveTenantId);
           
           if (ratings && ratings.length > 0) {
               const total = ratings.reduce((sum, item) => sum + (item.rating || 0), 0);
               const avg = (total / ratings.length).toFixed(1);
-              // Controlla se l'utente corrente ha già votato
-              const hasVoted = ratings.some(item => String(item.id_user || item.user_id) === String(user.id));
+              
+              // CERCA IL VOTO DELL'UTENTE CORRENTE
+              const myRatingObj = ratings.find(item => String(item.id_user || item.user_id) === String(user.id));
+              const hasVoted = !!myRatingObj;
+              const userVote = myRatingObj ? (myRatingObj.rating || 0) : 0;
               
               newRatingsData[r.id] = {
                   average: avg,
                   count: ratings.length,
-                  hasVoted: hasVoted
+                  hasVoted: hasVoted,
+                  userVote: userVote // <--- Salviamo il voto specifico (1-5)
               };
           } else {
-              newRatingsData[r.id] = { average: 0, count: 0, hasVoted: false };
+              newRatingsData[r.id] = { average: 0, count: 0, hasVoted: false, userVote: 0 };
           }
       }));
 
@@ -749,22 +754,34 @@ export default function TicketDetailScreen({ route, navigation }) {
                                 
                                 <View style={{flexDirection:'row', alignItems:'center', marginTop: 5}}>
                                     {/* Stelline */}
-                                    <View style={{flexDirection:'row', marginRight: 10}}>
+                                   <View style={{flexDirection:'row', marginRight: 10}}>
                                         {[1,2,3,4,5].map(star => {
-                                            // Se l'utente ha già votato, mostra le stelle piene in base al suo voto (se lo avessimo)
-                                            // O semplicemente disabilita. Qui usiamo replyRatings[r.id]?.hasVoted per colorarle o meno.
-                                            const isVoted = replyRatings[r.id]?.hasVoted;
+                                            const ratingData = replyRatings[r.id];
+                                            const isVoted = ratingData?.hasVoted;
+                                            const myVote = ratingData?.userVote || 0;
+
+                                            // LOGICA COLORE:
+                                            let starColor = '#BDBDBD'; // Default: Grigio (non votato)
+
+                                            if (isVoted) {
+                                                // Se ho votato: Giallo se la stella è <= al mio voto, altrimenti grigio chiaro
+                                                starColor = star <= myVote ? "#FFD700" : "#E0E0E0";
+                                            } else {
+                                                // Se NON ho votato: Grigio scuro (per far capire che è cliccabile)
+                                                starColor = "#9E9E9E"; 
+                                            }
+
                                             return (
                                                 <TouchableOpacity 
                                                     key={star} 
                                                     onPress={() => !isVoted && handleRatingReply(star, r.id)} 
-                                                    disabled={isVoted} // Disabilita se già votato
+                                                    disabled={isVoted} // Disabilita click se già votato
                                                     style={{marginHorizontal:2}}
                                                 >
                                                     <Ionicons 
                                                         name="star" 
                                                         size={22} 
-                                                        color={isVoted ? "#BDBDBD" : "#FFD700"} // Grigio se già votato, Oro se votabile
+                                                        color={starColor} 
                                                     />
                                                 </TouchableOpacity>
                                             );

@@ -301,7 +301,7 @@ export default function HomeScreen({ navigation }) {
                     key={t.id} 
                     coordinate={{ latitude: lat, longitude: lon }}
                     title={t.title || "Nessun titolo"}
-                    description={"status: " + (t.status || "Nessun stato")}
+                    description={"status: " + (t.id_status || "Nessun stato")}
                     
                     // QUI LA LOGICA RICHIESTA:
                     onCalloutPress={() => {
@@ -321,7 +321,7 @@ export default function HomeScreen({ navigation }) {
                         }
                     }}
                 >
-                    <View style={[styles.markerCircle, {backgroundColor: getStatusColor(t.id_status || t.status)}]}>
+                    <View style={[styles.markerCircle, {backgroundColor: getStatusColor(t.id_status)}]}>
                     <Ionicons name="alert" size={16} color="white" />
                     </View>
                 </Marker>
